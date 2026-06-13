@@ -9,7 +9,7 @@ BASE="${EQUIV_BASE_INPUT:-}"
 FAIL="${EQUIV_FAIL:-true}"
 
 if [[ ! -f "$MANIFEST" ]]; then
-  echo "equiv-review: no manifest at '$MANIFEST' — skipping."
+  echo "equiv-review: no manifest at '$MANIFEST'; skipping."
   exit 0
 fi
 
@@ -23,7 +23,7 @@ git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF:-main}" 2>/dev/null || t
 # Run the oracle. It prints the Markdown comment; its exit code is the gate.
 # EQUIV_SIGNING_KEY (if set) is read by the binary from the environment and is
 # never passed on the command line or echoed here. When unset (e.g. fork PRs,
-# where GitHub withholds secrets), receipts are left unsigned — not an error.
+# where GitHub withholds secrets), receipts are left unsigned. This is not an error.
 set +e
 COMMENT="$("$BIN" review-pr "$MANIFEST" --base "$BASE" \
   --receipts-out equiv-receipts.tsv \
@@ -34,7 +34,7 @@ set -e
 echo "$COMMENT"
 
 # Keyless signing (recommended). cosign uses the Actions OIDC identity to get a
-# short-lived Fulcio cert and logs to Rekor — no long-lived secret. Each
+# short-lived Fulcio cert and logs to Rekor, with no long-lived secret. Each
 # in-toto statement is signed into a .sigstore bundle next to it.
 if [[ "${EQUIV_KEYLESS:-false}" == "true" ]] && command -v cosign >/dev/null 2>&1; then
   shopt -s nullglob

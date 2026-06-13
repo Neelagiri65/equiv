@@ -1,5 +1,5 @@
 //! Bounded model checking (v0): loop-free scalar functions, monolithic
-//! formula `pre ∧ ¬post`, bit-blasted to SAT. UNSAT mints ProofEvidence —
+//! formula `pre ∧ ¬post`, bit-blasted to SAT. UNSAT mints ProofEvidence,
 //! the only place in the system allowed to (AC-3; pinned by a source-grep
 //! test). SAT models are replayed concretely before being reported (AC-4).
 
@@ -15,7 +15,7 @@ pub enum Outcome {
     Proved(ProofEvidence),
     /// SAT model, already replayed and confirmed against the interpreter.
     Counterexample { args: Vec<u64> },
-    /// Model failed concrete replay: solver/encoder disagreement — a bug,
+    /// Model failed concrete replay: solver/encoder disagreement, a bug
     /// surfaced honestly, never reported as a counterexample.
     Disagreement,
     /// Precondition is UNSAT: the contract proves nothing (AC-6).
@@ -243,7 +243,7 @@ pub fn try_prove(wasm_bytes: &[u8], contract: &Contract) -> Outcome {
         Ok(Some(args)) => match crate::difftest::replay_scalar(wasm_bytes, contract, &args) {
             Some(true) => Outcome::Counterexample { args },
             // Model doesn't violate concretely. With loops in play the
-            // SAT witness may be a bound overflow, not a bug — honest
+            // SAT witness may be a bound overflow, not a bug. Honest
             // fallback. Loop-free, it's an encoder/solver bug.
             _ if symres.incomplete.is_some() => Outcome::BoundExceeded,
             _ => Outcome::Disagreement,

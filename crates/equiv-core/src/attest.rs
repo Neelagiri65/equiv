@@ -1,9 +1,9 @@
-//! in-toto attestation primitives (DR-3) — the format the keyless Sigstore
+//! in-toto attestation primitives (DR-3): the format the keyless Sigstore
 //! path signs.
 //!
 //! equiv owns the *payload* (a standard in-toto Statement wrapping the review
-//! receipt as a predicate). The keyless crypto — OIDC → Fulcio short-lived
-//! cert → sign → Rekor transparency log — is delegated to `cosign`, the
+//! receipt as a predicate). The keyless crypto (OIDC -> Fulcio short-lived
+//! cert -> sign -> Rekor transparency log) is delegated to `cosign`, the
 //! standard, audited Sigstore client (we do NOT reimplement Fulcio/Rekor).
 //!
 //! Statement shape (in-toto v1):

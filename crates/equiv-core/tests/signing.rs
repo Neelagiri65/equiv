@@ -38,7 +38,7 @@ fn envelope_roundtrips_through_bytes() {
 fn tampered_receipt_fails_verification() {
     let key = SigningKey::generate();
     let mut signed = SignedReceipt::sign(sample_receipt().to_bytes(), &key);
-    // Flip a byte in the receipt payload — signature must no longer hold.
+    // Flip a byte in the receipt payload; signature must no longer hold.
     signed.receipt[10] ^= 0xff;
     assert!(!signed.verify());
 }

@@ -1,4 +1,4 @@
-//! The S-expression text surface. NOT frozen — sugar that compiles 1:1 to the
+//! The S-expression text surface. NOT frozen; sugar that compiles 1:1 to the
 //! canonical binary form. Grammar follows the worked examples in
 //! docs/spec-eqc-0-draft.md §8.
 

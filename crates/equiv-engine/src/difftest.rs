@@ -1,14 +1,14 @@
 //! Deterministic differential testing: seeded input generation, execution in
-//! an embedded interpreter (wasmi — pure Rust, keeps the single-static-binary
+//! an embedded interpreter (wasmi; pure Rust, keeps the single-static-binary
 //! constraint), contract evaluation per case, frame checking. Produces
-//! `tested-N` / `counterexample` verdicts — never `proved` (AC-3).
+//! `tested-N` / `counterexample` verdicts, never `proved` (AC-3).
 
 use crate::eval::{eval_bool, Env};
 use equiv_core::ast::*;
 use equiv_core::verdict::Verdict;
 use equiv_core::UnknownReason;
 
-/// xorshift64* — deterministic, dependency-free. The seed is recorded in the
+/// xorshift64*: deterministic, dependency-free. The seed is recorded in the
 /// receipt; test vectors are reproducible everywhere (AC-1: no host
 /// randomness anywhere in a decision path).
 struct Rng(u64);
@@ -42,7 +42,7 @@ impl Default for DiffConfig {
 }
 
 /// Sample one argument value. Mixed distribution: small values, memory
-/// offsets, and full-width randoms — pointer-shaped args must land inside
+/// offsets, and full-width randoms. Pointer-shaped args must land inside
 /// linear memory often enough for rejection sampling to work.
 fn sample_arg(rng: &mut Rng, ty: ValType, mem_len: usize) -> u64 {
     let r = rng.next();
@@ -162,8 +162,8 @@ fn frame_ok(frame: &[Expr], env: &Env) -> Result<bool, crate::eval::EvalError> {
 
 /// Concretely replay solver-model arguments against the artifact (AC-4):
 /// returns Some(true) iff the model genuinely violates the contract
-/// (pre holds, and the post fails or the call traps). Scalar contracts only
-/// — memory left at module defaults.
+/// (pre holds, and the post fails or the call traps). Scalar contracts only;
+/// memory left at module defaults.
 pub fn replay_scalar(wasm: &[u8], contract: &Contract, args: &[u64]) -> Option<bool> {
     let target = &contract.target;
     let probe = run_case(wasm, target, args, &[]).ok()?;

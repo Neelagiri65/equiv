@@ -52,7 +52,7 @@ fn determinism_byte_identical_receipts() {
 #[test]
 fn counterexample_is_in_the_receipt() {
     // The diverging input must be recoverable from the signed receipt, not
-    // just printed — that's the review payload.
+    // just printed. That's the review payload.
     let cand = tmp("rev_cex_cand.py", "def g(s):\n    return s.upper()\n");
     let refr = tmp("rev_cex_ref.py", "def g(s):\n    return s.title()\n");
     let r = review(&cand, &refr, &spec("g", vec![ArgType::Str]));

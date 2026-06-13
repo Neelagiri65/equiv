@@ -2,7 +2,7 @@
 //!
 //! ed25519 (RFC 8032) is deterministic: the same key over the same message
 //! yields the same signature. So signing preserves the byte-identical-receipt
-//! property — it adds an attestation layer without introducing nondeterminism.
+//! property; it adds an attestation layer without introducing nondeterminism.
 //!
 //! A signed receipt is a canonical-CBOR envelope:
 //!   { 0: version, 1: receipt-bytes, 2: signature(64), 3: public-key(32) }
@@ -50,7 +50,7 @@ impl SigningKey {
         Ok(SigningKey::from_seed(&seed))
     }
 
-    /// The secret seed — handle as a secret; never log or persist to the repo.
+    /// The secret seed. Handle as a secret; never log or persist to the repo.
     pub fn seed(&self) -> [u8; 32] {
         self.0.to_bytes()
     }
