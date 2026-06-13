@@ -1,0 +1,11 @@
+; saturating in-place increment, forall_b at work (spec §8.4)
+(contract eqc/0
+  (target (func "sat_inc_all" (param $p i32) (param $n i32)))
+  (assume no-imports no-memory-grow no-trap)
+  (pre (and (writable (range $p $n)) (le_u $n (c32 64))))
+  (post (forall_b 64 $n
+          (or (and (eq (byte old (add $p idx)) (c32 255))
+                   (eq (byte new (add $p idx)) (c32 255)))
+              (eq (byte new (add $p idx))
+                  (add (byte old (add $p idx)) (c32 1))))))
+  (frame (range $p $n)))

@@ -1,0 +1,10 @@
+; CRC32, refines-only pattern (spec §8.5)
+(contract eqc/0
+  (target (func "crc32" (param $p i32) (param $n i32) (result i32)))
+  (assume no-imports no-memory-grow no-trap)
+  (pre (and (readable (range $p $n)) (le_u $n (c32 1024))))
+  (post (c32 1))
+  (frame)
+  (refines (artifact sha256:1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f809)
+           "crc32_bitwise"
+           (over (range $p $n))))

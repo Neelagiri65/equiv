@@ -1,0 +1,10 @@
+[package]
+name = "equiv-review"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "equiv review oracle: deterministic differential review of AI-written source against a reference, with reproducible signed receipts"
+
+[dependencies]
+equiv-core = { path = "../equiv-core" }
+sha2 = "0.10"

@@ -1,0 +1,10 @@
+; UTF-8 validator with refines flagship pattern (spec §8.2)
+(contract eqc/0
+  (target (func "utf8_valid" (param $p i32) (param $n i32) (result i32)))
+  (assume no-imports no-memory-grow no-trap)
+  (pre (and (readable (range $p $n)) (le_u $n (c32 65536))))
+  (post (or (eq result (c32 0)) (eq result (c32 1))))
+  (frame)
+  (refines (artifact sha256:9f2c8a1b4e6d3c5a7b9e1f0d2c4b6a8e0f1d3c5b7a9e2f4d6c8b0a1e3f5d7c9b)
+           "utf8_valid_ref"
+           (over (range $p $n))))

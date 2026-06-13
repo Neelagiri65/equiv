@@ -1,0 +1,7 @@
+# equiv review manifest — one line per function whose behaviour must be
+# preserved across a PR.  Format:  <file> : <function> : <arg types>[ : n[ : seed]]
+# arg types: int | str | list[int], comma-separated.
+#
+# src/math.py    : total   : int
+# src/strings.py : slugify : str
+# src/util.py    : merge   : list[int],list[int]

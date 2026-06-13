@@ -1,0 +1,9 @@
+; memmove-style copy, disjoint case (spec §8.1)
+(contract eqc/0
+  (target (func "copy" (param $dst i32) (param $src i32) (param $len i32)))
+  (assume no-imports no-memory-grow no-trap (intrinsics bulk-memory))
+  (pre (and (writable (range $dst $len)) (readable (range $src $len))
+            (disjoint (range $dst $len) (range $src $len))
+            (le_u $len (c32 4096))))
+  (post (mem-eq new (range $dst $len) old (range $src $len)))
+  (frame (range $dst $len)))

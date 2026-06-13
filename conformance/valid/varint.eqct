@@ -1,0 +1,10 @@
+; LEB128 varint decode (spec §8.3)
+(contract eqc/0
+  (target (func "varint_u32" (param $p i32) (param $end i32) (result i64)))
+  (assume no-imports no-memory-grow no-trap)
+  (pre (and (le_u $p $end) (readable (range $p (sub $end $p)))
+            (le_u (sub $end $p) (c32 16))))
+  (post (or (eq result (c64 0xFFFFFFFFFFFFFFFF))
+            (and (le_u (wrap (shr_u result (c64 32))) (c32 5))
+                 (le_u (wrap (shr_u result (c64 32))) (sub $end $p)))))
+  (frame))
