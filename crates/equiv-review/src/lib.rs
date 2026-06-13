@@ -29,6 +29,8 @@ pub enum ArgType {
     Str,
     ListInt,
     Float,
+    /// A JSON-structural map with string keys and admissible scalar values.
+    Dict,
 }
 
 impl ArgType {
@@ -38,6 +40,7 @@ impl ArgType {
             "str" => ArgType::Str,
             "list[int]" | "list" => ArgType::ListInt,
             "float" => ArgType::Float,
+            "dict" | "dict[str,int]" => ArgType::Dict,
             _ => return None,
         })
     }
@@ -64,6 +67,7 @@ impl ReviewSpec {
                 ArgType::Str => 2,
                 ArgType::ListInt => 3,
                 ArgType::Float => 4,
+                ArgType::Dict => 5,
             });
         }
         v.extend_from_slice(&self.n.to_le_bytes());
@@ -98,6 +102,8 @@ pub enum PyVal {
     /// float64 stored as its raw IEEE-754 bits (keeps Eq and exactness; f64
     /// itself is not Eq). Generated in Rust, handed to the evaluator exactly.
     Float(u64),
+    /// A string-keyed map of ints (the first JSON-structural object type).
+    Dict(Vec<(String, i64)>),
 }
 
 impl PyVal {
@@ -114,6 +120,11 @@ impl PyVal {
             }
             PyVal::Float(bits) => {
                 format!("struct.unpack('>d', bytes.fromhex('{bits:016x}'))[0]")
+            }
+            PyVal::Dict(pairs) => {
+                let inner: Vec<String> =
+                    pairs.iter().map(|(k, v)| format!("'{k}': {v}")).collect();
+                format!("{{{}}}", inner.join(", "))
             }
         }
     }
@@ -191,6 +202,20 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
                 (n + frac).to_bits()
             }
         }),
+        // A small string-keyed map of ints. Keys are a deduplicated subset of
+        // a..h so insertion order varies but content is well defined.
+        ArgType::Dict => {
+            let len = (rng.next() % 5) as usize;
+            let mut keys = std::collections::BTreeSet::new();
+            let mut pairs = Vec::new();
+            for _ in 0..len {
+                let k = ((b'a' + (rng.next() % 8) as u8) as char).to_string();
+                if keys.insert(k.clone()) {
+                    pairs.push((k, rng.range(-20, 20)));
+                }
+            }
+            PyVal::Dict(pairs)
+        }
     }
 }
 
@@ -362,14 +387,26 @@ for _p in ({cand:?}, {refr:?}):
     format!(
         r#"import importlib.util as u
 import struct
+import sys as _sys
 {admis}def load(p, n):
     s = u.spec_from_file_location(n, p); m = u.module_from_spec(s); s.loader.exec_module(m); return m
 def canon(x):
-    # Floats: canonical bits. Any NaN -> one token (payload not observable);
-    # signed zero and everything else compared bit-exact via the exact hex.
-    if isinstance(x, float):
-        return 'nanq' if x != x else x.hex()
-    return repr(x)
+    # Canonical, order-independent form. int/str/bool/None reproduce repr (so
+    # existing reviews are unchanged); float -> exact bits (NaN -> one token);
+    # list -> recursive, order preserved (order is observable); dict -> sorted
+    # string keys (a map, order is not observable). Anything not JSON-structural
+    # (set, tuple, complex, custom object, non-string keys) -> __NONCANON__,
+    # which the driver turns into a Refused verdict.
+    if isinstance(x, bool): return repr(x)
+    if isinstance(x, int): return repr(x)
+    if isinstance(x, float): return 'nanq' if x != x else x.hex()
+    if isinstance(x, str): return repr(x)
+    if x is None: return 'None'
+    if isinstance(x, list): return '[' + ', '.join(canon(e) for e in x) + ']'
+    if isinstance(x, dict):
+        if not all(isinstance(k, str) for k in x): return '__NONCANON__'
+        return '{{' + ', '.join(repr(k) + ': ' + canon(x[k]) for k in sorted(x)) + '}}'
+    return '__NONCANON__'
 cand = load({cand:?}, "cand"); ref = load({refr:?}, "ref")
 cf = getattr(cand, {fn:?}); rf = getattr(ref, {fn:?})
 cases = [{cases}]
@@ -378,6 +415,8 @@ for i, args in enumerate(cases):
     except Exception as e: cv = None; ce = type(e).__name__
     try: rv = canon(rf(*args)); re_ = None
     except Exception as e: rv = None; re_ = type(e).__name__
+    if (cv is not None and '__NONCANON__' in cv) or (rv is not None and '__NONCANON__' in rv):
+        print('__REFUSED__\treturns a value that is not JSON-structural (no stable cross-host form)'); _sys.exit(0)
     if ce is not None or re_ is not None:
         ok = (ce == re_)
         print(f"{{i}}\t{{'EQ' if ok else 'NE'}}\t{{ce}}\t{{re_}}")
