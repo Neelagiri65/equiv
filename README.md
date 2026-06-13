@@ -32,9 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Neelagiri65/equiv@main
+      - uses: Neelagiri65/equiv@v0.1.0
         with: { keyless: "true" }
 ```
+
+Pin to a released tag (`@v0.1.0`) rather than `@main` so runs are reproducible
+and do not change under you.
 
 Each PR receives a comment. Every changed function is tested against its version
 on the base branch. A change that preserves behaviour passes. A change that does
@@ -60,11 +63,14 @@ could not check.
 ## Scope
 
 `equiv` checks behavioural equivalence of a function against a reference, on
-deterministically generated inputs. It does not check intent, architecture, or
-security. It cannot judge new functionality that has no reference to compare
-against. A passing result means behaviour was preserved on the tested inputs. It
-does not mean the change is correct. Supported input types in this version are
-`int`, `str` and `list[int]`.
+deterministically generated inputs. This is bounded random testing, not
+exhaustive verification: a pass means no divergence was found on the generated
+inputs, so it can still miss an edge case that only shows up for an input that
+was not generated. It does not check intent, architecture, or security. It
+cannot judge new functionality that has no reference to compare against. A
+passing result means behaviour was preserved on the tested inputs. It does not
+mean the change is correct. Supported input types in this version are `int`,
+`str` and `list[int]`.
 
 ## How it works
 
