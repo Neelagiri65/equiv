@@ -1,14 +1,17 @@
 # equiv
 
-A deterministic checker for code changes that are meant to preserve behaviour.
-When a function is refactored, optimised, or rewritten by a person or by an AI,
-`equiv` reports whether the new version behaves identically to the old one. If
-it does not, `equiv` gives the exact input where they differ. The result is a
-reproducible, signed receipt. Re-run the check and you get the same answer,
-without trusting any model's opinion.
+**An LLM should not be the only thing reviewing LLM-written code.**
 
-This matters because most code is now written by AI and reviewed by AI. A model
-saying "this looks fine" is not verification. A deterministic check is.
+`equiv` runs a changed function against its previous version on the same
+deterministically generated inputs and reports whether the behaviour changed. If
+it did, you get the exact input where they differ. Either way you get a
+reproducible, signed receipt: re-run the check on any machine and you get the same
+answer, byte for byte, without trusting any model's opinion.
+
+![equiv catches an AI refactor diverging at n = -5, then emits a signed receipt that re-runs to an identical id](assets/equiv-aha.gif)
+
+Most code is now written by AI and reviewed by AI. A model saying "this looks
+fine" is not verification. A deterministic check you can re-run yourself is.
 
 ## Quickstart: the PR gate
 
@@ -86,6 +89,6 @@ prebuilt for macOS, Linux and Windows.
 
 - `docs/signing-model.md`: receipt signing with ed25519 and keyless Sigstore.
 - `docs/RELEASING.md`: building prebuilt binaries with cargo-dist.
-- `equiv/`: the Rust workspace (`equiv-core`, `equiv-engine`, `equiv-review`, `equiv-cli`).
+- `crates/`: the Rust workspace (`equiv-core`, `equiv-engine`, `equiv-review`, `equiv-cli`).
 
 License: Apache-2.0.
