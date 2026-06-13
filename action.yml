@@ -1,5 +1,5 @@
 name: "equiv review"
-description: "Deterministic behaviour-preserving review of changed functions vs the base branch, posted as a sticky PR comment, with optional ed25519-signed receipts."
+description: "Check that refactors preserve behaviour, on every PR. Deterministic, signed receipts."
 branding:
   icon: "check-circle"
   color: "purple"
