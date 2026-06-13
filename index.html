@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The day a refactor passed on my laptop and failed on yours — equiv</title>
+<meta name="description" content="What it takes to make a code-equivalence verdict reproducible across machines, and why it forced refusing floating-point transcendentals by name.">
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    font: 18px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 3rem 1.4rem 5rem;
+    color: #1a1a1a;
+    background: #fbfbf9;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { color: #d6d6d2; background: #16161a; }
+    a { color: #8ab4f8; }
+    code, pre { background: #22222a; }
+    blockquote { border-color: #3a3a44; color: #b8b8b4; }
+    .nav, footer { color: #8a8a88; }
+    hr { border-color: #2a2a32; }
+  }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 1.5rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.3rem; margin: 2.6rem 0 0.8rem; letter-spacing: -0.01em; }
+  p { margin: 1rem 0; }
+  a { color: #1a56db; }
+  code {
+    font: 0.86em/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: #f0f0ec; padding: 0.1em 0.35em; border-radius: 4px;
+  }
+  pre {
+    background: #f0f0ec; padding: 1rem 1.1rem; border-radius: 8px;
+    overflow-x: auto; font-size: 0.82rem; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; }
+  blockquote {
+    margin: 1.4rem 0; padding: 0.2rem 0 0.2rem 1.1rem;
+    border-left: 3px solid #ccc; color: #444; font-style: italic;
+  }
+  hr { border: none; border-top: 1px solid #e2e2dc; margin: 2.6rem 0; }
+  .nav { font-size: 0.85rem; margin-bottom: 2.5rem; color: #777; }
+  .nav a { text-decoration: none; }
+  footer { margin-top: 3rem; font-size: 0.9rem; color: #777; }
+</style>
+</head>
+<body>
+
+<div class="nav"><a href="https://github.com/Neelagiri65/equiv">equiv</a> &nbsp;·&nbsp; a deterministic checker for behaviour-preserving code changes</div>
+
+<h1>The day a refactor passed on my laptop and failed on yours</h1>
+
+<p>Most of the code being written right now is not being written. It is being generated, glanced at, and merged. The reviewer is tired, the diff is large, and increasingly the reviewer is itself a language model summarising the work of another language model. Somewhere in that loop there is supposed to be a moment where someone confirms the change did what it claimed. Often there isn't.</p>
+
+<p>I wanted a small, boring tool to fill that gap. Take a function before a refactor and after, run both on the same inputs, and tell me plainly whether the behaviour changed. Not an opinion. Not a confidence score. A result I could re-run next week and get the same answer, byte for byte. If a teammate ran it on their machine they should get my exact result, not something close.</p>
+
+<p>That last sentence sounds trivial. It is the entire problem. This is the story of where it broke, and why the fix turned out to be the most important design decision in the whole tool.</p>
+
+<h2>Why "re-runnable" is the only claim worth making</h2>
+
+<p>There is no shortage of tools that review your pull request. The newer ones are language models with a nice interface. They are useful and they are also the same kind of thing that wrote the code: a probabilistic system giving you its impression. Ask the same one twice and you can get two different reviews. In a world where a model wrote the diff, a model reviewing the diff is the same fallible loop checking its own work.</p>
+
+<p>So I did not want to add another opinion. I wanted a verdict with a property no opinion has: you can reproduce it. Run the check, get a result, and that result is a function of the inputs and nothing else. No wall clock. No network. No machine-specific luck. Same inputs in, same answer out, on any computer.</p>
+
+<p>If you have that, you can sign it and hand it to someone who does not trust you. They re-run it and confirm it themselves. The trust comes from reproduction, not from my reputation or my model's confidence. That is the whole pitch. It only works if the reproduction is real.</p>
+
+<h2>Where it broke: a function that returned a float</h2>
+
+<p>Early on the tool handled integers, strings, and lists of integers. Clean, exact, the same on every machine. Then I pointed it at a numerical function. A refactor of an averaging routine. The kind of change an AI assistant produces ten times a day.</p>
+
+<p>On my Mac the check said the two versions diverged on one input. On a Linux box in CI it said they were identical. Same code. Same inputs. Two different verdicts.</p>
+
+<p>This is the nightmare for a tool whose only selling point is reproducibility. A verdict that depends on the machine is not a verdict. It is a rumour.</p>
+
+<p>The cause is not a bug in my tool. It is the nature of floating-point arithmetic, and it is worth understanding because almost every "we test your AI code" tool will hit it and most will quietly paper over it.</p>
+
+<h2>What IEEE-754 actually promises, and what it does not</h2>
+
+<p>Floating-point numbers follow a standard called IEEE-754. The standard is precise about which operations are guaranteed to give the same answer everywhere, and that guarantee is narrower than people assume.</p>
+
+<p>The basic operations are <em>correctly rounded</em>. Addition, subtraction, multiplication, division, square root, and the fused multiply-add are required to return the single nearest representable result, every time, on every conforming machine. At double precision with the default rounding mode these operations are bit-for-bit identical whether you run them on an Apple chip or an Intel server. There is no ambiguity and no platform luck. Two different expressions built only from these operations will agree across machines or disagree across machines consistently.</p>
+
+<p>The functions you reach for next are not covered. Sine, cosine, exponential, logarithm, raising to a non-integer power. For these the standard only <em>recommends</em> correct rounding. It does not require it. The reason is a genuinely hard maths problem, sometimes called the table-maker's dilemma: computing the last bit correctly for these functions can require enormous intermediate precision, so implementations make different trade-offs. The C maths library on macOS and the one on Linux can legitimately return results that differ in the final bit.</p>
+
+<p>That final bit is exactly what bit me. My averaging refactor touched a function whose two versions agreed to the last bit under one maths library and disagreed under another. Neither machine was wrong. The standard permits both. My tool was trying to render a global verdict on a quantity that is, by design, local.</p>
+
+<h2>The decision: refuse what you cannot reproduce, by name</h2>
+
+<p>There were two tempting fixes and both are traps.</p>
+
+<p>The first is to round the results before comparing. Compare to twelve decimal places and call it equal. This feels reasonable and it is not safe. A real last-bit difference can sit right on the rounding boundary, so one machine rounds up and the other rounds down. Rounding does not remove the disagreement. It hides it sometimes and invents it other times. You have traded a guarantee for a coin flip.</p>
+
+<p>The second is to compare with a tolerance. Equal if within some epsilon. Now your tool no longer answers the question it was asked. "Did this refactor preserve the behaviour" has quietly become "is the new behaviour close enough for my taste." For a tool whose only asset is a precise reproducible verdict, that is the asset gone.</p>
+
+<p>The fix that actually holds is less clever and more honest. The tool admits a floating-point function only when its computation stays inside the correctly-rounded operations. Those are reproducible across machines because the standard makes them so. The moment a function reaches for a transcendental, the tool does not guess and does not round. It refuses, by name, and says so:</p>
+
+<pre><code>clamp_average  REFUSED  depends on a platform-variable transcendental (math.exp);
+                        a cross-host reproducible verdict is not possible here.</code></pre>
+
+<p>Cross-machine agreement comes from restriction, not from cleverness. Inside the admissible set the raw bits are already identical everywhere, so the tool records the result as the raw 64-bit value with no rounding and no massaging. A NaN is normalised to a single canonical form, because a NaN payload is not observable behaviour. The sign of a zero is preserved exactly, because it is observable: dividing by positive zero and negative zero gives positive and negative infinity. The details matter, and the rule behind all of them is one sentence.</p>
+
+<blockquote>A value is admissible only if the verdict it produces is identical on every machine. Everything else is refused, out loud.</blockquote>
+
+<h2>Why refusing is a feature, not a weakness</h2>
+
+<p>It is uncomfortable to ship a tool that says "I will not judge this." The instinct is to maximise coverage so the tool looks capable. That instinct is how you end up with a tool that confidently lies a small percentage of the time, which is worse than useless for anything you would actually rely on.</p>
+
+<p>The refusal is the thing that makes every non-refused answer trustworthy. When the tool says two versions are equivalent, it is staking that claim on a verdict it can reproduce anywhere. When it cannot make that promise it tells you, and you reach for a human or a different technique. You are never handed a green light that was really a shrug.</p>
+
+<p>This is the opposite of the marketing reflex, which is to claim more. The claim here is deliberately small and completely solid: these specific behaviours were checked on these specific inputs, the result reproduces to identical bytes everywhere, and here is everything I declined to check. Small and true beats broad and shaky, especially for the one job where you are trying to replace a rubber stamp with something you can stand behind.</p>
+
+<h2>What this is, plainly</h2>
+
+<p>The tool is called equiv. It runs a changed function and its previous version on the same generated inputs and reports whether they diverged, with the exact input that broke them when they do. It produces a signed, content-addressed receipt of what was checked, which anyone can re-run to the same bytes. It is not a prover. It is bounded testing: a pass means no divergence was found on the inputs it tried, not that none exists. It says so. It checks mechanical behaviour, not intent or architecture, and it tells you that too.</p>
+
+<p>That is the honest shape of it. In a field full of tools that review your code by having a model form an impression, the contribution here is not intelligence. It is the refusal to pretend. A verdict you can reproduce, a clear list of what was not checked, and a flat "no" whenever a yes would not survive being run on a different machine.</p>
+
+<p>The hard part was never generating inputs or comparing outputs. It was deciding, before writing the code, exactly which questions the tool is allowed to answer with certainty, and being willing to say nothing about the rest.</p>
+
+<hr>
+
+<footer>
+equiv is open source under Apache-2.0 and runs as a GitHub Action:
+<a href="https://github.com/Neelagiri65/equiv">github.com/Neelagiri65/equiv</a>.
+If you work on numerical or cross-language equivalence and I have got a detail wrong, I would genuinely like to hear it.
+</footer>
+
+</body>
+</html>
