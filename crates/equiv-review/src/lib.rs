@@ -11,8 +11,11 @@
 //! (here: python3) is a dumb evaluator. It never decides anything that
 //! reaches the receipt, so the receipt is reproducible regardless of runtime
 //! flakiness. Honest scope: integer / string / list-of-int I/O, where value
-//! reprs are stable and identical across hosts. Floats, objects and any value
-//! with nondeterministic ordering are out of this slice on purpose.
+//! reprs are stable and identical across hosts, plus float64 inside the
+//! IEEE-754 correctly-rounded operation set (see spec-type-admissibility.md).
+//! A function that reaches a transcendental is refused by name, since its last
+//! bit is not reproducible across maths libraries. Objects and any value with
+//! nondeterministic ordering are out of this slice on purpose.
 
 use equiv_core::cbor::{self, Value};
 use sha2::{Digest, Sha256};
@@ -25,6 +28,7 @@ pub enum ArgType {
     Int,
     Str,
     ListInt,
+    Float,
 }
 
 impl ArgType {
@@ -33,6 +37,7 @@ impl ArgType {
             "int" => ArgType::Int,
             "str" => ArgType::Str,
             "list[int]" | "list" => ArgType::ListInt,
+            "float" => ArgType::Float,
             _ => return None,
         })
     }
@@ -58,6 +63,7 @@ impl ReviewSpec {
                 ArgType::Int => 1,
                 ArgType::Str => 2,
                 ArgType::ListInt => 3,
+                ArgType::Float => 4,
             });
         }
         v.extend_from_slice(&self.n.to_le_bytes());
@@ -89,10 +95,15 @@ pub enum PyVal {
     Int(i64),
     Str(String),
     ListInt(Vec<i64>),
+    /// float64 stored as its raw IEEE-754 bits (keeps Eq and exactness; f64
+    /// itself is not Eq). Generated in Rust, handed to the evaluator exactly.
+    Float(u64),
 }
 
 impl PyVal {
-    /// A Python literal: what we hand the evaluator.
+    /// A Python literal: what we hand the evaluator. Floats are reconstructed
+    /// from exact bits via struct (no decimal parse means no rounding on the
+    /// way in); the driver imports `struct`.
     fn to_py(&self) -> String {
         match self {
             PyVal::Int(n) => n.to_string(),
@@ -101,11 +112,24 @@ impl PyVal {
                 let inner: Vec<String> = xs.iter().map(|n| n.to_string()).collect();
                 format!("[{}]", inner.join(", "))
             }
+            PyVal::Float(bits) => {
+                format!("struct.unpack('>d', bytes.fromhex('{bits:016x}'))[0]")
+            }
         }
     }
     /// Human readable and stable: what a counterexample shows the reviewer.
     pub fn display(&self) -> String {
-        self.to_py()
+        match self {
+            PyVal::Float(bits) => {
+                let f = f64::from_bits(*bits);
+                if f.is_nan() {
+                    "nan".to_string()
+                } else {
+                    format!("{f:?}")
+                }
+            }
+            _ => self.to_py(),
+        }
     }
 }
 
@@ -133,6 +157,28 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
             let len = (rng.next() % 7) as usize;
             PyVal::ListInt((0..len).map(|_| rng.range(-20, 20)).collect())
         }
+        // Cover the corners where refactors break: +0.0, -0.0, +/-inf, NaN,
+        // smallest subnormal, plus typical finite values with a fraction.
+        ArgType::Float => PyVal::Float(match rng.next() % 8 {
+            0 => 0x0000_0000_0000_0000, // +0.0
+            1 => 0x8000_0000_0000_0000, // -0.0
+            2 => 0x7FF0_0000_0000_0000, // +inf
+            3 => 0xFFF0_0000_0000_0000, // -inf
+            4 => 0x7FF8_0000_0000_0000, // canonical quiet NaN
+            5 => 0x0000_0000_0000_0001, // smallest positive subnormal
+            6 => {
+                // small magnitude with a fraction
+                let n = rng.range(-1000, 1000) as f64;
+                let frac = (rng.next() % 1000) as f64 / 1000.0;
+                (n + frac).to_bits()
+            }
+            _ => {
+                // typical, review-realistic magnitude with a fraction
+                let n = rng.range(-1_000_000, 1_000_000) as f64;
+                let frac = (rng.next() % 1_000_000) as f64 / 1_000_000.0;
+                (n + frac).to_bits()
+            }
+        }),
     }
 }
 
@@ -157,6 +203,11 @@ pub enum ReviewVerdict {
     },
     /// The harness could not run (load error, missing function, runtime gone).
     Error { reason: String },
+    /// The function is outside the admissible set (e.g. it reaches a
+    /// floating-point transcendental whose last bit is not reproducible across
+    /// maths libraries). No cross-host verdict is possible. Refusing by name
+    /// is the feature: it is never silently mis-judged.
+    Refused { reason: String },
 }
 
 impl ReviewVerdict {
@@ -165,6 +216,8 @@ impl ReviewVerdict {
             ReviewVerdict::Equivalent { .. } => 0,
             ReviewVerdict::Counterexample { .. } => 1,
             ReviewVerdict::Error { .. } => 2,
+            // Not a pass: "I will not judge this" must not read as green.
+            ReviewVerdict::Refused { .. } => 2,
         }
     }
     fn value(&self) -> Value {
@@ -180,6 +233,9 @@ impl ReviewVerdict {
             ]),
             ReviewVerdict::Error { reason } => {
                 Value::Array(vec![Value::Uint(2), Value::Text(reason.clone())])
+            }
+            ReviewVerdict::Refused { reason } => {
+                Value::Array(vec![Value::Uint(3), Value::Text(reason.clone())])
             }
         }
     }
@@ -245,15 +301,22 @@ fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal
     // per-case status line; Rust interprets and builds the verdict.
     format!(
         r#"import importlib.util as u
+import struct
 def load(p, n):
     s = u.spec_from_file_location(n, p); m = u.module_from_spec(s); s.loader.exec_module(m); return m
+def canon(x):
+    # Floats: canonical bits. Any NaN -> one token (payload not observable);
+    # signed zero and everything else compared bit-exact via the exact hex.
+    if isinstance(x, float):
+        return 'nanq' if x != x else x.hex()
+    return repr(x)
 cand = load({cand:?}, "cand"); ref = load({refr:?}, "ref")
 cf = getattr(cand, {fn:?}); rf = getattr(ref, {fn:?})
 cases = [{cases}]
 for i, args in enumerate(cases):
-    try: cv = repr(cf(*args)); ce = None
+    try: cv = canon(cf(*args)); ce = None
     except Exception as e: cv = None; ce = type(e).__name__
-    try: rv = repr(rf(*args)); re_ = None
+    try: rv = canon(rf(*args)); re_ = None
     except Exception as e: rv = None; re_ = type(e).__name__
     if ce is not None or re_ is not None:
         ok = (ce == re_)
@@ -268,14 +331,70 @@ for i, args in enumerate(cases):
     )
 }
 
+/// Functions whose last bit is not guaranteed identical across maths
+/// libraries (IEEE-754 only *recommends* correct rounding for these). A float
+/// review that reaches one of these is refused. Note: this is a conservative
+/// token scan, not a full AST pass; aliased imports and `**` with a fractional
+/// exponent can still slip through (tracked as an AD-3 follow-up).
+const TRANSCENDENTALS: &[&str] = &[
+    "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh", "asinh",
+    "acosh", "atanh", "exp", "expm1", "exp2", "log", "log2", "log10", "log1p", "pow", "gamma",
+    "lgamma", "erf", "erfc", "hypot", "cbrt",
+];
+
+fn is_ident_byte(b: u8) -> bool {
+    b == b'_' || b.is_ascii_alphanumeric()
+}
+
+/// Does `hay` contain `word` as a whole identifier (not as a substring of a
+/// longer name; `exp` does not match `expand`)?
+fn contains_word(hay: &str, word: &str) -> bool {
+    let bytes = hay.as_bytes();
+    let mut from = 0;
+    while let Some(rel) = hay[from..].find(word) {
+        let start = from + rel;
+        let end = start + word.len();
+        let before_ok = start == 0 || !is_ident_byte(bytes[start - 1]);
+        let after_ok = end >= bytes.len() || !is_ident_byte(bytes[end]);
+        if before_ok && after_ok {
+            return true;
+        }
+        from = start + 1;
+    }
+    false
+}
+
+/// AD-2: if the review involves float64 and either source reaches a
+/// non-correctly-rounded function, refuse by name. Returns the refusal reason.
+/// Scoped to float signatures so integer/string reviews are unaffected.
+fn admissibility_refusal(cand_src: &[u8], ref_src: &[u8], spec: &ReviewSpec) -> Option<String> {
+    if !spec.args.iter().any(|a| *a == ArgType::Float) {
+        return None;
+    }
+    let cs = String::from_utf8_lossy(cand_src);
+    let rs = String::from_utf8_lossy(ref_src);
+    for &name in TRANSCENDENTALS {
+        if contains_word(&cs, name) || contains_word(&rs, name) {
+            return Some(format!(
+                "depends on a platform-variable transcendental ({name}); a cross-host \
+                 reproducible verdict is not possible"
+            ));
+        }
+    }
+    None
+}
+
 /// Run the oracle. `candidate_path`/`reference_path` each define `spec.func`.
 pub fn review(candidate_path: &Path, reference_path: &Path, spec: &ReviewSpec) -> ReviewReceipt {
     let cand_src = std::fs::read(candidate_path).unwrap_or_default();
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
     let cases = gen_cases(spec);
 
-    let verdict = run_python(candidate_path, reference_path, spec, &cases)
-        .unwrap_or_else(|reason| ReviewVerdict::Error { reason });
+    let verdict = match admissibility_refusal(&cand_src, &ref_src, spec) {
+        Some(reason) => ReviewVerdict::Refused { reason },
+        None => run_python(candidate_path, reference_path, spec, &cases)
+            .unwrap_or_else(|reason| ReviewVerdict::Error { reason }),
+    };
 
     ReviewReceipt {
         candidate_sha256: sha256(&cand_src),
@@ -313,7 +432,7 @@ pub fn run_pr(checks: &[PrCheck]) -> (Vec<ReviewItem>, i32) {
         let receipt = review(&c.head_path, &c.base_path, &c.spec);
         match &receipt.verdict {
             ReviewVerdict::Counterexample { .. } => any_cex = true,
-            ReviewVerdict::Error { .. } => any_err = true,
+            ReviewVerdict::Error { .. } | ReviewVerdict::Refused { .. } => any_err = true,
             ReviewVerdict::Equivalent { .. } => {}
         }
         items.push(ReviewItem { name: c.name.clone(), receipt });
@@ -346,6 +465,7 @@ pub fn intoto_statement(file: &str, item: &ReviewItem) -> String {
             format!("diverges at {input}: this={candidate} base={reference}"),
         ),
         ReviewVerdict::Error { reason } => ("error".to_string(), reason.clone()),
+        ReviewVerdict::Refused { reason } => ("refused".to_string(), reason.clone()),
     };
     let receipt_id = hex(&item.receipt.sha256());
     let predicate = ReviewPredicate {
@@ -374,7 +494,7 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
     for it in items {
         match it.receipt.verdict {
             ReviewVerdict::Counterexample { .. } => diverged += 1,
-            ReviewVerdict::Error { .. } => errored += 1,
+            ReviewVerdict::Error { .. } | ReviewVerdict::Refused { .. } => errored += 1,
             ReviewVerdict::Equivalent { .. } => {}
         }
     }
@@ -408,6 +528,9 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
             ReviewVerdict::Error { reason } => {
                 ("not checked".to_string(), format!("`{}`", reason.replace('`', "")))
             }
+            ReviewVerdict::Refused { reason } => {
+                ("refused".to_string(), reason.replace('`', ""))
+            }
         };
         s.push_str(&format!("| `{}` | {} | {} |\n", it.name, v, detail));
     }
@@ -431,7 +554,7 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
     s.push_str("\n</details>\n\n");
     s.push_str(
         "Scope: behavioural equivalence on generated inputs only. This does not check \
-         intent, architecture, or security. A passing result means behaviour was preserved \
+         intent, architecture, security. A passing result means behaviour was preserved \
          on the tested inputs, not that the change is correct.\n",
     );
     s

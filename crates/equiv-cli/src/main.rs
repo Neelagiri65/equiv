@@ -36,7 +36,7 @@ fn usage() -> &'static str {
 USAGE:
   equiv review <cand.py> <ref.py> <fn> <sig> [n] [seed] [--sign]
         Check a function against a reference on generated inputs. <sig> is the
-        argument types (int|str|list[int]), comma separated. Emits a
+        argument types (int|str|list[int]|float), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
         $EQUIV_SIGNING_KEY (64 hex chars).
   equiv keygen
@@ -224,6 +224,7 @@ fn run() -> Result<u8, String> {
                     println!("  reference -> {reference}");
                 }
                 ReviewVerdict::Error { reason } => println!("ERROR: {reason}"),
+                ReviewVerdict::Refused { reason } => println!("REFUSED: {reason}"),
             }
             println!("receipt-id: {}", hex(&r.sha256()));
             if want_sign {

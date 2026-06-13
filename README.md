@@ -73,7 +73,10 @@ was not generated. It does not check intent, architecture, security. It
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,
-`str` and `list[int]`.
+`str`, `list[int]`, `float`. Float reviews are admitted only inside the IEEE-754
+correctly rounded operations, where the result is identical on every machine. A
+function that reaches a transcendental (sin, exp, log, pow) is refused by name
+rather than judged. Its last bit is not reproducible across maths libraries.
 
 ## How it works
 

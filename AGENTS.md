@@ -12,7 +12,10 @@ before proposing the change:
 equiv review <new_version>.py <original>.py <function> <arg types>
 ```
 
-- `<arg types>`: `int`, `str`, `list[int]`, comma separated.
+- `<arg types>`: `int`, `str`, `list[int]`, `float`, comma separated. Float
+  reviews are admitted only inside the IEEE-754 correctly rounded operations. A
+  function reaching a transcendental (sin, exp, log, pow) is refused by name
+  rather than judged.
 - Exit codes: `0` equivalent, `1` diverges with a printed counterexample, `2`
   could not check.
 
