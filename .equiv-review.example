@@ -1,4 +1,4 @@
-# equiv review manifest — one line per function whose behaviour must be
+# equiv review manifest. One line per function whose behaviour must be
 # preserved across a PR.  Format:  <file> : <function> : <arg types>[ : n[ : seed]]
 # arg types: int | str | list[int], comma-separated.
 #

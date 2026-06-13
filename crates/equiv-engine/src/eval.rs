@@ -1,7 +1,7 @@
 //! Concrete evaluation of eqc/0 expressions against a concrete execution:
 //! argument values, result value, and old/new linear-memory snapshots.
-//! This is the executable semantics of the contract language — the
-//! differential tester runs it per case, and counterexample replay (AC-4)
+//! This is the executable semantics of the contract language. The
+//! differential tester runs it per case; counterexample replay (AC-4)
 //! will reuse it verbatim.
 
 use equiv_core::ast::*;
@@ -216,7 +216,7 @@ pub fn eval(e: &Expr, env: &Env) -> Result<CVal, EvalError> {
             CVal::Region(b, l)
         }
         // In concrete evaluation, readable/writable mean "within linear
-        // memory bounds" (old state for readable, new for writable — both
+        // memory bounds" (old state for readable, new for writable; both
         // snapshots have identical length unless memory grew).
         Expr::Readable(r) => {
             let (b, l) = as_region(eval(r, env)?)?;

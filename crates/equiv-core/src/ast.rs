@@ -1,4 +1,4 @@
-//! The eqc/0 contract AST — one struct per spec §2, one enum arm per spec §3
+//! The eqc/0 contract AST: one struct per spec §2, one enum arm per spec §3
 //! opcode. The closed opcode set is the frozen surface; adding an arm here is
 //! a format-version event, not a refactor.
 

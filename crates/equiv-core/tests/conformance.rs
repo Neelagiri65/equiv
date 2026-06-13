@@ -37,8 +37,8 @@ fn corpus_roundtrip() {
     }
 }
 
-/// AC-1 (format layer): encoding is deterministic — repeated encodes of the
-/// same contract are byte-identical, and contract hashes are stable.
+/// AC-1 (format layer): encoding is deterministic. Repeated encodes of the
+/// same contract are byte-identical; contract hashes are stable.
 #[test]
 fn ac1_deterministic_encoding() {
     for (name, src) in corpus() {
@@ -62,7 +62,7 @@ fn ac1_deterministic_receipts() {
 
 /// AC-3: with no engine present, nothing in the system can produce `proved`.
 /// (The stronger guarantee is structural: `ProofEvidence` has no public
-/// constructor — a `Verdict::Proved` literally cannot be written outside the
+/// constructor; a `Verdict::Proved` literally cannot be written outside the
 /// engine module. This test pins the runtime behaviour of the stub.)
 #[test]
 fn ac3_no_proved_without_engine() {

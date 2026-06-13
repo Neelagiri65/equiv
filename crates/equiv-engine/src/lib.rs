@@ -45,14 +45,14 @@ pub fn check(artifact: &[u8], contract: &Contract, cfg: &DiffConfig) -> Receipt 
         return receipt(Verdict::Unknown(UnknownReason::IllFormedExpr));
     }
     // Spec §10 Q4 (provisional v0 answer): a module that statically violates
-    // its assume-flags yields `unknown`, not `counterexample` — the caller
+    // its assume-flags yields `unknown`, not `counterexample`: the caller
     // lied about the artifact, the property was never tested.
     if !wasm::violated_flags(&facts, &contract.assume).is_empty() {
         return receipt(Verdict::Unknown(UnknownReason::UnsupportedFeature));
     }
 
     // Symbolic path first (loop-free scalar envelope; floats never reach it
-    // since float signatures fail the scalar check — spec §6.3 routing).
+    // since float signatures fail the scalar check; spec §6.3 routing).
     let outcome = bmc::try_prove(artifact, contract);
     if let Some(verdict) = bmc::outcome_verdict(outcome) {
         let mut r = receipt(verdict);

@@ -1,5 +1,5 @@
 //! Symbolic execution of the supported WASM subset into the term DAG.
-//! v0 envelope: straight-line code, balanced if/else, select — no loops,
+//! v0 envelope: straight-line code, balanced if/else, select. No loops,
 //! no br/return, no memory, no calls, no div/rem, i32/i64 only. Anything
 //! outside extracts as `Unsupported` and the artifact routes to difftest.
 
@@ -205,7 +205,7 @@ pub fn extract(bytes: &[u8], export_name: &str) -> Option<FuncBody> {
 // Path-condition executor: every control join ite-merges states under
 // absolute (whole-function) path conditions. Loops unroll up to `unroll_k`;
 // a live back-edge after the last unrolling becomes an `incomplete`
-// condition — `proved` then requires (pre ∧ incomplete) UNSAT, i.e. the
+// condition. `proved` then requires (pre ∧ incomplete) UNSAT, i.e. the
 // unwinding assertion (graph-refine's Restrict rule / CBMC
 // --unwinding-assertions).
 

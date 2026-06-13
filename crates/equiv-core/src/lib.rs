@@ -1,4 +1,4 @@
-//! equiv-core: the eqc contract format — AST, canonical encoding, text
+//! equiv-core: the eqc contract format. AST, canonical encoding, text
 //! surface, verdicts, receipts. No engine lives here yet; until it does, the
 //! only verdicts the system can produce are non-`proved` (AC-3 by
 //! construction).

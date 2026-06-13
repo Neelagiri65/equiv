@@ -64,13 +64,13 @@ fn buggy_add_cex_via_solver() {
 
 /// A subtly-wrong contract is REFUTED by proof search, not testing: claim
 /// add is commutative-with-sub. The cex space (b != 0) is huge so difftest
-/// would also catch it — instead claim something tight: result equals
+/// would also catch it. Instead claim something tight: result equals
 /// a+b+1 only when b==0 is false... keep it simple: a saturating-looking
 /// claim that fails only at the wrap boundary, where random testing with a
 /// bounded pre cannot reach.
 #[test]
 fn wrap_boundary_caught_by_solver_not_luck() {
-    // Claim: a + b >= a (unsigned) — false exactly when a+b wraps 2^32.
+    // Claim: a + b >= a (unsigned); false exactly when a+b wraps 2^32.
     // Pre permits the full range, so the only witnesses are huge values;
     // the solver finds them by construction.
     let contract = r#"
@@ -227,7 +227,7 @@ fn loop_proved_with_unwinding_assertion() {
 }
 
 /// Same loop, but the pre permits iterations beyond the unroll bound:
-/// must NOT claim proved — honest fallback to tested-N.
+/// must NOT claim proved; honest fallback to tested-N.
 #[test]
 fn loop_beyond_bound_falls_back_honestly() {
     let twice = r#"
@@ -325,7 +325,7 @@ fn early_return_proved() {
 }
 
 /// A reachable `unreachable` under the pre is a trap counterexample found
-/// by the SOLVER (guard at 12345 — random testing won't hit it).
+/// by the SOLVER (guard at 12345; random testing won't hit it).
 #[test]
 fn conditional_trap_found_by_solver() {
     let trapdoor = r#"
