@@ -1,0 +1,23 @@
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    name: test ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The AD-1 targets: macOS arm64, Linux x86-64, Linux arm64. The float
+        # golden-receipt test asserts a fixed receipt-id; if any host computes
+        # different bytes, AD-1 (byte-identical cross-host) is broken and this
+        # matrix goes red.
+        os: [macos-latest, ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain versions
+        run: rustc --version && cargo --version && python3 --version
+      - name: cargo test (includes the cross-host golden receipt)
+        run: cargo test --workspace

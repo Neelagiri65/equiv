@@ -157,16 +157,28 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
             let len = (rng.next() % 7) as usize;
             PyVal::ListInt((0..len).map(|_| rng.range(-20, 20)).collect())
         }
-        // Cover the corners where refactors break: +0.0, -0.0, +/-inf, NaN,
-        // smallest subnormal, plus typical finite values with a fraction.
-        ArgType::Float => PyVal::Float(match rng.next() % 8 {
-            0 => 0x0000_0000_0000_0000, // +0.0
-            1 => 0x8000_0000_0000_0000, // -0.0
-            2 => 0x7FF0_0000_0000_0000, // +inf
-            3 => 0xFFF0_0000_0000_0000, // -inf
-            4 => 0x7FF8_0000_0000_0000, // canonical quiet NaN
-            5 => 0x0000_0000_0000_0001, // smallest positive subnormal
-            6 => {
+        // Cover the corners where refactors break: signed zero, infinities,
+        // NaN, subnormals, largest finite, powers of two across the exponent
+        // range, mixed magnitudes (so reassociation/overflow differences are
+        // reachable). Typical finite values with a fraction too.
+        ArgType::Float => PyVal::Float(match rng.next() % 14 {
+            0 => 0x0000_0000_0000_0000,  // +0.0
+            1 => 0x8000_0000_0000_0000,  // -0.0
+            2 => 0x7FF0_0000_0000_0000,  // +inf
+            3 => 0xFFF0_0000_0000_0000,  // -inf
+            4 => 0x7FF8_0000_0000_0000,  // canonical quiet NaN
+            5 => 0x7FF8_0000_0000_0001,  // NaN with a different payload
+            6 => 0x0000_0000_0000_0001,  // smallest positive subnormal
+            7 => 0x000F_FFFF_FFFF_FFFF,  // largest subnormal
+            8 => 0x7FEF_FFFF_FFFF_FFFF,  // largest finite (f64::MAX)
+            9 => 0x0010_0000_0000_0000,  // smallest positive normal
+            10 => {
+                // a power of two across a wide exponent range
+                let k = rng.range(-60, 60) as i32;
+                2f64.powi(k).to_bits()
+            }
+            11 => rng.next(), // a fully random bit pattern (any class)
+            12 => {
                 // small magnitude with a fraction
                 let n = rng.range(-1000, 1000) as f64;
                 let frac = (rng.next() % 1000) as f64 / 1000.0;
@@ -298,11 +310,59 @@ fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal
         })
         .collect();
     // The evaluator decides nothing that reaches the receipt: it emits a
-    // per-case status line; Rust interprets and builds the verdict.
+    // per-case status line; Rust interprets and builds the verdict. For float
+    // reviews an AST allowlist (spec-type-admissibility.md AD-2) runs first, at
+    // source level, before any module loads: a function is admitted only if it
+    // stays inside the IEEE-754 correctly rounded closure (+ - * / and
+    // math.sqrt, comparisons, literals, a small set of exact builtins). Anything
+    // else (** , //, %, dynamic dispatch, unknown calls, foreign imports) is
+    // refused by name. This is the allowlist the spec mandates, not a denylist.
+    let admis = if spec.args.iter().any(|a| *a == ArgType::Float) {
+        format!(
+            r#"import ast as _ast, sys as _sys
+def _bad(_path):
+    try: _t = _ast.parse(open(_path, encoding='utf-8').read())
+    except Exception: return 'source could not be parsed'
+    _target = None
+    for _n in _ast.walk(_t):
+        if isinstance(_n, _ast.FunctionDef) and _n.name == {fn:?}: _target = _n; break
+    if _target is None: return None
+    _okcall = {{'float', 'int', 'abs', 'min', 'max', 'sum', 'len', 'range', 'round', 'bool'}}
+    for _node in _ast.walk(_target):
+        if isinstance(_node, _ast.BinOp) and not isinstance(_node.op, (_ast.Add, _ast.Sub, _ast.Mult, _ast.Div)):
+            return 'uses operator ' + type(_node.op).__name__ + ' outside the correctly rounded closure'
+        if isinstance(_node, _ast.AugAssign) and not isinstance(_node.op, (_ast.Add, _ast.Sub, _ast.Mult, _ast.Div)):
+            return 'uses augmented operator ' + type(_node.op).__name__ + ' outside the closure'
+        if isinstance(_node, _ast.Call):
+            _f = _node.func
+            if isinstance(_f, _ast.Name):
+                if _f.id not in _okcall: return 'calls ' + _f.id + ' outside the admissible set'
+            elif isinstance(_f, _ast.Attribute):
+                if not (isinstance(_f.value, _ast.Name) and _f.value.id == 'math' and _f.attr == 'sqrt'):
+                    _nm = (_f.value.id + '.' + _f.attr) if isinstance(_f.value, _ast.Name) else _f.attr
+                    return 'calls ' + _nm + ' outside the admissible set'
+            else:
+                return 'uses a dynamic call that cannot be analysed'
+        if isinstance(_node, _ast.Attribute):
+            if not (isinstance(_node.value, _ast.Name) and _node.value.id == 'math' and _node.attr == 'sqrt'):
+                return 'uses attribute ' + _node.attr + ' that cannot be analysed'
+    return None
+for _p in ({cand:?}, {refr:?}):
+    _w = _bad(_p)
+    if _w:
+        print('__REFUSED__\t' + _w); _sys.exit(0)
+"#,
+            fn = spec.func,
+            cand = cand,
+            refr = refr,
+        )
+    } else {
+        String::new()
+    };
     format!(
         r#"import importlib.util as u
 import struct
-def load(p, n):
+{admis}def load(p, n):
     s = u.spec_from_file_location(n, p); m = u.module_from_spec(s); s.loader.exec_module(m); return m
 def canon(x):
     # Floats: canonical bits. Any NaN -> one token (payload not observable);
@@ -324,6 +384,7 @@ for i, args in enumerate(cases):
     else:
         print(f"{{i}}\t{{'EQ' if cv == rv else 'NE'}}\t{{cv}}\t{{rv}}")
 "#,
+        admis = admis,
         cand = cand,
         refr = refr,
         fn = spec.func,
@@ -331,70 +392,16 @@ for i, args in enumerate(cases):
     )
 }
 
-/// Functions whose last bit is not guaranteed identical across maths
-/// libraries (IEEE-754 only *recommends* correct rounding for these). A float
-/// review that reaches one of these is refused. Note: this is a conservative
-/// token scan, not a full AST pass; aliased imports and `**` with a fractional
-/// exponent can still slip through (tracked as an AD-3 follow-up).
-const TRANSCENDENTALS: &[&str] = &[
-    "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh", "asinh",
-    "acosh", "atanh", "exp", "expm1", "exp2", "log", "log2", "log10", "log1p", "pow", "gamma",
-    "lgamma", "erf", "erfc", "hypot", "cbrt",
-];
-
-fn is_ident_byte(b: u8) -> bool {
-    b == b'_' || b.is_ascii_alphanumeric()
-}
-
-/// Does `hay` contain `word` as a whole identifier (not as a substring of a
-/// longer name; `exp` does not match `expand`)?
-fn contains_word(hay: &str, word: &str) -> bool {
-    let bytes = hay.as_bytes();
-    let mut from = 0;
-    while let Some(rel) = hay[from..].find(word) {
-        let start = from + rel;
-        let end = start + word.len();
-        let before_ok = start == 0 || !is_ident_byte(bytes[start - 1]);
-        let after_ok = end >= bytes.len() || !is_ident_byte(bytes[end]);
-        if before_ok && after_ok {
-            return true;
-        }
-        from = start + 1;
-    }
-    false
-}
-
-/// AD-2: if the review involves float64 and either source reaches a
-/// non-correctly-rounded function, refuse by name. Returns the refusal reason.
-/// Scoped to float signatures so integer/string reviews are unaffected.
-fn admissibility_refusal(cand_src: &[u8], ref_src: &[u8], spec: &ReviewSpec) -> Option<String> {
-    if !spec.args.iter().any(|a| *a == ArgType::Float) {
-        return None;
-    }
-    let cs = String::from_utf8_lossy(cand_src);
-    let rs = String::from_utf8_lossy(ref_src);
-    for &name in TRANSCENDENTALS {
-        if contains_word(&cs, name) || contains_word(&rs, name) {
-            return Some(format!(
-                "depends on a platform-variable transcendental ({name}); a cross-host \
-                 reproducible verdict is not possible"
-            ));
-        }
-    }
-    None
-}
-
 /// Run the oracle. `candidate_path`/`reference_path` each define `spec.func`.
+/// Float admissibility (AD-2) is enforced inside the driver as an AST allowlist
+/// at source level; an inadmissible function surfaces as a `Refused` verdict.
 pub fn review(candidate_path: &Path, reference_path: &Path, spec: &ReviewSpec) -> ReviewReceipt {
     let cand_src = std::fs::read(candidate_path).unwrap_or_default();
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
     let cases = gen_cases(spec);
 
-    let verdict = match admissibility_refusal(&cand_src, &ref_src, spec) {
-        Some(reason) => ReviewVerdict::Refused { reason },
-        None => run_python(candidate_path, reference_path, spec, &cases)
-            .unwrap_or_else(|reason| ReviewVerdict::Error { reason }),
-    };
+    let verdict = run_python(candidate_path, reference_path, spec, &cases)
+        .unwrap_or_else(|reason| ReviewVerdict::Error { reason });
 
     ReviewReceipt {
         candidate_sha256: sha256(&cand_src),
@@ -589,6 +596,13 @@ fn run_python(
         return Ok(ReviewVerdict::Error { reason: last });
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
+    // The driver's AST allowlist refuses inadmissible float functions before any
+    // case runs, signalled on its own line.
+    for line in stdout.lines() {
+        if let Some(reason) = line.strip_prefix("__REFUSED__\t") {
+            return Ok(ReviewVerdict::Refused { reason: reason.to_string() });
+        }
+    }
     for line in stdout.lines() {
         let parts: Vec<&str> = line.splitn(4, '\t').collect();
         if parts.len() < 4 {

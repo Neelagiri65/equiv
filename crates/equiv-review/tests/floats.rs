@@ -78,3 +78,54 @@ fn ad2_transcendental_is_refused() {
     }
     assert_ne!(r.verdict.exit_code(), 0, "refused must not pass the gate");
 }
+
+// AD-2: ** (pow) is not correctly rounded. A float function using it is refused,
+// never judged.
+#[test]
+fn pow_operator_is_refused() {
+    let p = write_py("pow", "def f(x):\n    return x ** 0.5\n");
+    let s = spec("f", vec![ArgType::Float]);
+    match review(&p, &p, &s).verdict {
+        ReviewVerdict::Refused { ref reason } => assert!(reason.contains("Pow"), "reason: {reason}"),
+        other => panic!("expected Refused, got {other:?}"),
+    }
+}
+
+// AD-3: dynamic dispatch (getattr) cannot be analysed. It is refused, not
+// silently judged. This is the bypass the earlier denylist missed.
+#[test]
+fn getattr_dynamic_dispatch_is_refused() {
+    let p = write_py("ga", "import math\ndef g(x):\n    return getattr(math, 'si' + 'n')(x)\n");
+    let s = spec("g", vec![ArgType::Float]);
+    assert!(matches!(review(&p, &p, &s).verdict, ReviewVerdict::Refused { .. }), "got {:?}", review(&p, &p, &s).verdict);
+}
+
+// Floor division is not in the closure. It is refused.
+#[test]
+fn floor_div_is_refused() {
+    let p = write_py("fd", "def f(x):\n    return x // 2.0\n");
+    let s = spec("f", vec![ArgType::Float]);
+    assert!(matches!(review(&p, &p, &s).verdict, ReviewVerdict::Refused { .. }));
+}
+
+// math.sqrt IS in the IEEE-754 required closure. A sqrt function is admitted
+// (not refused) and judged normally.
+#[test]
+fn sqrt_is_admissible() {
+    let p = write_py("sq", "import math\ndef r(x):\n    return math.sqrt(abs(x))\n");
+    let s = spec("r", vec![ArgType::Float]);
+    assert!(matches!(review(&p, &p, &s).verdict, ReviewVerdict::Equivalent { .. }), "sqrt must be admitted");
+}
+
+// Regression guard for the receipt bytes (the cross-host moat). A fixed
+// admissible float review must always produce this exact receipt-id. True
+// cross-host identity is proven by the CI matrix; this pins the encoding so a
+// change to canonicalisation or generation is caught.
+#[test]
+fn golden_receipt_id_is_stable() {
+    let cand = write_py("gold_c", "def s(x):\n    return x * 2.0 + 1.0\n");
+    let refr = write_py("gold_r", "def s(x):\n    return x + x + 1.0\n");
+    let s = spec("s", vec![ArgType::Float]);
+    let id: String = review(&cand, &refr, &s).sha256().iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(id, "7a7987b5c9724f6bc1f09af881cbe09f48b650cb95bcd20cacfc054b5f3385b0", "receipt-id drifted");
+}
