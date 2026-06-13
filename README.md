@@ -68,8 +68,8 @@ could not check.
 `equiv` checks behavioural equivalence of a function against a reference, on
 deterministically generated inputs. This is bounded random testing, not
 exhaustive verification: a pass means no divergence was found on the generated
-inputs, so it can still miss an edge case that only shows up for an input that
-was not generated. It does not check intent, architecture, or security. It
+inputs. It can still miss an edge case that only shows up for an input that
+was not generated. It does not check intent, architecture, security. It
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,
@@ -79,7 +79,7 @@ mean the change is correct. Supported input types in this version are `int`,
 
 Input generation and the verdict are computed in Rust from a fixed seed. The
 language runtime is used only as an evaluator and never decides anything that
-reaches the receipt, so receipts are identical across hosts. Receipts can be
+reaches the receipt. Receipts are identical across hosts. Receipts can be
 signed with a local ed25519 key or with keyless Sigstore (OIDC). The keyless
 path binds the signature to a verifiable CI identity rather than a stored
 secret. The tool is a single static binary with no runtime dependencies,
