@@ -493,6 +493,166 @@ pub fn run_pr(checks: &[PrCheck]) -> (Vec<ReviewItem>, i32) {
     (items, code)
 }
 
+// ---------- auto-detect changed functions (close the manifest bypass) ----------
+
+/// What auto-detection decided about one changed function.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DetectedStatus {
+    /// Present in base and head, body changed, every parameter has a supported
+    /// hint. The signature is a simple positional match. Ready to check.
+    Checkable { args: Vec<ArgType> },
+    /// Changed but cannot be checked by equivalence. Surfaced, never dropped, so
+    /// a green result never hides it.
+    NotChecked { reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Detected {
+    pub name: String,
+    pub status: DetectedStatus,
+}
+
+const DETECTOR_PY: &str = r#"import ast, sys
+def ann(a):
+    if a is None: return None
+    if isinstance(a, ast.Name):
+        return {'int':'int','str':'str','float':'float','dict':'dict','Dict':'dict'}.get(a.id)
+    if isinstance(a, ast.Subscript):
+        base = a.value.id if isinstance(a.value, ast.Name) else None
+        if base in ('list','List') and isinstance(a.slice, ast.Name) and a.slice.id == 'int':
+            return 'list[int]'
+        if base in ('dict','Dict'):
+            return 'dict'
+    return None
+def simple(fn):
+    a = fn.args
+    return not (a.vararg or a.kwarg or a.kwonlyargs or a.posonlyargs or a.defaults or a.kw_defaults)
+def collect(body, prefix, in_class, in_func, out):
+    # Every function at every nesting level, keyed by qualified name. Nothing
+    # (async, methods, nested) is invisible to detection.
+    for n in body:
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            q = prefix + n.name
+            if isinstance(n, ast.AsyncFunctionDef): kind = 'async'
+            elif in_class: kind = 'method'
+            elif in_func: kind = 'nested'
+            else: kind = 'func'
+            out[q] = (n, kind)
+            collect(n.body, q + '.', False, True, out)
+        elif isinstance(n, ast.ClassDef):
+            collect(n.body, prefix + n.name + '.', True, in_func, out)
+def fns(path):
+    try: tree = ast.parse(open(path, encoding='utf-8').read())
+    except Exception: return None
+    out = {}
+    collect(tree.body, '', False, False, out)
+    return out
+b = fns(sys.argv[1])
+h = fns(sys.argv[2])
+if h is None:
+    print('ERROR\t\thead source could not be parsed'); sys.exit(0)
+if b is None:
+    for q in sorted(h):
+        print('NOTCHECKED\t' + q + '\tbase version could not be parsed; cannot diff')
+    sys.exit(0)
+for name in sorted(set(b) | set(h)):
+    if name in h and name not in b:
+        print('NOTCHECKED\t' + name + '\tnew function, no base version to compare against'); continue
+    if name in b and name not in h:
+        print('NOTCHECKED\t' + name + '\tremoved in this change'); continue
+    bnode, _bk = b[name]; hnode, hkind = h[name]
+    if ast.dump(bnode) == ast.dump(hnode): continue
+    if hkind == 'async':
+        print('NOTCHECKED\t' + name + '\tasync function, not checked in this version'); continue
+    if hkind == 'method':
+        print('NOTCHECKED\t' + name + '\tmethod, not checked (module-level functions only)'); continue
+    if hkind == 'nested':
+        print('NOTCHECKED\t' + name + '\tnested function, not checked'); continue
+    if len(bnode.args.args) != len(hnode.args.args) or not simple(hnode) or not simple(bnode):
+        print('NOTCHECKED\t' + name + '\tsignature is not a simple positional match'); continue
+    sig, ok = [], True
+    for a in hnode.args.args:
+        t = ann(a.annotation)
+        if t is None: ok = False; break
+        sig.append(t)
+    if ok:
+        print('CHECKABLE\t' + name + '\t' + ','.join(sig))
+    else:
+        print('NOTCHECKED\t' + name + '\tno supported type hint on every parameter')
+"#;
+
+/// Detect which module-level functions changed between `base_src` and
+/// `head_src` and classify each (close the manifest bypass, issue #1). The
+/// invariant: a changed function is never silently dropped. Unchanged functions
+/// are simply absent.
+pub fn detect_changed_functions(base_src: &str, head_src: &str) -> Result<Vec<Detected>, String> {
+    let tag = hex(&sha256(format!("{base_src}\u{0}{head_src}").as_bytes()))[..16].to_string();
+    let dir = std::env::temp_dir();
+    let bpath = dir.join(format!("equiv_detb_{tag}.py"));
+    let hpath = dir.join(format!("equiv_deth_{tag}.py"));
+    let spath = dir.join(format!("equiv_dets_{tag}.py"));
+    std::fs::write(&bpath, base_src).map_err(|e| e.to_string())?;
+    std::fs::write(&hpath, head_src).map_err(|e| e.to_string())?;
+    std::fs::write(&spath, DETECTOR_PY).map_err(|e| e.to_string())?;
+    let out = Command::new("python3")
+        .arg(&spath)
+        .arg(&bpath)
+        .arg(&hpath)
+        .env("PYTHONDONTWRITEBYTECODE", "1")
+        .output()
+        .map_err(|e| format!("python3 not runnable: {e}"))?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("detector error").to_string());
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut detected = Vec::new();
+    for line in stdout.lines() {
+        let p: Vec<&str> = line.splitn(3, '\t').collect();
+        if p.len() < 3 {
+            continue;
+        }
+        let (kind, name, rest) = (p[0], p[1].to_string(), p[2]);
+        match kind {
+            "ERROR" => return Err(rest.to_string()),
+            "CHECKABLE" => {
+                let args: Vec<ArgType> = rest
+                    .split(',')
+                    .filter(|s| !s.trim().is_empty())
+                    .filter_map(ArgType::parse)
+                    .collect();
+                detected.push(Detected { name, status: DetectedStatus::Checkable { args } });
+            }
+            "NOTCHECKED" => {
+                detected.push(Detected { name, status: DetectedStatus::NotChecked { reason: rest.to_string() } });
+            }
+            _ => {}
+        }
+    }
+    Ok(detected)
+}
+
+/// Render the PR review and, beneath it, the changed-but-not-checked list. This
+/// is what makes a green result honest: anything auto-detection could not check
+/// is shown by name, never silently absent.
+pub fn render_markdown_with_unchecked(
+    items: &[ReviewItem],
+    signer: Option<&str>,
+    unchecked: &[(String, String)],
+) -> String {
+    let mut s = render_markdown(items, signer);
+    if !unchecked.is_empty() {
+        s.push_str("\n## changed, not checked\n\n");
+        s.push_str(
+            "These functions changed but equiv did not check them. A green result \
+             above does not cover them.\n\n| function | reason |\n|---|---|\n",
+        );
+        for (name, reason) in unchecked {
+            s.push_str(&format!("| `{}` | {} |\n", name, reason.replace('`', "")));
+        }
+    }
+    s
+}
+
 fn short(id: &[u8; 32]) -> String {
     hex(id)[..12].to_string()
 }

@@ -5,11 +5,14 @@ set -euo pipefail
 
 BIN="${EQUIV_BIN:-equiv}"
 MANIFEST="${EQUIV_MANIFEST:-.equiv-review}"
+AUTO="${EQUIV_AUTO:-false}"
 BASE="${EQUIV_BASE_INPUT:-}"
 FAIL="${EQUIV_FAIL:-true}"
 
-if [[ ! -f "$MANIFEST" ]]; then
-  echo "equiv-review: no manifest at '$MANIFEST'; skipping."
+# In manifest mode, a missing manifest means there is nothing to review. In auto
+# mode there is no manifest: changed functions come from the diff.
+if [[ "$AUTO" != "true" && ! -f "$MANIFEST" ]]; then
+  echo "equiv-review: no manifest at '$MANIFEST' and auto is off; skipping."
   exit 0
 fi
 
@@ -25,9 +28,15 @@ git fetch --no-tags --depth=1 origin "${GITHUB_BASE_REF:-main}" 2>/dev/null || t
 # never passed on the command line or echoed here. When unset (e.g. fork PRs,
 # where GitHub withholds secrets), receipts are left unsigned. This is not an error.
 set +e
-COMMENT="$("$BIN" review-pr "$MANIFEST" --base "$BASE" \
-  --receipts-out equiv-receipts.tsv \
-  --attest-out equiv-attestations)"
+if [[ "$AUTO" == "true" ]]; then
+  COMMENT="$("$BIN" review-pr --auto --base "$BASE" \
+    --receipts-out equiv-receipts.tsv \
+    --attest-out equiv-attestations)"
+else
+  COMMENT="$("$BIN" review-pr "$MANIFEST" --base "$BASE" \
+    --receipts-out equiv-receipts.tsv \
+    --attest-out equiv-attestations)"
+fi
 CODE=$?
 set -e
 

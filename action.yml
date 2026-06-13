@@ -4,8 +4,15 @@ branding:
   icon: "check-circle"
   color: "purple"
 inputs:
+  auto:
+    description: >
+      Auto-detect changed functions from the PR diff instead of a manifest.
+      Recommended: nothing changed can be silently left unchecked. Functions
+      without supported type hints are reported as "changed, not checked".
+    required: false
+    default: "false"
   manifest:
-    description: "Path to the equiv review manifest (lines: `file : fn : sig`)."
+    description: "Path to the equiv review manifest (lines: `file : fn : sig`). Ignored when auto is true."
     required: false
     default: ".equiv-review"
   base:
@@ -66,6 +73,7 @@ runs:
       env:
         # EQUIV_BIN is set by the resolve step via $GITHUB_ENV.
         EQUIV_MANIFEST: ${{ inputs.manifest }}
+        EQUIV_AUTO: ${{ inputs.auto }}
         EQUIV_BASE_INPUT: ${{ inputs.base }}
         EQUIV_FAIL: ${{ inputs.fail-on-divergence }}
         # Secret seed, masked by Actions; the entrypoint never echoes it.

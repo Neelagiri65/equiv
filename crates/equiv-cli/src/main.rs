@@ -56,8 +56,10 @@ fn run() -> Result<u8, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("review-pr") => {
-            use equiv_review::{render_markdown, run_pr, ArgType, PrCheck, ReviewSpec};
-            let manifest = args.get(1).ok_or("review-pr: missing manifest path")?;
+            use equiv_review::{
+                detect_changed_functions, render_markdown_with_unchecked, run_pr, ArgType,
+                DetectedStatus, PrCheck, ReviewSpec,
+            };
             let base = args
                 .iter()
                 .position(|a| a == "--base")
@@ -65,58 +67,98 @@ fn run() -> Result<u8, String> {
                 .or_else(|| std::env::var("EQUIV_BASE_REF").ok())
                 .or_else(|| std::env::var("GITHUB_BASE_REF").ok())
                 .unwrap_or_else(|| "origin/main".to_string());
+            let auto = args.iter().any(|a| a == "--auto");
 
-            let text = std::fs::read_to_string(manifest).map_err(|e| format!("{manifest}: {e}"))?;
-            let mut checks = Vec::new();
-            for (lineno, line) in text.lines().enumerate() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                // file : function : sig[ : n[ : seed]]
-                let parts: Vec<&str> = line.split(':').map(|s| s.trim()).collect();
-                if parts.len() < 3 {
-                    return Err(format!("{manifest}:{}: expected `file : fn : sig`", lineno + 1));
-                }
-                let (file, func, sig) = (parts[0], parts[1], parts[2]);
-                let n: u32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(300);
-                let seed: u64 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(1);
-                let arg_types = sig
-                    .split(',')
-                    .filter(|s| !s.trim().is_empty())
-                    .map(|s| ArgType::parse(s).ok_or_else(|| format!("bad arg type `{s}`")))
-                    .collect::<Result<Vec<_>, _>>()?;
+            let mut checks: Vec<PrCheck> = Vec::new();
+            // Functions that changed but could not be checked. Surfaced in the
+            // comment so a green result never hides them (closes issue #1).
+            let mut unchecked: Vec<(String, String)> = Vec::new();
 
-                // head = working tree; base = `git show <base>:<file>`.
-                let head_path = std::path::PathBuf::from(file);
-                let base_src = std::process::Command::new("git")
-                    .args(["show", &format!("{base}:{file}")])
-                    .output();
-                let slug: String = file
-                    .chars()
-                    .map(|c| if c.is_alphanumeric() { c } else { '_' })
-                    .collect();
-                let base_path = std::env::temp_dir().join(format!("equiv_base_{func}_{slug}.py"));
-                match base_src {
-                    Ok(o) if o.status.success() => {
-                        std::fs::write(&base_path, &o.stdout).map_err(|e| e.to_string())?;
-                    }
-                    _ => {
-                        // No base version (new file). Write empty so the
-                        // oracle reports an honest error rather than crashing.
-                        std::fs::write(&base_path, b"").map_err(|e| e.to_string())?;
+            let tmp_base = |name: &str, file: &str, src: &[u8]| -> Result<std::path::PathBuf, String> {
+                let slug: String = file.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
+                let p = std::env::temp_dir().join(format!("equiv_base_{name}_{slug}.py"));
+                std::fs::write(&p, src).map_err(|e| e.to_string())?;
+                Ok(p)
+            };
+
+            if auto {
+                // Detect changed functions from the diff. No manifest needed, so
+                // a refactored function can no longer be silently left out.
+                let listed = std::process::Command::new("git")
+                    .args(["-c", "core.quotepath=false", "diff", "--name-only", &base, "--", "*.py"])
+                    .output()
+                    .map_err(|e| format!("git diff: {e}"))?;
+                if !listed.status.success() {
+                    return Err("git diff failed (need a git repo and a valid base ref)".into());
+                }
+                for file in String::from_utf8_lossy(&listed.stdout)
+                    .lines()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                {
+                    let head_src = std::fs::read_to_string(file).unwrap_or_default();
+                    let base_out = std::process::Command::new("git")
+                        .args(["-c", "core.quotepath=false", "show", &format!("{base}:{file}")])
+                        .output();
+                    let base_src = match base_out {
+                        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
+                        _ => String::new(),
+                    };
+                    for d in detect_changed_functions(&base_src, &head_src)? {
+                        match d.status {
+                            DetectedStatus::Checkable { args } => {
+                                let base_path = tmp_base(&d.name, file, base_src.as_bytes())?;
+                                checks.push(PrCheck {
+                                    name: d.name.clone(),
+                                    head_path: std::path::PathBuf::from(file),
+                                    base_path,
+                                    spec: ReviewSpec { func: d.name, args, n: 300, seed: 1 },
+                                });
+                            }
+                            DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
+                        }
                     }
                 }
-                checks.push(PrCheck {
-                    name: func.to_string(),
-                    head_path,
-                    base_path,
-                    spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed },
-                });
+            } else {
+                let manifest = args.get(1).ok_or("review-pr: missing manifest path (or pass --auto)")?;
+                let text = std::fs::read_to_string(manifest).map_err(|e| format!("{manifest}: {e}"))?;
+                for (lineno, line) in text.lines().enumerate() {
+                    let line = line.trim();
+                    if line.is_empty() || line.starts_with('#') {
+                        continue;
+                    }
+                    // file : function : sig[ : n[ : seed]]
+                    let parts: Vec<&str> = line.split(':').map(|s| s.trim()).collect();
+                    if parts.len() < 3 {
+                        return Err(format!("{manifest}:{}: expected `file : fn : sig`", lineno + 1));
+                    }
+                    let (file, func, sig) = (parts[0], parts[1], parts[2]);
+                    let n: u32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(300);
+                    let seed: u64 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(1);
+                    let arg_types = sig
+                        .split(',')
+                        .filter(|s| !s.trim().is_empty())
+                        .map(|s| ArgType::parse(s).ok_or_else(|| format!("bad arg type `{s}`")))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let base_out = std::process::Command::new("git")
+                        .args(["-c", "core.quotepath=false", "show", &format!("{base}:{file}")])
+                        .output();
+                    let base_bytes = match base_out {
+                        Ok(o) if o.status.success() => o.stdout,
+                        _ => Vec::new(),
+                    };
+                    let base_path = tmp_base(func, file, &base_bytes)?;
+                    checks.push(PrCheck {
+                        name: func.to_string(),
+                        head_path: std::path::PathBuf::from(file),
+                        base_path,
+                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed },
+                    });
+                }
             }
 
-            if checks.is_empty() {
-                eprintln!("review-pr: no checks in manifest");
+            if checks.is_empty() && unchecked.is_empty() {
+                eprintln!("review-pr: nothing changed to review");
                 return Ok(0);
             }
             let (items, code) = run_pr(&checks);
@@ -167,7 +209,7 @@ fn run() -> Result<u8, String> {
                 }
             }
 
-            print!("{}", render_markdown(&items, signer_hex.as_deref()));
+            print!("{}", render_markdown_with_unchecked(&items, signer_hex.as_deref(), &unchecked));
             Ok(code as u8)
         }
         Some("keygen") => {
