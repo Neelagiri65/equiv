@@ -1,0 +1,16 @@
+[package]
+name = "equiv-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "equiv checking engine: WASM frontend, differential tester (BMC to come)"
+
+[dependencies]
+equiv-core = { path = "../equiv-core" }
+wasmparser = "0.224"
+wasmi = "0.31"
+sha2 = "0.10"
+varisat = "0.2"
+
+[dev-dependencies]
+wat = "1"

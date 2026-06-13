@@ -1,0 +1,15 @@
+.claude/settings.local.json
+.DS_Store
+*.log
+.env
+.env.local
+experiments/envelope/rust/target/
+__pycache__/
+equiv/target/
+
+# Build artifacts (generic) + dist/review outputs (generated, never committed)
+**/target/
+dist-manifest.json
+plan-dist-manifest.json
+equiv-receipts.tsv
+equiv-attestations/

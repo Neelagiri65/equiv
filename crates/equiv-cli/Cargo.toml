@@ -1,0 +1,16 @@
+[package]
+name = "equiv-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "equiv: deterministic checker for AI-emitted WASM artifacts"
+
+[[bin]]
+name = "equiv"
+path = "src/main.rs"
+
+[dependencies]
+equiv-core = { path = "../equiv-core" }
+equiv-engine = { path = "../equiv-engine" }
+equiv-review = { path = "../equiv-review" }

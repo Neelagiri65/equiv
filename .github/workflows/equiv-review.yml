@@ -1,0 +1,23 @@
+# Example: run the equiv behaviour-preserving review on every PR.
+name: equiv review
+on:
+  pull_request:
+permissions:
+  contents: read
+  pull-requests: write   # to post the sticky comment
+  id-token: write        # keyless Sigstore signing (OIDC); harmless if unused
+jobs:
+  equiv-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need base history to diff against
+      - uses: Neelagiri65/equiv@main
+        with:
+          manifest: .equiv-review
+          fail-on-divergence: "true"
+          # Keyless (recommended): no secret; signs with the run's OIDC identity.
+          keyless: "true"
+          # OR v0 self-attestation with a long-lived key (empty on fork PRs):
+          # signing-key: ${{ secrets.EQUIV_SIGNING_KEY }}

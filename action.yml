@@ -1,0 +1,84 @@
+name: "equiv review"
+description: "Deterministic behaviour-preserving review of changed functions vs the base branch, posted as a sticky PR comment, with optional ed25519-signed receipts."
+branding:
+  icon: "check-circle"
+  color: "purple"
+inputs:
+  manifest:
+    description: "Path to the equiv review manifest (lines: `file : fn : sig`)."
+    required: false
+    default: ".equiv-review"
+  base:
+    description: "Base git ref to diff against."
+    required: false
+    default: ""
+  fail-on-divergence:
+    description: "Fail the check when any function changed behaviour."
+    required: false
+    default: "true"
+  signing-key:
+    description: >
+      Optional ed25519 seed (64 hex chars) used to sign receipts (v0
+      self-attestation). Pass it from a repository secret. Empty on fork
+      PRs by design; receipts are then left unsigned. Never use
+      pull_request_target to force it. See docs/signing-model.md.
+    required: false
+    default: ""
+  keyless:
+    description: >
+      When "true", keyless-sign each in-toto attestation with cosign (Sigstore):
+      OIDC workload identity -> Fulcio short-lived cert -> Rekor transparency
+      log. No long-lived secret. Requires `permissions: id-token: write` in the
+      calling workflow. This is the recommended trust model (DR-3).
+    required: false
+    default: "false"
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve equiv binary (prebuilt release, else build from source)
+      shell: bash
+      env:
+        # Authenticated download. Works for private repos (plain curl 404s on
+        # private release assets). Falls back to building if no release / no access.
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        TARGET="x86_64-unknown-linux-gnu"   # GitHub Linux runners
+        REPO="${{ github.action_repository || 'Neelagiri65/equiv' }}"
+        ASSET="equiv-cli-${TARGET}.tar.xz"
+        TMP="$(mktemp -d)"
+        if gh release download --repo "$REPO" --pattern "$ASSET" --dir "$TMP" 2>/dev/null; then
+          tar -xJf "$TMP/$ASSET" -C "$TMP"
+          BIN="$(find "$TMP" -type f -name equiv | head -1)"
+          chmod +x "$BIN"
+          echo "EQUIV_BIN=$BIN" >> "$GITHUB_ENV"
+          echo "equiv: using prebuilt binary from $REPO latest release"
+        else
+          echo "equiv: no prebuilt release available; building from source (slower)."
+          ( cd "${{ github.action_path }}" && cargo build --release --bin equiv )
+          echo "EQUIV_BIN=${{ github.action_path }}/target/release/equiv" >> "$GITHUB_ENV"
+        fi
+    - name: Install cosign (keyless signing)
+      if: ${{ inputs.keyless == 'true' }}
+      uses: sigstore/cosign-installer@v3
+    - name: Run review + post comment
+      shell: bash
+      env:
+        # EQUIV_BIN is set by the resolve step via $GITHUB_ENV.
+        EQUIV_MANIFEST: ${{ inputs.manifest }}
+        EQUIV_BASE_INPUT: ${{ inputs.base }}
+        EQUIV_FAIL: ${{ inputs.fail-on-divergence }}
+        # Secret seed, masked by Actions; the entrypoint never echoes it.
+        EQUIV_SIGNING_KEY: ${{ inputs.signing-key }}
+        EQUIV_KEYLESS: ${{ inputs.keyless }}
+        GH_TOKEN: ${{ github.token }}
+      run: bash ${{ github.action_path }}/scripts/equiv-review-entrypoint.sh
+    - name: Upload receipts + attestations
+      if: ${{ hashFiles('equiv-receipts.tsv', 'equiv-attestations/**') != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: equiv-receipts
+        path: |
+          equiv-receipts.tsv
+          equiv-attestations/
+        if-no-files-found: ignore
