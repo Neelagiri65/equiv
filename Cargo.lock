@@ -160,7 +160,7 @@ dependencies = [
 
 [[package]]
 name = "equiv-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "equiv-core",
  "equiv-engine",
@@ -169,7 +169,7 @@ dependencies = [
 
 [[package]]
 name = "equiv-core"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "ed25519-dalek",
  "getrandom",
@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "equiv-engine"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "equiv-core",
  "sha2",
@@ -191,7 +191,7 @@ dependencies = [
 
 [[package]]
 name = "equiv-review"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "equiv-core",
  "sha2",
