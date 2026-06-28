@@ -219,11 +219,249 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
     }
 }
 
-fn gen_cases(spec: &ReviewSpec) -> Vec<Vec<PyVal>> {
+// Magnitude envelope for synthesised integer inputs. A reference may be O(n),
+// so inputs must not be astronomically large (would hang or OOM). The same
+// bound the random generator respects, applied to boundary and literal inputs.
+const INT_ENVELOPE: i64 = 1_000_000;
+
+// A neutral, non-degenerate value per type: held constant for the other
+// arguments while one argument is varied across its corners (one-at-a-time
+// enumeration keeps the case count linear, not a cartesian explosion).
+fn default_val(ty: ArgType) -> PyVal {
+    match ty {
+        ArgType::Int => PyVal::Int(0),
+        ArgType::Str => PyVal::Str(String::new()),
+        ArgType::ListInt => PyVal::ListInt(Vec::new()),
+        ArgType::Float => PyVal::Float(0x3FF0_0000_0000_0000), // 1.0
+        ArgType::Dict => PyVal::Dict(Vec::new()),
+    }
+}
+
+// Deterministic corner inputs the seeded random generator reaches rarely or
+// never: the exact shapes where refactors break. All stay inside the O(n)-safe
+// envelope so a linear reference cannot hang on them.
+fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
+    match ty {
+        // Off-by-one and sign corners (0, +/-1, +/-2) within the envelope.
+        ArgType::Int => [0, 1, -1, 2, -2].into_iter().map(PyVal::Int).collect(),
+        // Shapes the random generator (a-z, len<=8) cannot reach: empty,
+        // uppercase, digit, whitespace, and a string longer than 8.
+        ArgType::Str => ["", "a", "A", "0", " ", "abcdefghij"]
+            .into_iter()
+            .map(|s| PyVal::Str(s.to_string()))
+            .collect(),
+        // Structural corners the random generator (len<=6, vals -20..20) misses:
+        // empty, singleton, all-equal, sorted, reverse-sorted, length>6.
+        ArgType::ListInt => [
+            vec![],
+            vec![0],
+            vec![1, 1, 1],
+            vec![1, 2, 3],
+            vec![3, 2, 1],
+            (0..10).collect::<Vec<i64>>(),
+        ]
+        .into_iter()
+        .map(PyVal::ListInt)
+        .collect(),
+        // Guarantee the corner bit patterns are ALWAYS tested (the random
+        // generator only reaches them probabilistically per run).
+        ArgType::Float => [
+            0x0000_0000_0000_0000u64, // +0.0
+            0x8000_0000_0000_0000,    // -0.0
+            0x3FF0_0000_0000_0000,    // 1.0
+            0xBFF0_0000_0000_0000,    // -1.0
+            0x7FF0_0000_0000_0000,    // +inf
+            0xFFF0_0000_0000_0000,    // -inf
+            0x7FF8_0000_0000_0000,    // quiet NaN
+            0x0000_0000_0000_0001,    // smallest subnormal
+            0x7FEF_FFFF_FFFF_FFFF,    // largest finite
+        ]
+        .into_iter()
+        .map(PyVal::Float)
+        .collect(),
+        ArgType::Dict => vec![
+            PyVal::Dict(vec![]),
+            PyVal::Dict(vec![("a".into(), 0)]),
+            PyVal::Dict(vec![("a".into(), 1), ("b".into(), 2)]),
+        ],
+    }
+}
+
+// ---- conservative, deterministic literal scan over the source ----
+//
+// NOT a full parse: a token scan over the combined candidate+reference text.
+// It is a SUPERSET (it may pick up a literal from a comment or an unrelated
+// line), which only ever adds harmless extra inputs, never removes coverage.
+// The discriminating input usually sits on a branch condition, and the branch
+// constants live in the source, so we aim inputs at and around them.
+
+fn scan_int_literals(src: &str) -> Vec<i64> {
+    let b = src.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_digit() {
+            let prev = if i > 0 { b[i - 1] } else { b' ' };
+            let start = i;
+            while i < b.len() && b[i].is_ascii_digit() {
+                i += 1;
+            }
+            let next = if i < b.len() { b[i] } else { b' ' };
+            // Skip identifiers (x1) and floats (1.5): part of a name or a dot.
+            let prev_bad = prev == b'_' || prev.is_ascii_alphabetic() || prev == b'.';
+            let next_bad = next == b'.' || next == b'_' || next.is_ascii_alphabetic();
+            if !prev_bad && !next_bad {
+                if let Ok(n) = src[start..i].parse::<i64>() {
+                    if n.abs() <= INT_ENVELOPE {
+                        out.push(n);
+                    }
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+fn scan_float_literals(src: &str) -> Vec<f64> {
+    let b = src.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i].is_ascii_digit() {
+            let start = i;
+            while i < b.len() && b[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i < b.len() && b[i] == b'.' {
+                i += 1;
+                let frac = i;
+                while i < b.len() && b[i].is_ascii_digit() {
+                    i += 1;
+                }
+                if i > frac {
+                    if let Ok(f) = src[start..i].parse::<f64>() {
+                        if f.is_finite() && f.abs() <= INT_ENVELOPE as f64 {
+                            out.push(f);
+                        }
+                    }
+                }
+            }
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+fn scan_str_literals(src: &str) -> Vec<String> {
+    let b = src.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        let q = b[i];
+        if q == b'\'' || q == b'"' {
+            let mut j = i + 1;
+            let mut s = String::new();
+            let mut closed = false;
+            while j < b.len() {
+                if b[j] == b'\\' && j + 1 < b.len() {
+                    s.push(b[j + 1] as char);
+                    j += 2;
+                    continue;
+                }
+                if b[j] == q {
+                    closed = true;
+                    j += 1;
+                    break;
+                }
+                if b[j].is_ascii() {
+                    s.push(b[j] as char);
+                }
+                j += 1;
+            }
+            if closed && s.len() <= 64 {
+                out.push(s);
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
+// Inputs derived from the source's own literals, per argument type. For an int
+// literal L we add L-1, L, L+1 so the exact branch value and its neighbours are
+// tested. Strings and floats are added by value. (List/dict literals are not
+// derived here; their boundary cases cover the structural corners.)
+fn literal_inputs(src: &str, ty: ArgType) -> Vec<PyVal> {
+    match ty {
+        ArgType::Int => {
+            let mut out = Vec::new();
+            for n in scan_int_literals(src) {
+                for d in [-1i64, 0, 1] {
+                    if let Some(v) = n.checked_add(d) {
+                        if v.abs() <= INT_ENVELOPE {
+                            out.push(PyVal::Int(v));
+                        }
+                    }
+                }
+            }
+            out
+        }
+        ArgType::Str => scan_str_literals(src).into_iter().map(PyVal::Str).collect(),
+        ArgType::Float => scan_float_literals(src)
+            .into_iter()
+            .map(|f| PyVal::Float(f.to_bits()))
+            .collect(),
+        ArgType::ListInt | ArgType::Dict => Vec::new(),
+    }
+}
+
+// Deterministic, ordered case list: the all-default base first (simplest
+// counterexample reported first), then one-at-a-time boundary + source-literal
+// inputs, then the original seeded random cases. Deduplicated by Python repr so
+// overlapping corners are not run twice. `sources` are the candidate and
+// reference texts, scanned for branch literals. Same inputs => same cases on
+// every host (AC-1); changing this generator is a versioned change (the
+// receipt carries checker_version).
+fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
+    let mut cases: Vec<Vec<PyVal>> = Vec::new();
+    let mut seen: std::collections::BTreeSet<Vec<String>> = std::collections::BTreeSet::new();
+    fn key(c: &[PyVal]) -> Vec<String> {
+        c.iter().map(|v| v.to_py()).collect()
+    }
+
+    if !spec.args.is_empty() {
+        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+        if seen.insert(key(&base)) {
+            cases.push(base.clone());
+        }
+        for (i, ty) in spec.args.iter().enumerate() {
+            let mut vals = boundary_cases(*ty);
+            for s in sources {
+                vals.extend(literal_inputs(s, *ty));
+            }
+            for v in vals {
+                let mut c = base.clone();
+                c[i] = v;
+                if seen.insert(key(&c)) {
+                    cases.push(c);
+                }
+            }
+        }
+    }
+
     let mut rng = Rng(spec.seed | 1);
-    (0..spec.n)
-        .map(|_| spec.args.iter().map(|t| gen_arg(&mut rng, *t)).collect())
-        .collect()
+    for _ in 0..spec.n {
+        let c: Vec<PyVal> = spec.args.iter().map(|t| gen_arg(&mut rng, *t)).collect();
+        if seen.insert(key(&c)) {
+            cases.push(c);
+        }
+    }
+    cases
 }
 
 // ---------- verdict + receipt ----------
@@ -437,7 +675,9 @@ for i, args in enumerate(cases):
 pub fn review(candidate_path: &Path, reference_path: &Path, spec: &ReviewSpec) -> ReviewReceipt {
     let cand_src = std::fs::read(candidate_path).unwrap_or_default();
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
-    let cases = gen_cases(spec);
+    let cand_text = String::from_utf8_lossy(&cand_src);
+    let ref_text = String::from_utf8_lossy(&ref_src);
+    let cases = gen_cases(spec, &[&cand_text, &ref_text]);
 
     let verdict = run_python(candidate_path, reference_path, spec, &cases)
         .unwrap_or_else(|reason| ReviewVerdict::Error { reason });
@@ -817,5 +1057,7 @@ fn run_python(
             });
         }
     }
-    Ok(ReviewVerdict::Equivalent { n: spec.n })
+    // n is the number of cases actually checked (boundary + literal + random,
+    // deduplicated), not just the requested random count: an honest tally.
+    Ok(ReviewVerdict::Equivalent { n: cases.len() as u32 })
 }

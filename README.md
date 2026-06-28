@@ -66,10 +66,16 @@ could not check.
 ## Scope
 
 `equiv` checks behavioural equivalence of a function against a reference, on
-deterministically generated inputs. This is bounded random testing, not
-exhaustive verification: a pass means no divergence was found on the generated
-inputs. It can still miss an edge case that only shows up for an input that
-was not generated. It does not check intent, architecture, security. It
+deterministically generated inputs. Generation has three deterministic layers:
+boundary corners per type (empty, sign and off-by-one values, uppercase, strings
+longer than 8, lists longer than 6, the float special values), inputs read from
+the source's own branch literals (a constant `== 777` in the code is tested
+directly, with its neighbours), then seeded random cases. This is still bounded
+testing, not exhaustive verification: a pass means no divergence was found on the
+generated inputs. Two limits are deliberate. A divergence that only appears for
+an integer over the magnitude envelope (|n| over 1,000,000, kept so a linear
+reference cannot hang) is not reached. Arguments are varied one at a time, which
+means a divergence that needs two specific arguments at once may be missed. It does not check intent, architecture, security. It
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,
