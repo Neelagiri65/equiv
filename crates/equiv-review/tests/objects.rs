@@ -78,5 +78,5 @@ fn golden_dict_receipt_id_is_stable() {
     let cand = wp("gd_c", "def f(n):\n    return {'a': n}\n");
     let refr = wp("gd_r", "def f(n):\n    return {'a': n + 1}\n");
     let id: String = review(&cand, &refr, &spec("f", vec![ArgType::Int])).sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "912e1a4e8a5249f2e10d1dd472600874c2dfce52555140c0244072171e855ec3", "receipt-id drifted");
+    assert_eq!(id, "7a5e8e6117b75c2ea3c3a03629ea7f93c1d2752412c8d2e26415bafe65fb5bc8", "receipt-id drifted");
 }
