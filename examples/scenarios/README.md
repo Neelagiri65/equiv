@@ -1,7 +1,7 @@
 # equiv across real-world bug patterns
 
 Six refactors that looked behaviour-preserving. Each passed review and passed the tests.
-Each one is run through `equiv` live. The catches, the honest misses, the warts.
+Each one is run through `equiv` live. Five it catches. One it honestly cannot.
 Every result here is reproducible with the files in this folder.
 
 ![equiv across real-world scenarios](media/equiv-scenarios.gif)
@@ -13,31 +13,30 @@ Every result here is reproducible with the files in this folder.
 | 1 | Stripe zero-decimal currency (`amount * 100`) | payments | CAUGHT | Exact values. Real: Drupal commerce_stripe #2913605. |
 | 2 | Tax personal-allowance floor dropped | tax/payroll | CAUGHT | Phantom negative tax below the allowance. |
 | 3 | Gauss sum, negative clamp dropped | arithmetic | CAUGHT | Tests at 1, 5, 10 pass. Only negatives break. |
-| 4 | Antimeridian guard added | geospatial | CAUGHT* | Real: chrisveness/geodesy v1.1.2 #44. Display bug below. |
+| 4 | Antimeridian guard added | geospatial | CAUGHT | Real: chrisveness/geodesy v1.1.2 #44. New code throws past +/-180. |
 | 5 | Binary-search midpoint overflow | integer overflow | MISSED | Out of scope. Python ints are unbounded. |
-| 6 | Average, empty-list guard dropped | edge guard | CAUGHT* | Display bug below. |
+| 6 | Average, empty-list guard dropped | edge guard | CAUGHT | New code divides by zero on `[]`; old returns 0. |
 
 ## What this shows, honestly
 
-**equiv is value-accurate for integer functions.** Scenarios 1 to 3 are pure integer
-arithmetic and comparisons. equiv returns the exact diverging input and the exact old
-and new outputs, matching real Python.
+**equiv is value-accurate.** For scenarios 1 to 4 and 6, equiv returns the exact
+diverging input and the exact old and new outputs, matching real Python. That includes
+the exception cases (scenarios 4 and 6): it shows the side that raised and the real
+value the other side returned (`-179`, `0`).
 
 **equiv says EQUIVALENT when it genuinely cannot see a bug.** Scenario 5 is the famous
 `(low + high) / 2` overflow. That bug exists in C and Java, where ints are fixed-width.
 Python ints are unbounded. The two functions really are equivalent in Python. equiv says so. It does not invent a bug that the language cannot have. A real scope limit,
 stated plainly.
 
-**Two known warts (both reproducible here):**
+**One scope limit (reproducible here):**
 
-1. **No fixed-width overflow.** See scenario 5. If your bug only exists under 32 or 64-bit
-   integer wraparound, running the Python form will not surface it.
-2. **An exception on one side blanks the other side to `None` in the printout.** In
-   scenarios 4 and 6 the candidate raises (a `ValueError` past the antimeridian, a
-   `ZeroDivisionError` on the empty list). equiv correctly reports the two functions as
-   NOT equivalent. It prints `reference -> None` where the real value is `25` and `0`.
-   The verdict is right. The displayed value is not. Trust the verdict on exception cases,
-   not the shown value.
+**No fixed-width overflow.** See scenario 5. If your bug only exists under 32 or 64-bit
+integer wraparound, running the Python form will not surface it. Python ints do not wrap.
+
+(An earlier version of this showcase noted a second issue: an exception on one side
+printed the other side as `None`. That display bug is fixed in #7; the exception cases
+now show the real value.)
 
 This honesty is the point. equiv tells you what it checked and nothing more.
 
