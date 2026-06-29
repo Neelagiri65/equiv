@@ -61,6 +61,25 @@ fn counterexample_is_in_the_receipt() {
     assert!(!r.to_bytes().is_empty());
 }
 
+#[test]
+fn exception_on_one_side_reports_other_sides_real_value() {
+    // Regression: when one side raises, the non-raising side must report its
+    // actual value, not None. The driver previously printed the exception-name
+    // columns for both sides, so the side that returned a value showed `None`.
+    // candidate raises ZeroDivisionError on []; reference returns 0.
+    let cand = tmp("rev_exc_cand.py", "def average(xs):\n    return sum(xs)//len(xs)\n");
+    let refr = tmp("rev_exc_ref.py", "def average(xs):\n    return sum(xs)//len(xs) if xs else 0\n");
+    let r = review(&cand, &refr, &spec("average", vec![ArgType::ListInt]));
+    match &r.verdict {
+        ReviewVerdict::Counterexample { input, candidate, reference } => {
+            assert_eq!(input, "([])", "empty list is the diverging input");
+            assert_eq!(candidate, "ZeroDivisionError", "the raising side shows its exception");
+            assert_eq!(reference, "0", "the non-raising side shows its real value, not None");
+        }
+        v => panic!("expected counterexample, got {v:?}"),
+    }
+}
+
 use equiv_review::{render_markdown, run_pr, PrCheck, ReviewItem, MARKER};
 
 #[test]

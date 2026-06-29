@@ -657,7 +657,12 @@ for i, args in enumerate(cases):
         print('__REFUSED__\treturns a value that is not JSON-structural (no stable cross-host form)'); _sys.exit(0)
     if ce is not None or re_ is not None:
         ok = (ce == re_)
-        print(f"{{i}}\t{{'EQ' if ok else 'NE'}}\t{{ce}}\t{{re_}}")
+        # Show each side's outcome: its exception name if it raised, else its
+        # actual value. (Previously printed ce/re_ for both, so the non-raising
+        # side reported None instead of its real value.)
+        dc = ce if ce is not None else cv
+        dr = re_ if re_ is not None else rv
+        print(f"{{i}}\t{{'EQ' if ok else 'NE'}}\t{{dc}}\t{{dr}}")
     else:
         print(f"{{i}}\t{{'EQ' if cv == rv else 'NE'}}\t{{cv}}\t{{rv}}")
 "#,
