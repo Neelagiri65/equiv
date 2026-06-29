@@ -1,5 +1,41 @@
 # HANDOFF — equiv
 
+## 2026-06-30: exception-display fix, real-world showcase, launch, repo hardening
+
+- **Fix (PR #7):** the review driver printed the exception-name columns for both
+  sides of a counterexample. The non-raising side then reported `None` instead of
+  its real value (e.g. `reference -> None` where the value was `0`). Now each side
+  shows its exception name if it raised, else its actual value. Verdict logic
+  unchanged. Regression test `exception_on_one_side_reports_other_sides_real_value`.
+- **Real-world scenario showcase (PR #6):** `examples/scenarios/` runs six
+  documented bug patterns through equiv live (Stripe JPY x100, tax allowance floor,
+  Gauss clamp, geodesy antimeridian, binary-search overflow [honest miss],
+  empty-list guard) with runnable files, a branded GIF + carousel and an honest
+  README. Result: five caught, one honest miss.
+- **README GIF (PR #8):** "Does it actually catch the bug?" branded animation.
+- **Marketplace (PR #9):** `branding.color` purple -> blue (Nativerse). The action
+  is Marketplace-eligible; publishing is the UI release step.
+- **Repo hardening:** `main` branch protection applied. Force-push and deletion
+  blocked, the three `tests` matrix checks required, `enforce_admins: false` so the
+  owner is never locked out, conversation resolution required.
+- **Launch:** LinkedIn post live, Nativerse-branded yen-story card (the Stripe
+  zero-decimal 100x overcharge, framed as the AI-refactor-that-passed-review).
+  Social assets in `devtools/equiv/social/`.
+- **Limitations found and logged to the vault:** (1) domain-blindness + exact
+  equality (generates the whole declared type incl. out-of-domain inputs; treats
+  int `0` and float `0.0` as different); (2) no fixed-width integer overflow (Python
+  ints are unbounded); (3) the exception-display bug, now fixed. Vault:
+  `learnings/discoveries/equiv-evaluator-fidelity-map-2026-06-30`,
+  `equiv-domain-blindness-and-equality-semantics`,
+  `raw/research/equiv-real-world-mishap-incidents-2026-06-30`.
+
+**Next steps (owner actions):**
+- Cut **v0.2.1** (RELEASING.md: bump `[workspace.package] version`, tag, push) so the
+  Marketplace listing and installer pick up the blue branding and the fix.
+- Publish the action to the GitHub Marketplace from the v0.2.1 release
+  (categories: Code review / Continuous integration).
+- Move the README quickstart pin `@v0.1.0` -> `@v0.2.1`.
+
 ## 2026-06-29: v0.2.0 — smarter input generation (boundary + AST-literal), committed to main
 Closed the core weakness: a green pass used to mean only "seeded random darts missed."
 `gen_cases` now layers three deterministic stages — all-default base, then per-arg **boundary
