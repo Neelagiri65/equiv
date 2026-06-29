@@ -3,14 +3,14 @@
 ## 2026-06-30: exception-display fix, real-world showcase, launch, repo hardening
 
 - **Fix (PR #7):** the review driver printed the exception-name columns for both
-  sides of a counterexample, so the non-raising side reported `None` instead of
+  sides of a counterexample. The non-raising side then reported `None` instead of
   its real value (e.g. `reference -> None` where the value was `0`). Now each side
   shows its exception name if it raised, else its actual value. Verdict logic
   unchanged. Regression test `exception_on_one_side_reports_other_sides_real_value`.
 - **Real-world scenario showcase (PR #6):** `examples/scenarios/` runs six
   documented bug patterns through equiv live (Stripe JPY x100, tax allowance floor,
   Gauss clamp, geodesy antimeridian, binary-search overflow [honest miss],
-  empty-list guard) with runnable files, a branded GIF + carousel, and an honest
+  empty-list guard) with runnable files, a branded GIF + carousel and an honest
   README. Result: five caught, one honest miss.
 - **README GIF (PR #8):** "Does it actually catch the bug?" branded animation.
 - **Marketplace (PR #9):** `branding.color` purple -> blue (Nativerse). The action
