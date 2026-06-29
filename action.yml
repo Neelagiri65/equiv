@@ -2,7 +2,7 @@ name: "equiv review"
 description: "Check that refactors preserve behaviour, on every PR. Deterministic, signed receipts."
 branding:
   icon: "check-circle"
-  color: "purple"
+  color: "blue"
 inputs:
   auto:
     description: >
