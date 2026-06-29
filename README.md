@@ -13,6 +13,16 @@ answer, byte for byte, without trusting any model's opinion.
 Most code is now written by AI and reviewed by AI. A model saying "this looks
 fine" is not verification. A deterministic check you can re-run yourself is.
 
+## Does it actually catch the bug?
+
+Six real-world refactors that looked behaviour-preserving, run through `equiv`
+live. Five it catches with the exact diverging input. One it honestly cannot
+(fixed-width integer overflow does not exist in Python). Every result is reproducible.
+
+![equiv across six real-world bug patterns: five caught, one honest miss](assets/equiv-scenarios.gif)
+
+Runnable files and the full write-up: [`examples/scenarios/`](examples/scenarios/).
+
 ## Quickstart: the PR gate
 
 List the functions whose behaviour must be preserved across a PR in a manifest
