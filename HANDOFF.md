@@ -29,12 +29,25 @@
   `equiv-domain-blindness-and-equality-semantics`,
   `raw/research/equiv-real-world-mishap-incidents-2026-06-30`.
 
-**Next steps (owner actions):**
-- Cut **v0.2.1** (RELEASING.md: bump `[workspace.package] version`, tag, push) so the
-  Marketplace listing and installer pick up the blue branding and the fix.
-- Publish the action to the GitHub Marketplace from the v0.2.1 release
-  (categories: Code review / Continuous integration).
-- Move the README quickstart pin `@v0.1.0` -> `@v0.2.1`.
+**Shipped (all complete):**
+- **v0.2.1 released.** Tagged `v0.2.1`; cargo-dist built and published binaries for
+  macOS arm64/x64, Linux x64/arm64, Windows x64, with installers and checksums. A
+  version bump drifts the two pinned golden receipt-ids (`checker_version` is in every
+  receipt); both were updated in #11. Keep this in mind for the next bump.
+- **Published to the GitHub Marketplace** from the v0.2.1 release (blue branding, the fix).
+- README quickstart repinned `@v0.1.0` -> `@v0.2.1` (#12).
+- `main` branch protection on: force-push and deletion blocked, `test` matrix checks
+  required, `enforce_admins: false` so the owner is not locked out.
+- Launched on LinkedIn (Nativerse-branded Stripe-100x story). Real-incident research
+  and four equiv limitation write-ups saved to the agent-vault.
+
+**Next steps:**
+- Follow-up "proof" LinkedIn post: the carousel/GIF (five caught, one honest miss).
+  Assets ready in `~/devtools/equiv/social/shots/`; caption not yet drafted.
+- Watch inbound: LinkedIn comments, repo issues, stars, Marketplace installs.
+- Strategic fork: equiv is an equivalence oracle, the market keeps asking for
+  correctness. Decide between staying narrow-and-honest and adding a
+  properties/metamorphic mode (costs setup, never market as zero-setup).
 
 ## 2026-06-29: v0.2.0 — smarter input generation (boundary + AST-literal), committed to main
 Closed the core weakness: a green pass used to mean only "seeded random darts missed."
