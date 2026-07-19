@@ -4,6 +4,8 @@
 
 use std::process::ExitCode;
 
+mod telemetry;
+
 const EXIT_INVALID: u8 = 3;
 
 fn hex(bytes: &[u8]) -> String {
@@ -162,6 +164,10 @@ fn run() -> Result<u8, String> {
                 return Ok(0);
             }
             let (items, code) = run_pr(&checks);
+
+            // Local-first verdict-rate metrics (fail-silent, counts only, no
+            // network). This build reviews Python only, so the tag is "python".
+            telemetry::record(&items, &unchecked, "python");
 
             // Sign if a key is configured (CI secret). Absent key => unsigned,
             // never an error: fork PRs legitimately have no secret access.

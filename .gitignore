@@ -16,3 +16,6 @@ equiv-attestations/
 
 # Roadmap/strategy — keep private (mirrored in agent-vault/projects/equiv)
 HANDOFF.md
+
+# Local verdict-rate metrics (telemetry slice 1) — never committed
+equiv-metrics.jsonl
