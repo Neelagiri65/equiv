@@ -626,8 +626,25 @@ for _p in ({cand:?}, {refr:?}):
         r#"import importlib.util as u
 import struct
 import sys as _sys
-{admis}def load(p, n):
-    s = u.spec_from_file_location(n, p); m = u.module_from_spec(s); s.loader.exec_module(m); return m
+import os as _os
+{admis}def _pkg_of(_p):
+    # Walk up while __init__.py exists: returns (dir to put on sys.path, dotted
+    # package name). Gives the module real package context so `from . import x`
+    # resolves instead of raising "no known parent package".
+    _d = _os.path.dirname(_os.path.abspath(_p)); _parts = []
+    while _os.path.exists(_os.path.join(_d, '__init__.py')):
+        _parts.insert(0, _os.path.basename(_d)); _d = _os.path.dirname(_d)
+    return _d, '.'.join(_parts)
+# Package context is derived from the candidate (head) path and applied to both
+# versions, so the reference (a temp file outside the tree) resolves its relative
+# imports against the real package's siblings.
+_root, _pkg = _pkg_of({cand:?})
+if _pkg and _root not in _sys.path: _sys.path.insert(0, _root)
+def load(p, n):
+    fullname = (_pkg + '.' + n) if _pkg else n
+    s = u.spec_from_file_location(fullname, p); m = u.module_from_spec(s)
+    if _pkg: m.__package__ = _pkg
+    _sys.modules[fullname] = m; s.loader.exec_module(m); return m
 def canon(x):
     # Canonical, order-independent form. int/str/bool/None reproduce repr (so
     # existing reviews are unchanged); float -> exact bits (NaN -> one token);
