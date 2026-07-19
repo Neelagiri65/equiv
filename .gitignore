@@ -13,3 +13,6 @@ dist-manifest.json
 plan-dist-manifest.json
 equiv-receipts.tsv
 equiv-attestations/
+
+# Roadmap/strategy — keep private (mirrored in agent-vault/projects/equiv)
+HANDOFF.md
