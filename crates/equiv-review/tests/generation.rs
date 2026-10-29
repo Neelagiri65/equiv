@@ -119,3 +119,44 @@ fn linear_reference_does_not_hang() {
         r.verdict
     );
 }
+
+// Numeric text: signed, decimal, exponent and whitespace-padded numbers are
+// where hand-written number parsing and padding diverge from int()/float()/
+// zfill(). Each must be a generated string input on its own, not only when the
+// source happens to spell it. The probe builds the target text from code
+// points, so no string literal in the source names it (the literal scan cannot
+// supply it); the only way to a counterexample is a fixed string corner.
+#[test]
+fn numeric_text_corners_are_generated() {
+    for text in ["-1", "+1", "1.5", "1e3", " 7 "] {
+        let codes: Vec<String> = text.chars().map(|c| (c as u32).to_string()).collect();
+        let cand = tmp(
+            "gen_num_cand.py",
+            &format!("def f(s):\n    return s == \"\".join(map(chr, [{}]))\n", codes.join(", ")),
+        );
+        let refr = tmp("gen_num_ref.py", "def f(s):\n    return False\n");
+        let r = review(&cand, &refr, &spec("f", vec![ArgType::Str]));
+        let want = format!("('{text}')");
+        match &r.verdict {
+            ReviewVerdict::Counterexample { input, .. } => assert_eq!(
+                input, &want,
+                "the counterexample should be the numeric-text corner itself"
+            ),
+            v => panic!("numeric text {text:?} should be a generated input, got {v:?}"),
+        }
+    }
+}
+
+// zfill rewritten as rjust(..., "0") only diverges on a leading sign: zfill
+// keeps the sign in front of the zeros, rjust puts the zeros before it.
+#[test]
+fn leading_sign_padding_divergence_is_caught() {
+    let cand = tmp("gen_sign_cand.py", "def pad(s):\n    return s.rjust(5, \"0\")\n");
+    let refr = tmp("gen_sign_ref.py", "def pad(s):\n    return s.zfill(5)\n");
+    let r = review(&cand, &refr, &spec("pad", vec![ArgType::Str]));
+    assert!(
+        matches!(r.verdict, ReviewVerdict::Counterexample { .. }),
+        "a leading-sign string corner should catch zfill vs rjust, got {:?}",
+        r.verdict
+    );
+}
