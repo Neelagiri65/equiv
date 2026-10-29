@@ -194,6 +194,7 @@ mod tests {
                 spec_sha256: [0; 32],
                 verdict,
                 checker_version: "test".to_string(),
+                budget: equiv_review::DEFAULT_BUDGET,
             },
         }
     }
