@@ -114,7 +114,7 @@ fn run() -> Result<u8, String> {
                                     name: d.name.clone(),
                                     head_path: std::path::PathBuf::from(file),
                                     base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: 300, seed: 1 },
+                                    spec: ReviewSpec { func: d.name, args, n: 300, seed: 1, budget: equiv_review::DEFAULT_BUDGET },
                                 });
                             }
                             DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
@@ -154,7 +154,7 @@ fn run() -> Result<u8, String> {
                         name: func.to_string(),
                         head_path: std::path::PathBuf::from(file),
                         base_path,
-                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed },
+                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET },
                     });
                 }
             }
@@ -260,7 +260,7 @@ fn run() -> Result<u8, String> {
                 .filter(|s| !s.trim().is_empty())
                 .map(|s| ArgType::parse(s).ok_or_else(|| format!("bad arg type `{s}`")))
                 .collect::<Result<Vec<_>, _>>()?;
-            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed };
+            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET };
             let r = review(std::path::Path::new(cand), std::path::Path::new(refr), &spec);
             match &r.verdict {
                 ReviewVerdict::Equivalent { n } => {

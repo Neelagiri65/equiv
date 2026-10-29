@@ -46,12 +46,22 @@ impl ArgType {
     }
 }
 
+/// Default step budget per call: how many Python line and jump events one call
+/// of the candidate or the reference may raise before the review stops and
+/// reports could-not-check. Counted events, never wall-clock time, so the same
+/// budget gives the same verdict on every host (gate P3).
+pub const DEFAULT_BUDGET: u64 = 1_000_000;
+
 #[derive(Debug, Clone)]
 pub struct ReviewSpec {
     pub func: String,
     pub args: Vec<ArgType>,
     pub n: u32,
     pub seed: u64,
+    /// Step budget per call (and per module load), in Python line and jump
+    /// events (sys.monitoring LINE | JUMP). Bound into the spec hash and
+    /// written into the receipt.
+    pub budget: u64,
 }
 
 impl ReviewSpec {
@@ -72,6 +82,7 @@ impl ReviewSpec {
         }
         v.extend_from_slice(&self.n.to_le_bytes());
         v.extend_from_slice(&self.seed.to_le_bytes());
+        v.extend_from_slice(&self.budget.to_le_bytes());
         v
     }
 }
@@ -683,6 +694,8 @@ pub struct ReviewReceipt {
     pub spec_sha256: [u8; 32],
     pub verdict: ReviewVerdict,
     pub checker_version: String,
+    /// The step budget the review ran under (see `ReviewSpec::budget`).
+    pub budget: u64,
 }
 
 impl ReviewReceipt {
@@ -700,6 +713,7 @@ impl ReviewReceipt {
                     Value::Text(self.checker_version.clone()),
                 ]),
             ),
+            (6, Value::Uint(self.budget)),
         ];
         cbor::to_bytes(&Value::Map(entries))
     }
@@ -773,7 +787,39 @@ for _p in ({cand:?}, {refr:?}):
 import struct
 import sys as _sys
 import os as _os
-{admis}def _pkg_of(_p):
+{admis}# Deterministic step budget (backlog 0.3, gate P3). Every LINE and JUMP event
+# raised by code outside this driver file counts one step; past the budget the
+# callback raises _Budget, and keeps raising on every later event, so user code
+# that swallows it (even a bare except) cannot loop on. No clock is read.
+if _sys.version_info < (3, 12):
+    print('__NOBUDGET__\t' + _sys.version.split()[0]); _sys.exit(0)
+_M = _sys.monitoring
+_TOOL = 4
+_EV = _M.events.LINE | _M.events.JUMP
+_BUDGET = {budget}
+_left = [0]
+class _Budget(BaseException): pass
+def _tick(code, *_a):
+    if code.co_filename == __file__: return
+    _left[0] -= 1
+    if _left[0] < 0: raise _Budget()
+_M.use_tool_id(_TOOL, 'equiv-budget')
+_M.register_callback(_TOOL, _M.events.LINE, _tick)
+_M.register_callback(_TOOL, _M.events.JUMP, _tick)
+def _metered(fn, *args):
+    # (value, exception name or None, budget exhausted?)
+    _left[0] = _BUDGET; _M.set_events(_TOOL, _EV)
+    try:
+        v = fn(*args); e = None
+    except BaseException as x:
+        if _left[0] < 0 or isinstance(x, _Budget): return None, None, True
+        if not isinstance(x, Exception): raise
+        v = None; e = x
+    finally:
+        _M.set_events(_TOOL, 0)
+    if _left[0] < 0: return None, None, True
+    return v, e, False
+def _pkg_of(_p):
     # Walk up while __init__.py exists: returns (dir to put on sys.path, dotted
     # package name). Gives the module real package context so `from . import x`
     # resolves instead of raising "no known parent package".
@@ -808,13 +854,26 @@ def canon(x):
         if not all(isinstance(k, str) for k in x): return '__NONCANON__'
         return '{{' + ', '.join(repr(k) + ': ' + canon(x[k]) for k in sorted(x)) + '}}'
     return '__NONCANON__'
-cand = load({cand:?}, "cand"); ref = load({refr:?}, "ref")
+def _load(p, n, side):
+    # Module top-level code runs under the same budget; a load error is
+    # re-raised unchanged so its message still reaches the verdict.
+    m, e, out = _metered(load, p, n)
+    if out:
+        print('__BUDGET__\tload\t' + side); _sys.exit(0)
+    if e is not None: raise e
+    return m
+cand = _load({cand:?}, "cand", 'candidate'); ref = _load({refr:?}, "ref", 'reference')
 cf = getattr(cand, {fn:?}); rf = getattr(ref, {fn:?})
 cases = [{cases}]
 for i, args in enumerate(cases):
-    try: cv = canon(cf(*args)); ce = None
+    _cv, _ce, _oc = _metered(cf, *args)
+    _rv, _re, _or = _metered(rf, *args)
+    if _oc or _or:
+        _side = 'candidate and reference' if (_oc and _or) else ('candidate' if _oc else 'reference')
+        print(f"__BUDGET__\t{{i}}\t{{_side}}"); _sys.exit(0)
+    try: cv = canon(_cv) if _ce is None else None; ce = None if _ce is None else type(_ce).__name__
     except Exception as e: cv = None; ce = type(e).__name__
-    try: rv = canon(rf(*args)); re_ = None
+    try: rv = canon(_rv) if _re is None else None; re_ = None if _re is None else type(_re).__name__
     except Exception as e: rv = None; re_ = type(e).__name__
     if (cv is not None and '__NONCANON__' in cv) or (rv is not None and '__NONCANON__' in rv):
         print('__REFUSED__\treturns a value that is not JSON-structural (no stable cross-host form)'); _sys.exit(0)
@@ -834,6 +893,7 @@ for i, args in enumerate(cases):
         refr = refr,
         fn = spec.func,
         cases = cases_py.join(", "),
+        budget = spec.budget,
     )
 }
 
@@ -856,6 +916,7 @@ pub fn review(candidate_path: &Path, reference_path: &Path, spec: &ReviewSpec) -
         spec_sha256: sha256(&spec.canonical()),
         verdict,
         checker_version: env!("CARGO_PKG_VERSION").into(),
+        budget: spec.budget,
     }
 }
 
@@ -1209,8 +1270,38 @@ fn run_python(
         if let Some(reason) = line.strip_prefix("__REFUSED__\t") {
             return Ok(ReviewVerdict::Refused { reason: reason.to_string() });
         }
+        if let Some(found) = line.strip_prefix("__NOBUDGET__\t") {
+            return Ok(ReviewVerdict::Error {
+                reason: format!(
+                    "the step budget needs Python 3.12 or newer (sys.monitoring); found {found}"
+                ),
+            });
+        }
     }
+    let budget = spec.budget;
     for line in stdout.lines() {
+        // Lines arrive in case order and the driver stops at the first budget
+        // exhaustion, so a counterexample printed earlier still stands. The
+        // reason states budget, case, input and side, never the number of
+        // events consumed (that may differ between Python versions).
+        if let Some(rest) = line.strip_prefix("__BUDGET__\t") {
+            let (at, side) = rest.split_once('\t').unwrap_or((rest, "candidate"));
+            let reason = if at == "load" {
+                format!(
+                    "loading the {side} module exceeded the step budget of {budget} Python \
+                     line/jump events; a non-terminating or very long run is not judged"
+                )
+            } else {
+                let idx: usize = at.parse().map_err(|_| "bad index".to_string())?;
+                let input: Vec<String> = cases[idx].iter().map(|v| v.display()).collect();
+                format!(
+                    "the {side} exceeded the step budget of {budget} Python line/jump events \
+                     at input ({}); a non-terminating or very long run is not judged",
+                    input.join(", ")
+                )
+            };
+            return Ok(ReviewVerdict::Error { reason });
+        }
         let parts: Vec<&str> = line.splitn(4, '\t').collect();
         if parts.len() < 4 {
             continue;

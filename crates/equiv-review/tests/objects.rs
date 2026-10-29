@@ -14,7 +14,7 @@ fn wp(name: &str, body: &str) -> std::path::PathBuf {
     p
 }
 fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 200, seed: 1 }
+    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
 }
 
 // A dict is a map: key insertion order is not behaviour. Same content in a
