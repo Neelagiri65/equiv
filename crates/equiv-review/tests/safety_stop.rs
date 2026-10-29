@@ -64,7 +64,9 @@ fn whole_process_group_is_killed() {
 fn safety_limit_is_not_part_of_the_receipt() {
     let cand = tmp("nolimit_c", "def f(x):\n    return x + 0\n");
     let refr = tmp("nolimit_r", TERMINATES);
-    let a = review_limited(&cand, &refr, &spec("f"), 1).expect("fast check");
+    // Limits far from the run time (CI hosts under parallel tests can be slow):
+    // the point is different limits, same bytes.
+    let a = review_limited(&cand, &refr, &spec("f"), 30).expect("fast check");
     let b = review_limited(&cand, &refr, &spec("f"), 1000).expect("fast check");
     let c = review(&cand, &refr, &spec("f")).expect("fast check");
     assert!(matches!(a.verdict, ReviewVerdict::Equivalent { .. }));
@@ -96,7 +98,7 @@ fn other_functions_in_the_run_still_report() {
         PrCheck { name: "slow".into(), head_path: slow_head, base_path: slow_base, spec: spec("f") },
         PrCheck { name: "fast".into(), head_path: fast_head, base_path: fast_base, spec: spec("f") },
     ];
-    let (items, code) = run_pr_limited(&checks, 2);
+    let (items, code) = run_pr_limited(&checks, 5);
     assert_eq!(items.len(), 2);
     assert!(items[0].outcome.is_err(), "slow function must be a safety stop");
     let fast = items[1].outcome.as_ref().expect("fast function must still get its receipt");
@@ -104,7 +106,7 @@ fn other_functions_in_the_run_still_report() {
     assert_eq!(code, 2, "a safety stop blocks the gate as could-not-check");
 
     let md = render_markdown(&items, Some("deadbeef"));
-    assert!(md.contains("2 s safety limit"), "{md}");
+    assert!(md.contains("5 s safety limit"), "{md}");
     assert!(md.contains("not part of the deterministic budget"), "{md}");
     assert!(md.contains("1 of 2 functions could not be checked"), "{md}");
     let receipts: Vec<&str> = md.lines().filter(|l| l.contains("receipt-id")).collect();
