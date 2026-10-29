@@ -1,12 +1,12 @@
 {
-  "equiv_version": "0.3.0",
+  "equiv_version": "0.4.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 70,
-    "diverges": 46,
-    "equivalent": 24,
+    "cases": 78,
+    "diverges": 51,
+    "equivalent": 27,
     "caught": 41,
-    "missed": 4,
+    "missed": 9,
     "false_alarms": 0,
     "could_not_check": 1
   },
@@ -500,6 +500,62 @@
       "outcome": "pass",
       "n": 161,
       "detail": "EQUIVALENT: agreed on all 161 generated inputs (seed 1)"
+    },
+    "071-holdout-is-int-lstrip-minus": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 207,
+      "detail": "EQUIVALENT: agreed on all 207 generated inputs (seed 1)"
+    },
+    "072-holdout-is-number-replace-dot": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 210,
+      "detail": "EQUIVALENT: agreed on all 210 generated inputs (seed 1)"
+    },
+    "073-holdout-isdecimal-strip-first": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 206,
+      "detail": "EQUIVALENT: agreed on all 206 generated inputs (seed 1)"
+    },
+    "074-holdout-int-strip-separators": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 206,
+      "detail": "EQUIVALENT: agreed on all 206 generated inputs (seed 1)"
+    },
+    "075-holdout-eq-sign-prefix": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 211,
+      "detail": "EQUIVALENT: agreed on all 211 generated inputs (seed 1)"
+    },
+    "076-holdout-is-int-double-sign": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 207,
+      "detail": "EQUIVALENT: agreed on all 207 generated inputs (seed 1)"
+    },
+    "077-holdout-eq-zero-text": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 206,
+      "detail": "EQUIVALENT: agreed on all 206 generated inputs (seed 1)"
+    },
+    "078-holdout-eq-drop-sign": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 212,
+      "detail": "EQUIVALENT: agreed on all 212 generated inputs (seed 1)"
     }
   }
 }

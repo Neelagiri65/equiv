@@ -1,0 +1,6 @@
+function = "all_digits"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "digit check gains a strip() first, so digits padded with whitespace now pass"
+witness = '''(" 7 ",)'''

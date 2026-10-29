@@ -1,0 +1,5 @@
+function = "sign_of"
+args = "str"
+expected = "equivalent"
+class = "holdout"
+pattern = "startswith() sign test rewritten as a slice of the first character"
