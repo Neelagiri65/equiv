@@ -140,7 +140,7 @@ reported as equivalent. The reason is the generator's reach, read from
 |------|-------------------------------------|
 | 012-float-reassociation | needs all three operands set together so they cancel (e.g. `1e16, -1e16, 1.0`); corner floats are varied one argument at a time and the random draws did not produce one |
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
-| 024-int-float-precision-large | needs an int above 2^53 with no such constant in the source; random ints stay within +/-1,000,000 because a reference may loop `n` times and there is no execution time limit yet |
+| 024-int-float-precision-large | needs an int above 2^53 with no such constant in the source; random ints stay within +/-1,000,000 because a reference may loop `n` times; the step budget and safety limit would turn such a run into could-not-check, not a catch |
 | 074-holdout-int-strip-separators | needs digits wrapped in U+001C-U+001F, which `str.strip()` removes and `int()` rejects; no string corner contains those characters |
 | 076-holdout-is-int-double-sign | needs a repeated sign such as `--1`; the sign corners carry a single sign, and the source only spells `+-`, on which both sides agree |
 

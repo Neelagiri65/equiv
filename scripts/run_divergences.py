@@ -221,9 +221,10 @@ HARNESS_TIMEOUT_S = 120
 def run_equiv(binary, case):
     d = case["dir"]
     env = dict(os.environ, EQUIV_METRICS="off")
-    # The harness protects itself from a hung review (equiv has no execution
-    # budget yet). This limit lives only in the runner, never in equiv's
-    # verdict path, and a hang is scored as could-not-check.
+    # Last-resort guard for the runner itself (equiv has its own step budget
+    # and a 120 s per-function safety limit). This limit lives only in the
+    # runner, never in equiv's verdict path, and a hang is scored as
+    # could-not-check.
     try:
         p = subprocess.run(
             [binary, "review", str(d / "candidate.py"), str(d / "reference.py"), case["function"], case["args"]],
