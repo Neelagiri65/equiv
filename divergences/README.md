@@ -45,10 +45,12 @@ The runner does two passes.
    through both versions and must give different canonical results (the same
    canonical form equiv uses: `42` and `42.0` differ, `True` and `1` differ, all
    NaNs are one value, dicts compare as maps, a raised exception compares by type
-   name). Every `equivalent` pair is compared on a deterministic sweep (all ints
-   in [-5000, 5000] plus 32/53/64-bit neighbours, every BMP code point as a
-   one-character string, the float corner bit patterns) plus 10,000 randomised
-   inputs drawn from a wider distribution than equiv's generator (Unicode,
+   name). Every `equivalent` pair is compared on 10,000 randomised inputs drawn
+   from a wider distribution than equiv's generator; single-argument `int`,
+   `str` and `float` pairs also get a deterministic sweep (all ints in
+   [-5000, 5000] plus 32/53/64-bit neighbours, every BMP code point as a
+   one-character string, the float corner bit patterns). The random inputs
+   cover what equiv's generator does not reach (Unicode,
    whitespace variants, surrogates, long and digit strings, ints up to 10^20,
    random float bit patterns). A case that fails either check is mislabelled and
    the run fails with a `CORPUS ERROR`.
