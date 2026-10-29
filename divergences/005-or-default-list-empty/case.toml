@@ -1,0 +1,7 @@
+function = "tags_or_default"
+args = "list[int]"
+expected = "diverges"
+class = "or-default"
+pattern = "`xs or [-1]` replaces an explicit None check, so an empty list is replaced"
+source = "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing"
+witness = '''([],)'''

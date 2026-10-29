@@ -1,0 +1,6 @@
+function = "first"
+args = "list[int]"
+expected = "diverges"
+class = "boundary"
+pattern = "an empty-list guard is dropped, so [] raises IndexError instead of returning None"
+witness = '''([],)'''

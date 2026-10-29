@@ -1,0 +1,6 @@
+function = "percent"
+args = "int,int"
+expected = "diverges"
+class = "float-rounding"
+pattern = "integer floor percentage replaced by round(part * 100 / whole)"
+witness = '''(2, 3)'''

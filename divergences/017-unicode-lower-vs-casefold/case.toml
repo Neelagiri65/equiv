@@ -1,0 +1,7 @@
+function = "same_user"
+args = "str,str"
+expected = "diverges"
+class = "unicode"
+pattern = "casefold() comparison replaced by lower(); differs on German sharp s"
+source = "https://docs.python.org/3/library/stdtypes.html#str.casefold"
+witness = '''('Stra\u00dfe', 'STRASSE')'''

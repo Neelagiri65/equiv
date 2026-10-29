@@ -1,0 +1,6 @@
+function = "double"
+args = "int"
+expected = "diverges"
+class = "fixed-width-int"
+pattern = "n * 2 rewritten as int(n * 2.0); exact below 2**53, loses precision above"
+witness = '''(9007199254740993,)'''

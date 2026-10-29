@@ -1,0 +1,7 @@
+function = "luhn_ok"
+args = "list[int]"
+expected = "diverges"
+class = "check-digit"
+pattern = "Luhn doubling parity counted from the left instead of the right"
+source = "https://en.wikipedia.org/wiki/Luhn_algorithm"
+witness = '''([1, 8],)'''

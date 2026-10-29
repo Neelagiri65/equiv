@@ -1,0 +1,6 @@
+function = "luhn_valid"
+args = "str"
+expected = "equivalent"
+class = "check-digit"
+pattern = "loop Luhn rewritten with a lookup table for doubled digits"
+source = "https://en.wikipedia.org/wiki/Luhn_algorithm"

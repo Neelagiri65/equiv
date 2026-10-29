@@ -1,0 +1,6 @@
+function = "fits_column"
+args = "str"
+expected = "diverges"
+class = "unicode"
+pattern = "a UTF-8 byte-length limit replaced by a character-length limit"
+witness = '''('\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9',)'''

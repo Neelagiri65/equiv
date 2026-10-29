@@ -1,0 +1,5 @@
+function = "keys_by_value"
+args = "dict"
+expected = "equivalent"
+class = "ordering"
+pattern = "sorted(d, key=d.get) rewritten over d.items(); both stable on insertion order"

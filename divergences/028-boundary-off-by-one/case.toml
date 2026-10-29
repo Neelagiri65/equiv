@@ -1,0 +1,6 @@
+function = "is_adult"
+args = "int"
+expected = "diverges"
+class = "boundary"
+pattern = ">= threshold rewritten as >, excluding the boundary value"
+witness = '''(18,)'''

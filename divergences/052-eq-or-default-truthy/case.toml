@@ -1,0 +1,5 @@
+function = "label"
+args = "str"
+expected = "equivalent"
+class = "or-default"
+pattern = "`s if s else 'n/a'` rewritten as `s or 'n/a'` (same truthiness test)"

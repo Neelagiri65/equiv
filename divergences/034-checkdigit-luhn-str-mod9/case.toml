@@ -1,0 +1,7 @@
+function = "luhn_valid"
+args = "str"
+expected = "diverges"
+class = "check-digit"
+pattern = "doubled-digit reduction rewritten as d * 2 % 9, which maps a doubled 9 to 0 instead of 9"
+source = "https://en.wikipedia.org/wiki/Luhn_algorithm"
+witness = '''('91',)'''

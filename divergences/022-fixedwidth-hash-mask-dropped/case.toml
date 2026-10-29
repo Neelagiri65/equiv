@@ -1,0 +1,7 @@
+function = "hash32"
+args = "str"
+expected = "diverges"
+class = "fixed-width-int"
+pattern = "a 32-bit string hash loses its & 0xFFFFFFFF mask and grows unbounded"
+source = "https://docs.oracle.com/javase/8/docs/api/java/lang/String.html#hashCode--"
+witness = '''('abcdefgh',)'''

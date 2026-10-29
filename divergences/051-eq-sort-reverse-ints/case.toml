@@ -1,0 +1,5 @@
+function = "desc"
+args = "list[int]"
+expected = "equivalent"
+class = "ordering"
+pattern = "sorted(reverse=True) vs sorted()[::-1]: equal ints are indistinguishable, so stability is unobservable"

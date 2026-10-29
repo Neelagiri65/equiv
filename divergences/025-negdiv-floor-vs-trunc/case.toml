@@ -1,0 +1,7 @@
+function = "half"
+args = "int"
+expected = "diverges"
+class = "negative-division"
+pattern = "n // 2 rewritten as int(n / 2), which truncates towards zero for negatives"
+source = "https://docs.python.org/3/reference/expressions.html#binary-arithmetic-operations"
+witness = '''(-3,)'''

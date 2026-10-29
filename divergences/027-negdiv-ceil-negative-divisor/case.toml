@@ -1,0 +1,6 @@
+function = "ceil_div"
+args = "int,int"
+expected = "diverges"
+class = "negative-division"
+pattern = "-(-a // b) ceiling replaced by (a + b - 1) // b, which is wrong for negative b"
+witness = '''(1, -2)'''

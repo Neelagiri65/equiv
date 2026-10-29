@@ -1,0 +1,7 @@
+function = "port_of"
+args = "dict"
+expected = "diverges"
+class = "or-default"
+pattern = "`d.get('port') or 8080` treats a configured port 0 as missing; needs a key outside the generator's a-h alphabet"
+source = "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing"
+witness = '''({'port': 0},)'''

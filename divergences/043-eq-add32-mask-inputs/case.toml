@@ -1,0 +1,5 @@
+function = "add32"
+args = "int,int"
+expected = "equivalent"
+class = "fixed-width-int"
+pattern = "masking the operands before a masked add is redundant"

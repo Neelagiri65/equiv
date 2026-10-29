@@ -1,0 +1,6 @@
+function = "average"
+args = "list[int]"
+expected = "diverges"
+class = "int-to-float"
+pattern = "the empty-list fallback changes from int 0 to float 0.0 (JSON 0 vs 0.0)"
+witness = '''([],)'''

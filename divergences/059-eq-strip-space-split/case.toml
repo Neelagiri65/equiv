@@ -1,0 +1,5 @@
+function = "trim_spaces"
+args = "str"
+expected = "equivalent"
+class = "unicode"
+pattern = "strip(' ') rewritten as lstrip(' ').rstrip(' ')"

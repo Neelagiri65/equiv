@@ -1,0 +1,6 @@
+function = "fee"
+args = "int"
+expected = "diverges"
+class = "rare-input"
+pattern = "a special case for one magic amount, written as a literal in the source"
+witness = '''(777313,)'''

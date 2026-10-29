@@ -1,0 +1,6 @@
+function = "floor_div"
+args = "int,int"
+expected = "equivalent"
+class = "negative-division"
+pattern = "a // b rewritten as (a - a % b) // b; same floor semantics and same ZeroDivisionError"
+source = "https://docs.python.org/3/reference/expressions.html#binary-arithmetic-operations"

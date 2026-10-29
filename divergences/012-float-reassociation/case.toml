@@ -1,0 +1,6 @@
+function = "sum3"
+args = "float,float,float"
+expected = "diverges"
+class = "float-rounding"
+pattern = "a + b + c reassociated to a + (b + c), which differs under cancellation"
+witness = '''(1e16, -1e16, 1.0)'''

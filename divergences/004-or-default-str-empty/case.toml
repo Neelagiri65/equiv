@@ -1,0 +1,7 @@
+function = "display_name"
+args = "str"
+expected = "diverges"
+class = "or-default"
+pattern = "`name or 'anonymous'` replaces an explicit None check, so an empty name is replaced"
+source = "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing"
+witness = '''('',)'''

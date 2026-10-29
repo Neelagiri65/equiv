@@ -1,0 +1,6 @@
+function = "clamp01"
+args = "float"
+expected = "diverges"
+class = "float-specials"
+pattern = "min/max clamp swallows NaN and -0.0 where explicit comparisons pass them through"
+witness = '''(float('nan'),)'''

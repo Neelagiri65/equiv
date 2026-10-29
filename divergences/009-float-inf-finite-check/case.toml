@@ -1,0 +1,6 @@
+function = "is_finite"
+args = "float"
+expected = "diverges"
+class = "float-specials"
+pattern = "a finiteness check rewritten as NaN/+inf exclusion forgets -inf"
+witness = '''(float('-inf'),)'''

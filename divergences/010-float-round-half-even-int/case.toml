@@ -1,0 +1,7 @@
+function = "round_half"
+args = "float"
+expected = "diverges"
+class = "float-rounding"
+pattern = "banker's round() replaced by int(x + 0.5), which rounds halves up and truncates negatives"
+source = "https://docs.python.org/3/library/functions.html#round"
+witness = '''(2.5,)'''

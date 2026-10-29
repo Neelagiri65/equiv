@@ -1,0 +1,5 @@
+function = "clamp_pct"
+args = "int"
+expected = "equivalent"
+class = "boundary"
+pattern = "if/elif clamp rewritten as max(lo, min(hi, n)) for ints"
