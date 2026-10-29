@@ -14,3 +14,6 @@ path = "src/main.rs"
 equiv-core = { path = "../equiv-core" }
 equiv-engine = { path = "../equiv-engine" }
 equiv-review = { path = "../equiv-review" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -23,7 +23,7 @@ fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
 fn literal_constant_divergence_is_caught() {
     let cand = tmp("gen_lit_cand.py", "def f(x):\n    return 1 if x == 777 else 0\n");
     let refr = tmp("gen_lit_ref.py", "def f(x):\n    return 0\n");
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int]));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
     match &r.verdict {
         ReviewVerdict::Counterexample { input, .. } => assert!(
             input.contains("777"),
@@ -39,7 +39,7 @@ fn literal_constant_divergence_is_caught() {
 fn long_string_divergence_is_caught() {
     let cand = tmp("gen_long_cand.py", "def f(s):\n    return len(s)\n");
     let refr = tmp("gen_long_ref.py", "def f(s):\n    return min(len(s), 8)\n");
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Str]));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Str])).expect("no safety stop");
     assert!(
         matches!(r.verdict, ReviewVerdict::Counterexample { .. }),
         "a >8-char boundary string should catch this, got {:?}",
@@ -53,7 +53,7 @@ fn long_string_divergence_is_caught() {
 fn uppercase_divergence_is_caught() {
     let cand = tmp("gen_upper_cand.py", "def f(s):\n    return s.lower()\n");
     let refr = tmp("gen_upper_ref.py", "def f(s):\n    return s\n");
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Str]));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Str])).expect("no safety stop");
     assert!(
         matches!(r.verdict, ReviewVerdict::Counterexample { .. }),
         "an uppercase boundary string should catch this, got {:?}",
@@ -67,7 +67,7 @@ fn uppercase_divergence_is_caught() {
 fn long_list_divergence_is_caught() {
     let cand = tmp("gen_llist_cand.py", "def f(xs):\n    return sum(xs)\n");
     let refr = tmp("gen_llist_ref.py", "def f(xs):\n    return sum(xs[:6])\n");
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::ListInt]));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::ListInt])).expect("no safety stop");
     assert!(
         matches!(r.verdict, ReviewVerdict::Counterexample { .. }),
         "a >6-element boundary list should catch this, got {:?}",
@@ -81,7 +81,7 @@ fn long_list_divergence_is_caught() {
 fn equivalent_refactor_still_passes() {
     let cand = tmp("gen_eq_cand.py", "def f(n):\n    return n * 2\n");
     let refr = tmp("gen_eq_ref.py", "def f(n):\n    return n + n\n");
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int]));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
     assert!(
         matches!(r.verdict, ReviewVerdict::Equivalent { .. }),
         "equivalent refactor must stay green, got {:?}",
@@ -96,8 +96,8 @@ fn determinism_preserved_with_enumeration() {
     let cand = tmp("gen_det_cand.py", "def f(x):\n    return 1 if x == 5 else x\n");
     let refr = tmp("gen_det_ref.py", "def f(x):\n    return x\n");
     let s = spec("f", vec![ArgType::Int]);
-    let r1 = review(&cand, &refr, &s);
-    let r2 = review(&cand, &refr, &s);
+    let r1 = review(&cand, &refr, &s).expect("no safety stop");
+    let r2 = review(&cand, &refr, &s).expect("no safety stop");
     assert_eq!(r1.to_bytes(), r2.to_bytes(), "receipts must be reproducible");
     assert_eq!(r1.sha256(), r2.sha256());
 }
@@ -111,7 +111,7 @@ fn linear_reference_does_not_hang() {
         "gen_lin_ref.py",
         "def f(n):\n    c = 0\n    for _ in range(abs(n)): c += 1\n    return c\n",
     );
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int]));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
     // Equivalent (both count |n|); the point is it completes, not the verdict.
     assert!(
         matches!(r.verdict, ReviewVerdict::Equivalent { .. }),
@@ -135,7 +135,7 @@ fn numeric_text_corners_are_generated() {
             &format!("def f(s):\n    return s == \"\".join(map(chr, [{}]))\n", codes.join(", ")),
         );
         let refr = tmp("gen_num_ref.py", "def f(s):\n    return False\n");
-        let r = review(&cand, &refr, &spec("f", vec![ArgType::Str]));
+        let r = review(&cand, &refr, &spec("f", vec![ArgType::Str])).expect("no safety stop");
         let want = format!("('{text}')");
         match &r.verdict {
             ReviewVerdict::Counterexample { input, .. } => assert_eq!(
@@ -153,7 +153,7 @@ fn numeric_text_corners_are_generated() {
 fn leading_sign_padding_divergence_is_caught() {
     let cand = tmp("gen_sign_cand.py", "def pad(s):\n    return s.rjust(5, \"0\")\n");
     let refr = tmp("gen_sign_ref.py", "def pad(s):\n    return s.zfill(5)\n");
-    let r = review(&cand, &refr, &spec("pad", vec![ArgType::Str]));
+    let r = review(&cand, &refr, &spec("pad", vec![ArgType::Str])).expect("no safety stop");
     assert!(
         matches!(r.verdict, ReviewVerdict::Counterexample { .. }),
         "a leading-sign string corner should catch zfill vs rjust, got {:?}",

@@ -24,8 +24,8 @@ fn ad1_admissible_float_refactor_equivalent_and_reproducible() {
     let cand = write_py("ad1_c", "def scale(x):\n    return x * 2.0 + 1.0\n");
     let refr = write_py("ad1_r", "def scale(x):\n    return x + x + 1.0\n");
     let s = spec("scale", vec![ArgType::Float]);
-    let r1 = review(&cand, &refr, &s);
-    let r2 = review(&cand, &refr, &s);
+    let r1 = review(&cand, &refr, &s).expect("no safety stop");
+    let r2 = review(&cand, &refr, &s).expect("no safety stop");
     assert!(matches!(r1.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r1.verdict);
     assert_eq!(r1.sha256(), r2.sha256(), "receipt must be byte-identical across runs");
 }
@@ -37,8 +37,8 @@ fn ad1_float_divergence_has_stable_counterexample() {
     let cand = write_py("ad1d_c", "def f(x):\n    return x * 2.0\n");
     let refr = write_py("ad1d_r", "def f(x):\n    return x * 3.0\n");
     let s = spec("f", vec![ArgType::Float]);
-    let r1 = review(&cand, &refr, &s);
-    let r2 = review(&cand, &refr, &s);
+    let r1 = review(&cand, &refr, &s).expect("no safety stop");
+    let r2 = review(&cand, &refr, &s).expect("no safety stop");
     assert!(matches!(r1.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", r1.verdict);
     assert_eq!(r1.sha256(), r2.sha256());
 }
@@ -50,7 +50,7 @@ fn signed_zero_is_distinguished() {
     let cand = write_py("sz_c", "def z(x):\n    return 0.0\n");
     let refr = write_py("sz_r", "def z(x):\n    return -0.0\n");
     let s = spec("z", vec![ArgType::Float]);
-    let r = review(&cand, &refr, &s);
+    let r = review(&cand, &refr, &s).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", r.verdict);
 }
 
@@ -60,7 +60,7 @@ fn nan_equals_nan() {
     let cand = write_py("nan_c", "def n(x):\n    return float('nan')\n");
     let refr = write_py("nan_r", "def n(x):\n    return float('nan') * x\n");
     let s = spec("n", vec![ArgType::Float]);
-    let r = review(&cand, &refr, &s);
+    let r = review(&cand, &refr, &s).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
 }
 
@@ -71,7 +71,7 @@ fn ad2_transcendental_is_refused() {
     let cand = write_py("tr_c", "import math\ndef g(x):\n    return math.sin(x)\n");
     let refr = write_py("tr_r", "from math import sin\ndef g(x):\n    return sin(x)\n");
     let s = spec("g", vec![ArgType::Float]);
-    let r = review(&cand, &refr, &s);
+    let r = review(&cand, &refr, &s).expect("no safety stop");
     match r.verdict {
         ReviewVerdict::Refused { ref reason } => assert!(reason.contains("sin"), "reason: {reason}"),
         other => panic!("expected Refused, got {other:?}"),
@@ -85,7 +85,7 @@ fn ad2_transcendental_is_refused() {
 fn pow_operator_is_refused() {
     let p = write_py("pow", "def f(x):\n    return x ** 0.5\n");
     let s = spec("f", vec![ArgType::Float]);
-    match review(&p, &p, &s).verdict {
+    match review(&p, &p, &s).expect("no safety stop").verdict {
         ReviewVerdict::Refused { ref reason } => assert!(reason.contains("Pow"), "reason: {reason}"),
         other => panic!("expected Refused, got {other:?}"),
     }
@@ -97,7 +97,7 @@ fn pow_operator_is_refused() {
 fn getattr_dynamic_dispatch_is_refused() {
     let p = write_py("ga", "import math\ndef g(x):\n    return getattr(math, 'si' + 'n')(x)\n");
     let s = spec("g", vec![ArgType::Float]);
-    assert!(matches!(review(&p, &p, &s).verdict, ReviewVerdict::Refused { .. }), "got {:?}", review(&p, &p, &s).verdict);
+    assert!(matches!(review(&p, &p, &s).expect("no safety stop").verdict, ReviewVerdict::Refused { .. }), "got {:?}", review(&p, &p, &s).expect("no safety stop").verdict);
 }
 
 // Floor division is not in the closure. It is refused.
@@ -105,7 +105,7 @@ fn getattr_dynamic_dispatch_is_refused() {
 fn floor_div_is_refused() {
     let p = write_py("fd", "def f(x):\n    return x // 2.0\n");
     let s = spec("f", vec![ArgType::Float]);
-    assert!(matches!(review(&p, &p, &s).verdict, ReviewVerdict::Refused { .. }));
+    assert!(matches!(review(&p, &p, &s).expect("no safety stop").verdict, ReviewVerdict::Refused { .. }));
 }
 
 // math.sqrt IS in the IEEE-754 required closure. A sqrt function is admitted
@@ -114,7 +114,7 @@ fn floor_div_is_refused() {
 fn sqrt_is_admissible() {
     let p = write_py("sq", "import math\ndef r(x):\n    return math.sqrt(abs(x))\n");
     let s = spec("r", vec![ArgType::Float]);
-    assert!(matches!(review(&p, &p, &s).verdict, ReviewVerdict::Equivalent { .. }), "sqrt must be admitted");
+    assert!(matches!(review(&p, &p, &s).expect("no safety stop").verdict, ReviewVerdict::Equivalent { .. }), "sqrt must be admitted");
 }
 
 // Regression guard for the receipt bytes (the cross-host moat). A fixed
@@ -126,6 +126,6 @@ fn golden_receipt_id_is_stable() {
     let cand = write_py("gold_c", "def s(x):\n    return x * 2.0 + 1.0\n");
     let refr = write_py("gold_r", "def s(x):\n    return x + x + 1.0\n");
     let s = spec("s", vec![ArgType::Float]);
-    let id: String = review(&cand, &refr, &s).sha256().iter().map(|b| format!("{b:02x}")).collect();
+    let id: String = review(&cand, &refr, &s).expect("no safety stop").sha256().iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(id, "716790d265c4d4ea583c90f40a7cc5080d05dda29e3ebbddc40c928a5688b095", "receipt-id drifted");
 }
