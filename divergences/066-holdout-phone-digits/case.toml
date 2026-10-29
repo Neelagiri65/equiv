@@ -1,0 +1,6 @@
+function = "digits"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "keep-decimal-digits filter rewritten with isdigit, which keeps superscripts"
+witness = '''("1²",)'''

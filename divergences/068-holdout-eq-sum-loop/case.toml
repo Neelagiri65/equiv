@@ -1,0 +1,5 @@
+function = "total"
+args = "list[int]"
+expected = "equivalent"
+class = "holdout"
+pattern = "builtin sum rewritten as an explicit loop"

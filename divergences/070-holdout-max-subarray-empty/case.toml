@@ -1,0 +1,5 @@
+function = "best"
+args = "list[int]"
+expected = "equivalent"
+class = "holdout"
+pattern = "explicit empty-list check folded into max(default=0)"

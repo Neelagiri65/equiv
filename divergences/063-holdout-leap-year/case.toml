@@ -1,0 +1,6 @@
+function = "is_leap"
+args = "int"
+expected = "diverges"
+class = "holdout"
+pattern = "leap-year rule drops the divisible-by-400 exception"
+witness = '''(2000,)'''

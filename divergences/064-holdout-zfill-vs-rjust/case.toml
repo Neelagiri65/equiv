@@ -1,0 +1,6 @@
+function = "pad"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "zfill rewritten as rjust with 0, which puts zeros before a leading sign"
+witness = '''("-1",)'''

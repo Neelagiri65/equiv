@@ -1,0 +1,6 @@
+function = "dedupe"
+args = "list[int]"
+expected = "diverges"
+class = "holdout"
+pattern = "order-preserving dedupe rewritten via set, which sorts"
+witness = '''([3, 1],)'''

@@ -1,0 +1,5 @@
+function = "clamp"
+args = "int"
+expected = "equivalent"
+class = "holdout"
+pattern = "clamp with min/max nesting swapped (genuinely equivalent for ints)"
