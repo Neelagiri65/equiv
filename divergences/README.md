@@ -87,13 +87,13 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.3.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.5.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 70 (46 diverges, 24 equivalent) |
-| Catch rate | 41 / 46 = 89.1% |
-| False-alarm rate | 0 / 24 = 0% |
+| Cases | 78 (51 diverges, 27 equivalent) |
+| Catch rate | 45 / 51 = 88.2% |
+| False-alarm rate | 0 / 27 = 0% |
 | Could not check | 1 |
 
 History: equiv 0.2.1 caught 25 / 40 of the original 60 cases. The 0.3.0
@@ -101,6 +101,16 @@ generator catches 36 / 40 of them. Cases 061-070 (class `holdout`) were
 written *after* the 0.3.0 generator change, to check the improvement is not
 fitted to the original misses: 0.2.1 catches 2 / 6 of their diverging pairs,
 0.3.0 catches 5 / 6, with 0 / 4 false alarms.
+
+Cases 071-078 (also `holdout`) were written *before* the 0.5.0 numeric-text
+string corners (`-1`, `+1`, `1.5`, `1e3`, ` 7 `, `-0`, `+0`, `0.0`) were
+added, and recorded against 0.4.0 first: 0.4.0 catches 0 / 5 of their diverging
+pairs, 0.5.0 catches 3 / 5, with 0 / 3 false alarms. 064 is caught by the same
+change. The two still missed sit next to the new corners, not on them: 076 (a
+repeated sign) was written that way to test whether the corners generalise, and
+they do not; 074 began as an equivalent pair and was relabelled before equiv
+ran on it, when a check of the code showed `str.strip()` removes the
+U+001C-U+001F separators that `int()` rejects.
 
 By class (diverges caught / total, equivalent passed / total):
 
@@ -118,7 +128,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 5/6 | 4/4 |
+| holdout | 9/11 | 7/7 |
 
 ### Misses and why
 
@@ -131,7 +141,8 @@ reported as equivalent. The reason is the generator's reach, read from
 | 012-float-reassociation | needs all three operands set together so they cancel (e.g. `1e16, -1e16, 1.0`); corner floats are varied one argument at a time and the random draws did not produce one |
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
 | 024-int-float-precision-large | needs an int above 2^53 with no such constant in the source; random ints stay within +/-1,000,000 because a reference may loop `n` times and there is no execution time limit yet |
-| 064-holdout-zfill-vs-rjust | needs a string with a leading `-` or `+`; no string corner or random string has one |
+| 074-holdout-int-strip-separators | needs digits wrapped in U+001C-U+001F, which `str.strip()` removes and `int()` rejects; no string corner contains those characters |
+| 076-holdout-is-int-double-sign | needs a repeated sign such as `--1`; the sign corners carry a single sign, and the source only spells `+-`, on which both sides agree |
 
 Could not check: `011-float-round-half-even-floor` is refused because
 `math.floor` is outside the float allowlist (only `+ - * /`, comparisons, a few
