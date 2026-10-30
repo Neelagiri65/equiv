@@ -75,7 +75,13 @@ equiv verify-receipt <signed-receipt-hex>
 ```
 
 Exit codes: `0` equivalent, `1` diverges with a printed counterexample, `2`
-could not check.
+could not check. For `review-pr` the code is a report over the whole run: `0`
+every changed function was checked and preserved behaviour, `1` at least one
+changed behaviour, `2` nothing diverged but at least one changed function was
+not checked (safety stop, refused type, error, or no supported type hints; each
+is listed in the comment, never shown as green). The Action fails the PR check
+on `1` by default and on `2` only with `fail-on-not-checked: "true"`; a review
+that did not run at all (`3`) always fails it.
 
 ## Scope
 

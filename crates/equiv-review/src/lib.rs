@@ -994,8 +994,10 @@ pub struct ReviewItem {
 }
 
 /// Run every check (head = candidate, base = reference). Returns the items
-/// plus a CI gate exit code: 0 all equivalent, 1 any divergence, 2 only
-/// errors. As a PR gate, nonzero blocks the merge.
+/// plus a report code: 0 all equivalent, 1 any divergence, 2 nothing diverged
+/// but at least one function could not be checked. Which codes block a merge
+/// is the wrapper's policy (the Action fails on 1 by default and on 2 only
+/// with `fail-on-not-checked: "true"`; backlog 0.3c).
 pub fn run_pr(checks: &[PrCheck]) -> (Vec<ReviewItem>, i32) {
     run_pr_limited(checks, DEFAULT_SAFETY_SECONDS)
 }
@@ -1175,7 +1177,7 @@ pub fn render_markdown_with_unchecked(
     signer: Option<&str>,
     unchecked: &[(String, String)],
 ) -> String {
-    let mut s = render_markdown(items, signer);
+    let mut s = render_markdown_counting(items, signer, unchecked.len());
     if !unchecked.is_empty() {
         s.push_str("\n## changed, not checked\n\n");
         s.push_str(
@@ -1232,6 +1234,13 @@ pub const MARKER: &str = "<!-- equiv-review -->";
 /// present, is the hex ed25519 public key that signed the receipts, shown so
 /// reviewers/auditors can confirm it is the org's key.
 pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
+    render_markdown_counting(items, signer, 0)
+}
+
+/// `render_markdown` whose headline also counts the changed functions that
+/// auto-detection could not check (backlog 0.3c): a reader must see "not
+/// checked" on the first line, never a green headline over an unchecked list.
+fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecked_n: usize) -> String {
     let mut diverged = 0;
     let mut errored = 0;
     for it in items {
@@ -1246,13 +1255,24 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
     }
     let total = items.len();
     let fns = |n: usize| if n == 1 { "function" } else { "functions" };
+    let more = match unchecked_n {
+        0 => String::new(),
+        1 => " 1 changed function was not checked (listed below).".to_string(),
+        n => format!(" {n} changed functions were not checked (listed below)."),
+    };
     let headline = if diverged > 0 {
-        format!("{diverged} of {total} checked {} changed behaviour.", fns(total))
+        format!("{diverged} of {total} checked {} changed behaviour.{more}", fns(total))
     } else if errored > 0 {
-        format!("{errored} of {total} {} could not be checked.", fns(total))
+        format!("{errored} of {total} {} could not be checked.{more}", fns(total))
+    } else if total == 0 && unchecked_n > 0 {
+        // Nothing ran: this must never read as a pass (silence is not green).
+        format!(
+            "Nothing was checked: {unchecked_n} changed {} could not be checked (listed below).",
+            fns(unchecked_n)
+        )
     } else {
         let verb = if total == 1 { "function: behaviour" } else { "functions: behaviour" };
-        format!("{total} checked {verb} preserved against base.")
+        format!("{total} checked {verb} preserved against base.{more}")
     };
 
     let mut s = String::new();
@@ -1260,7 +1280,15 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
     s.push('\n');
     s.push_str("## equiv review\n\n");
     s.push_str(&headline);
-    s.push_str("\n\n| function | result | detail |\n|---|---|---|\n");
+    s.push('\n');
+    // Nothing ran: no result table and no receipts block, so the comment cannot
+    // look like a pass with empty evidence; the "changed, not checked" list
+    // that follows is the whole report.
+    if items.is_empty() {
+        s.push('\n');
+        return finish_markdown(s);
+    }
+    s.push_str("\n| function | result | detail |\n|---|---|---|\n");
     for it in items {
         let r = match &it.outcome {
             Ok(r) => r,
@@ -1308,6 +1336,11 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
         }
     }
     s.push_str("\n</details>\n\n");
+    finish_markdown(s)
+}
+
+/// The scope disclaimer that closes every comment.
+fn finish_markdown(mut s: String) -> String {
     s.push_str(
         "Scope: behavioural equivalence on generated inputs only. This does not check \
          intent, architecture, security. A passing result means behaviour was preserved \

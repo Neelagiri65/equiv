@@ -23,6 +23,15 @@ inputs:
     description: "Fail the check when any function changed behaviour."
     required: false
     default: "true"
+  fail-on-not-checked:
+    description: >
+      Fail the check when nothing diverged but a changed function was not
+      checked (safety stop, refused type, error, or no supported type hints).
+      Off by default: such functions are always listed in the comment under
+      "not checked", never shown as green, but do not block the merge. A review
+      that did not run at all (bad manifest, no git repo) always fails.
+    required: false
+    default: "false"
   signing-key:
     description: >
       Optional ed25519 seed (64 hex chars) used to sign receipts (v0
@@ -76,6 +85,7 @@ runs:
         EQUIV_AUTO: ${{ inputs.auto }}
         EQUIV_BASE_INPUT: ${{ inputs.base }}
         EQUIV_FAIL: ${{ inputs.fail-on-divergence }}
+        EQUIV_FAIL_NOT_CHECKED: ${{ inputs.fail-on-not-checked }}
         # Secret seed, masked by Actions; the entrypoint never echoes it.
         EQUIV_SIGNING_KEY: ${{ inputs.signing-key }}
         EQUIV_KEYLESS: ${{ inputs.keyless }}
