@@ -14,7 +14,7 @@ fn wp(name: &str, body: &str) -> std::path::PathBuf {
     p
 }
 fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 200, seed: 1 }
+    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
 }
 
 // A dict is a map: key insertion order is not behaviour. Same content in a
@@ -78,5 +78,5 @@ fn golden_dict_receipt_id_is_stable() {
     let cand = wp("gd_c", "def f(n):\n    return {'a': n}\n");
     let refr = wp("gd_r", "def f(n):\n    return {'a': n + 1}\n");
     let id: String = review(&cand, &refr, &spec("f", vec![ArgType::Int])).sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "69f43fb7e43fba86f0934552a6ec8b3326d841b388de7626d5fea9051410ea58", "receipt-id drifted");
+    assert_eq!(id, "80f8a2dc435c401bc9d6d6deb835e9dc593e32d1acb0b505c6a94498c78a4571", "receipt-id drifted");
 }

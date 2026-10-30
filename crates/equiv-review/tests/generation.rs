@@ -13,7 +13,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 200, seed: 1 }
+    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
 }
 
 // A divergence that lives only at a magic constant (x == 777). Uniform random

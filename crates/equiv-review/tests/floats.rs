@@ -13,7 +13,7 @@ fn write_py(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 200, seed: 1 }
+    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
 }
 
 // AD-1: an admissible float refactor (only the correctly rounded basic ops)
@@ -127,5 +127,5 @@ fn golden_receipt_id_is_stable() {
     let refr = write_py("gold_r", "def s(x):\n    return x + x + 1.0\n");
     let s = spec("s", vec![ArgType::Float]);
     let id: String = review(&cand, &refr, &s).sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "651c15cf6ca5c64e34f82c4c4856f94de68377a68f69b3eeb9ae5602b4ee31f9", "receipt-id drifted");
+    assert_eq!(id, "2ec8a37f2c0968c2162b5bfc42099a48491c444e2c46080663b131c8a3c1d66c", "receipt-id drifted");
 }

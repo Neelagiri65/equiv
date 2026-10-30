@@ -101,6 +101,17 @@ correctly rounded operations, where the result is identical on every machine. A
 function that reaches a transcendental (sin, exp, log, pow) is refused by name
 rather than judged. Its last bit is not reproducible across maths libraries.
 
+Each call of either version, and each module load, runs under a step budget:
+1,000,000 Python line and jump events by default, counted through
+`sys.monitoring`. No clock is read, so the same budget gives the same result on
+every host. A version that exceeds it (an infinite loop, or a loop over a huge
+literal-derived input) ends the review as could not check (exit `2`), naming the
+budget, the input and the side; a counterexample found on an earlier input still
+stands. The budget is written into the receipt. Work done inside C code (for
+example `sum(range(10**18))`) raises no Python events and is not counted, so it
+can still run long. The budget needs Python 3.12 or newer; on an older Python the
+review reports could not check instead of running without a limit.
+
 ## How it works
 
 Input generation and the verdict are computed in Rust from a fixed seed. The
