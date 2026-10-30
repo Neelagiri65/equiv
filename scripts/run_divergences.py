@@ -215,13 +215,22 @@ def integrity(case, n):
 # ---------------------------------------------------------------- scoring
 
 
+HARNESS_TIMEOUT_S = 120
+
+
 def run_equiv(binary, case):
     d = case["dir"]
     env = dict(os.environ, EQUIV_METRICS="off")
-    p = subprocess.run(
-        [binary, "review", str(d / "candidate.py"), str(d / "reference.py"), case["function"], case["args"]],
-        capture_output=True, text=True, env=env, cwd=ROOT,
-    )
+    # The harness protects itself from a hung review (equiv has no execution
+    # budget yet). This limit lives only in the runner, never in equiv's
+    # verdict path, and a hang is scored as could-not-check.
+    try:
+        p = subprocess.run(
+            [binary, "review", str(d / "candidate.py"), str(d / "reference.py"), case["function"], case["args"]],
+            capture_output=True, text=True, env=env, cwd=ROOT, timeout=HARNESS_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return 2, f"HARNESS TIMEOUT: no result within {HARNESS_TIMEOUT_S}s", None
     lines = (p.stdout or p.stderr).splitlines()
     first = lines[0] if lines else ""
     detail = first
