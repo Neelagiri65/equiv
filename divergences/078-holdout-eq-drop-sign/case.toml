@@ -1,0 +1,5 @@
+function = "unsigned"
+args = "str"
+expected = "equivalent"
+class = "holdout"
+pattern = "drop one leading sign: membership of the first character in a sign string rewritten as startswith with a tuple (the empty first character is in every string, but slicing it off is a no-op)"

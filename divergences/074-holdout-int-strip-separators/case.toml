@@ -1,0 +1,6 @@
+function = "to_int"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "an explicit strip() added before int(); str.strip() also removes the ASCII information separators (U+001C-U+001F), which int() rejects. Written as an equivalent pair, relabelled diverges before equiv was run on it when a check of the code showed the difference"
+witness = '''("\x1c5\x1f",)'''

@@ -1,0 +1,6 @@
+function = "is_int"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "int() validation rewritten as strip, drop any run of signs, then isdecimal; accepts repeated signs that int() rejects (a neighbour of the planned sign corners, not one of them)"
+witness = '''("--1",)'''

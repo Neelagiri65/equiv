@@ -1,0 +1,6 @@
+function = "is_int"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "int() validation rewritten as strip-minus-then-isdecimal, which rejects a plus sign and surrounding whitespace that int() accepts"
+witness = '''("+1",)'''

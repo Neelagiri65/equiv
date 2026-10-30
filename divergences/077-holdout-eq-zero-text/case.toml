@@ -1,0 +1,5 @@
+function = "is_zero_text"
+args = "str"
+expected = "equivalent"
+class = "holdout"
+pattern = "all-zeros text test rewritten from strip() to a character-set check"

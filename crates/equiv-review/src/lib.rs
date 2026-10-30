@@ -288,6 +288,10 @@ const STR_CORNERS: &[&str] = &[
     "éééééé", "e\u{301}", "😀",
     // digit strings in identifier shape (check digits: Luhn, ISBN, IBAN-like)
     "91", "0123456789", "79927398713", "4111111111111111", "123456789X", "0306406152",
+    // numeric text: a leading sign (zfill vs rjust, isdecimal vs int()), a
+    // decimal point and an exponent (float() accepts both), whitespace-padded
+    // digits (int() and float() ignore the padding), and signed / decimal zero
+    "-1", "+1", "1.5", "1e3", " 7 ", "-0", "+0", "0.0",
 ];
 
 // Deterministic corner inputs the seeded random generator reaches rarely or

@@ -1,0 +1,6 @@
+function = "is_number"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "float() validation rewritten as drop-one-dot-then-isdecimal, which rejects a sign and exponent notation that float() accepts"
+witness = '''("-1",)'''
