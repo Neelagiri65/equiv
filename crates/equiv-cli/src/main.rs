@@ -22,6 +22,37 @@ fn from_hex(s: &str) -> Result<Vec<u8>, String> {
         .collect()
 }
 
+/// Per-function wall-clock safety limit (backlog 0.3b). Read here, never in the
+/// library, and never written into a receipt.
+fn safety_seconds() -> Result<u64, String> {
+    match std::env::var("EQUIV_SAFETY_SECONDS") {
+        Err(_) => Ok(equiv_review::DEFAULT_SAFETY_SECONDS),
+        Ok(v) => match v.trim().parse::<u64>() {
+            Ok(n) if n > 0 => Ok(n),
+            _ => Err(format!("EQUIV_SAFETY_SECONDS must be a whole number of seconds above 0, got `{v}`")),
+        },
+    }
+}
+
+/// The evaluator runs in its own process group (so the safety stop can kill
+/// all of it), which puts it out of reach of the terminal's Ctrl-C. Forward
+/// SIGINT/SIGTERM/SIGHUP: kill live evaluators, then die by the same signal.
+#[cfg(unix)]
+fn forward_interrupts() {
+    extern "C" fn on_signal(sig: libc::c_int) {
+        equiv_review::kill_live_evaluators();
+        // SAFETY: signal/raise are async-signal-safe.
+        unsafe {
+            libc::signal(sig, libc::SIG_DFL);
+            libc::raise(sig);
+        }
+    }
+    for sig in [libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+        // SAFETY: installing a handler that only makes async-signal-safe calls.
+        unsafe { libc::signal(sig, on_signal as extern "C" fn(libc::c_int) as libc::sighandler_t) };
+    }
+}
+
 fn load_contract(path: &str) -> Result<equiv_core::Contract, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     if path.ends_with(".eqct") {
@@ -41,6 +72,14 @@ USAGE:
         argument types (int|str|list[int]|float|dict), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
         $EQUIV_SIGNING_KEY (64 hex chars).
+  equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]
+        Check every listed (or auto-detected) changed function against base.
+
+SAFETY LIMIT:
+  $EQUIV_SAFETY_SECONDS (default 120) caps the wall-clock time of one
+  function's check, for long runs inside C code the step budget cannot count.
+  A check that hits it is could-not-check (exit 2) with NO receipt: the limit
+  is not part of the deterministic budget and never decides a verdict.
   equiv keygen
         Generate an ed25519 keypair; prints the seed and public key. The seed
         is never written to disk; store it in your keychain.
@@ -58,8 +97,9 @@ fn run() -> Result<u8, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("review-pr") => {
+            let safety = safety_seconds()?;
             use equiv_review::{
-                detect_changed_functions, render_markdown_with_unchecked, run_pr, ArgType,
+                detect_changed_functions, render_markdown_with_unchecked, run_pr_limited, ArgType,
                 DetectedStatus, PrCheck, ReviewSpec,
             };
             let base = args
@@ -163,7 +203,7 @@ fn run() -> Result<u8, String> {
                 eprintln!("review-pr: nothing changed to review");
                 return Ok(0);
             }
-            let (items, code) = run_pr(&checks);
+            let (items, code) = run_pr_limited(&checks, safety);
 
             // Local-first verdict-rate metrics (fail-silent, counts only, no
             // network). This build reviews Python only, so the tag is "python".
@@ -188,8 +228,9 @@ fn run() -> Result<u8, String> {
                     .position(|a| a == "--receipts-out")
                     .and_then(|i| args.get(i + 1).cloned());
                 let mut buf = String::new();
-                for it in &items {
-                    let signed = equiv_core::SignedReceipt::sign(it.receipt.to_bytes(), k);
+                // A safety stop has no receipt, so nothing is signed for it.
+                for (it, r) in items.iter().filter_map(|it| it.outcome.as_ref().ok().map(|r| (it, r))) {
+                    let signed = equiv_core::SignedReceipt::sign(r.to_bytes(), k);
                     buf.push_str(&format!(
                         "{}\t{}\t{}\n",
                         it.name,
@@ -208,8 +249,10 @@ fn run() -> Result<u8, String> {
                 let dir = args.get(i + 1).ok_or("--attest-out needs a directory")?;
                 std::fs::create_dir_all(dir).map_err(|e| format!("{dir}: {e}"))?;
                 for (check, item) in checks.iter().zip(items.iter()) {
+                    // No receipt (safety stop) => nothing to attest.
+                    let Ok(receipt) = &item.outcome else { continue };
                     let file = check.head_path.display().to_string();
-                    let stmt = equiv_review::intoto_statement(&file, item);
+                    let stmt = equiv_review::intoto_statement(&file, &item.name, receipt);
                     let path = std::path::Path::new(dir).join(format!("{}.intoto.json", item.name));
                     std::fs::write(&path, stmt).map_err(|e| format!("{}: {e}", path.display()))?;
                 }
@@ -246,7 +289,8 @@ fn run() -> Result<u8, String> {
             }
         }
         Some("review") => {
-            use equiv_review::{review, ArgType, ReviewSpec, ReviewVerdict};
+            use equiv_review::{review_limited, ArgType, ReviewSpec, ReviewVerdict};
+            let safety = safety_seconds()?;
             let want_sign = args.iter().any(|a| a == "--sign");
             let pos: Vec<&String> = args.iter().skip(1).filter(|a| *a != "--sign").collect();
             let cand = pos.first().ok_or("review: missing candidate .py")?;
@@ -261,7 +305,20 @@ fn run() -> Result<u8, String> {
                 .map(|s| ArgType::parse(s).ok_or_else(|| format!("bad arg type `{s}`")))
                 .collect::<Result<Vec<_>, _>>()?;
             let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET };
-            let r = review(std::path::Path::new(cand), std::path::Path::new(refr), &spec);
+            let r = match review_limited(
+                std::path::Path::new(cand),
+                std::path::Path::new(refr),
+                &spec,
+                safety,
+            ) {
+                Ok(r) => r,
+                Err(stop) => {
+                    // Wall-clock stop: could not check, and deliberately no
+                    // receipt, signed or not (backlog 0.3b, gate P3).
+                    println!("ERROR: {}", stop.reason());
+                    return Ok(stop.exit_code() as u8);
+                }
+            };
             match &r.verdict {
                 ReviewVerdict::Equivalent { n } => {
                     println!("EQUIVALENT: agreed on all {n} generated inputs (seed {seed})");
@@ -337,6 +394,8 @@ fn run() -> Result<u8, String> {
 }
 
 fn main() -> ExitCode {
+    #[cfg(unix)]
+    forward_interrupts();
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(msg) => {

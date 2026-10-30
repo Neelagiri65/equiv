@@ -165,6 +165,7 @@ dependencies = [
  "equiv-core",
  "equiv-engine",
  "equiv-review",
+ "libc",
 ]
 
 [[package]]
@@ -194,6 +195,7 @@ name = "equiv-review"
 version = "0.5.0"
 dependencies = [
  "equiv-core",
+ "libc",
  "sha2",
 ]
 

@@ -108,9 +108,15 @@ every host. A version that exceeds it (an infinite loop, or a loop over a huge
 literal-derived input) ends the review as could not check (exit `2`), naming the
 budget, the input and the side; a counterexample found on an earlier input still
 stands. The budget is written into the receipt. Work done inside C code (for
-example `sum(range(10**18))`) raises no Python events and is not counted, so it
-can still run long. The budget needs Python 3.12 or newer; on an older Python the
-review reports could not check instead of running without a limit.
+example `sum(range(10**18))`) raises no Python events and is not counted. For
+that case a separate safety limit applies: if one function's check runs longer
+than `EQUIV_SAFETY_SECONDS` (default 120) of wall-clock time, its evaluator
+processes are stopped and the function is reported as could not check (exit
+`2`). This limit is not part of the deterministic budget, so it never decides a
+verdict and no receipt (signed or unsigned) is issued for a stopped function;
+other functions in the same run still report. The budget needs Python 3.12 or
+newer; on an older Python the review reports could not check instead of running
+without a limit.
 
 ## How it works
 

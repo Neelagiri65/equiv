@@ -113,11 +113,15 @@ fn build_event(
 ) -> String {
     let (mut equivalent, mut counterexample, mut error, mut refused) = (0u32, 0u32, 0u32, 0u32);
     for it in items {
-        match it.receipt.verdict {
-            ReviewVerdict::Equivalent { .. } => equivalent += 1,
-            ReviewVerdict::Counterexample { .. } => counterexample += 1,
-            ReviewVerdict::Error { .. } => error += 1,
-            ReviewVerdict::Refused { .. } => refused += 1,
+        match &it.outcome {
+            Ok(r) => match r.verdict {
+                ReviewVerdict::Equivalent { .. } => equivalent += 1,
+                ReviewVerdict::Counterexample { .. } => counterexample += 1,
+                ReviewVerdict::Error { .. } => error += 1,
+                ReviewVerdict::Refused { .. } => refused += 1,
+            },
+            // A safety stop is could-not-check; counted with errors.
+            Err(_) => error += 1,
         }
     }
 
@@ -188,14 +192,14 @@ mod tests {
     fn item(name: &str, verdict: ReviewVerdict) -> ReviewItem {
         ReviewItem {
             name: name.to_string(),
-            receipt: ReviewReceipt {
+            outcome: Ok(ReviewReceipt {
                 candidate_sha256: [0; 32],
                 reference_sha256: [0; 32],
                 spec_sha256: [0; 32],
                 verdict,
                 checker_version: "test".to_string(),
                 budget: equiv_review::DEFAULT_BUDGET,
-            },
+            }),
         }
     }
 

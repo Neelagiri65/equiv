@@ -52,6 +52,38 @@ impl ArgType {
 /// budget gives the same verdict on every host (gate P3).
 pub const DEFAULT_BUDGET: u64 = 1_000_000;
 
+/// Default wall-clock safety limit for one function's check, in seconds
+/// (backlog 0.3b). Work inside a single C call (`sum(range(10**18))`) raises
+/// no Python events, so the step budget cannot stop it; past this limit the
+/// Python process group is killed. Wall-clock time must never decide a verdict
+/// (gate P3), so a safety stop is not a receipt: it is a `SafetyStop`, which
+/// has no bytes to hash, sign or attest. The limit is not in the spec hash or
+/// the receipt.
+pub const DEFAULT_SAFETY_SECONDS: u64 = 120;
+
+/// A check that was killed by the wall-clock safety limit. Deliberately not a
+/// `ReviewVerdict` and not inside a `ReviewReceipt`: whether it happens depends
+/// on host speed, so it is reported as could-not-check and never receipted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SafetyStop {
+    pub func: String,
+    pub limit_secs: u64,
+}
+
+impl SafetyStop {
+    pub fn reason(&self) -> String {
+        format!(
+            "could not check: exceeded {} s safety limit (not part of the deterministic budget); \
+             the check of `{}` was stopped and no receipt was issued",
+            self.limit_secs, self.func
+        )
+    }
+    /// Could not check: never green.
+    pub fn exit_code(&self) -> i32 {
+        2
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ReviewSpec {
     pub func: String,
@@ -904,24 +936,45 @@ for i, args in enumerate(cases):
 /// Run the oracle. `candidate_path`/`reference_path` each define `spec.func`.
 /// Float admissibility (AD-2) is enforced inside the driver as an AST allowlist
 /// at source level; an inadmissible function surfaces as a `Refused` verdict.
-pub fn review(candidate_path: &Path, reference_path: &Path, spec: &ReviewSpec) -> ReviewReceipt {
+/// Uses the default wall-clock safety limit (`DEFAULT_SAFETY_SECONDS`).
+pub fn review(
+    candidate_path: &Path,
+    reference_path: &Path,
+    spec: &ReviewSpec,
+) -> Result<ReviewReceipt, SafetyStop> {
+    review_limited(candidate_path, reference_path, spec, DEFAULT_SAFETY_SECONDS)
+}
+
+/// `review` with an explicit wall-clock safety limit in seconds. The limit only
+/// decides whether a receipt exists at all; it never changes receipt bytes.
+pub fn review_limited(
+    candidate_path: &Path,
+    reference_path: &Path,
+    spec: &ReviewSpec,
+    safety_secs: u64,
+) -> Result<ReviewReceipt, SafetyStop> {
     let cand_src = std::fs::read(candidate_path).unwrap_or_default();
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
     let cand_text = String::from_utf8_lossy(&cand_src);
     let ref_text = String::from_utf8_lossy(&ref_src);
     let cases = gen_cases(spec, &[&cand_text, &ref_text]);
 
-    let verdict = run_python(candidate_path, reference_path, spec, &cases)
-        .unwrap_or_else(|reason| ReviewVerdict::Error { reason });
+    let verdict = match run_python(candidate_path, reference_path, spec, &cases, safety_secs) {
+        Ok(v) => v,
+        Err(PyFail::Msg(reason)) => ReviewVerdict::Error { reason },
+        Err(PyFail::Stopped) => {
+            return Err(SafetyStop { func: spec.func.clone(), limit_secs: safety_secs });
+        }
+    };
 
-    ReviewReceipt {
+    Ok(ReviewReceipt {
         candidate_sha256: sha256(&cand_src),
         reference_sha256: sha256(&ref_src),
         spec_sha256: sha256(&spec.canonical()),
         verdict,
         checker_version: env!("CARGO_PKG_VERSION").into(),
         budget: spec.budget,
-    }
+    })
 }
 
 // ---------- PR review loop: base vs head ----------
@@ -936,25 +989,35 @@ pub struct PrCheck {
 
 pub struct ReviewItem {
     pub name: String,
-    pub receipt: ReviewReceipt,
+    /// The receipt, or the safety stop that prevented one (no receipt exists).
+    pub outcome: Result<ReviewReceipt, SafetyStop>,
 }
 
 /// Run every check (head = candidate, base = reference). Returns the items
 /// plus a CI gate exit code: 0 all equivalent, 1 any divergence, 2 only
 /// errors. As a PR gate, nonzero blocks the merge.
 pub fn run_pr(checks: &[PrCheck]) -> (Vec<ReviewItem>, i32) {
+    run_pr_limited(checks, DEFAULT_SAFETY_SECONDS)
+}
+
+/// `run_pr` with an explicit per-function wall-clock safety limit. A function
+/// that hits it is reported as could-not-check; the others still run.
+pub fn run_pr_limited(checks: &[PrCheck], safety_secs: u64) -> (Vec<ReviewItem>, i32) {
     let mut items = Vec::new();
     let mut any_cex = false;
     let mut any_err = false;
     for c in checks {
         // head is the candidate (the PR's new code), base is the reference.
-        let receipt = review(&c.head_path, &c.base_path, &c.spec);
-        match &receipt.verdict {
-            ReviewVerdict::Counterexample { .. } => any_cex = true,
-            ReviewVerdict::Error { .. } | ReviewVerdict::Refused { .. } => any_err = true,
-            ReviewVerdict::Equivalent { .. } => {}
+        let outcome = review_limited(&c.head_path, &c.base_path, &c.spec, safety_secs);
+        match &outcome {
+            Ok(r) => match &r.verdict {
+                ReviewVerdict::Counterexample { .. } => any_cex = true,
+                ReviewVerdict::Error { .. } | ReviewVerdict::Refused { .. } => any_err = true,
+                ReviewVerdict::Equivalent { .. } => {}
+            },
+            Err(_) => any_err = true,
         }
-        items.push(ReviewItem { name: c.name.clone(), receipt });
+        items.push(ReviewItem { name: c.name.clone(), outcome });
     }
     let code = if any_cex {
         1
@@ -1133,9 +1196,10 @@ fn short(id: &[u8; 32]) -> String {
 /// Build the in-toto Statement (DR-3) for one reviewed function: the payload
 /// the keyless Sigstore path (cosign) signs. `file` is the reviewed path;
 /// the subject digest is the candidate (head) source hash from the receipt.
-pub fn intoto_statement(file: &str, item: &ReviewItem) -> String {
+/// Takes the receipt itself: a safety stop has none, so it cannot be attested.
+pub fn intoto_statement(file: &str, name: &str, receipt: &ReviewReceipt) -> String {
     use equiv_core::attest::{statement, ReviewPredicate};
-    let (verdict, detail) = match &item.receipt.verdict {
+    let (verdict, detail) = match &receipt.verdict {
         ReviewVerdict::Equivalent { n } => {
             ("equivalent".to_string(), format!("agreed on {n} cases"))
         }
@@ -1146,7 +1210,7 @@ pub fn intoto_statement(file: &str, item: &ReviewItem) -> String {
         ReviewVerdict::Error { reason } => ("error".to_string(), reason.clone()),
         ReviewVerdict::Refused { reason } => ("refused".to_string(), reason.clone()),
     };
-    let receipt_id = hex(&item.receipt.sha256());
+    let receipt_id = hex(&receipt.sha256());
     let predicate = ReviewPredicate {
         verdict: &verdict,
         detail: &detail,
@@ -1155,8 +1219,8 @@ pub fn intoto_statement(file: &str, item: &ReviewItem) -> String {
         checker_version: env!("CARGO_PKG_VERSION"),
     };
     statement(
-        &format!("{file}::{}", item.name),
-        &hex(&item.receipt.candidate_sha256),
+        &format!("{file}::{name}"),
+        &hex(&receipt.candidate_sha256),
         &predicate.to_json(),
     )
 }
@@ -1171,10 +1235,13 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
     let mut diverged = 0;
     let mut errored = 0;
     for it in items {
-        match it.receipt.verdict {
-            ReviewVerdict::Counterexample { .. } => diverged += 1,
-            ReviewVerdict::Error { .. } | ReviewVerdict::Refused { .. } => errored += 1,
-            ReviewVerdict::Equivalent { .. } => {}
+        match &it.outcome {
+            Ok(r) => match r.verdict {
+                ReviewVerdict::Counterexample { .. } => diverged += 1,
+                ReviewVerdict::Error { .. } | ReviewVerdict::Refused { .. } => errored += 1,
+                ReviewVerdict::Equivalent { .. } => {}
+            },
+            Err(_) => errored += 1,
         }
     }
     let total = items.len();
@@ -1195,7 +1262,18 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
     s.push_str(&headline);
     s.push_str("\n\n| function | result | detail |\n|---|---|---|\n");
     for it in items {
-        let (v, detail) = match &it.receipt.verdict {
+        let r = match &it.outcome {
+            Ok(r) => r,
+            Err(stop) => {
+                s.push_str(&format!(
+                    "| `{}` | not checked | `{}` |\n",
+                    it.name,
+                    stop.reason().replace('`', "")
+                ));
+                continue;
+            }
+        };
+        let (v, detail) = match &r.verdict {
             ReviewVerdict::Equivalent { n } => (
                 "equivalent".to_string(),
                 format!("{n}/{n} generated inputs agree"),
@@ -1224,11 +1302,10 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
         s.push_str(&format!("Signed (ed25519) by `{pk}`.\n\n"));
     }
     for it in items {
-        s.push_str(&format!(
-            "- `{}`: receipt-id {}\n",
-            it.name,
-            short(&it.receipt.sha256())
-        ));
+        match &it.outcome {
+            Ok(r) => s.push_str(&format!("- `{}`: receipt-id {}\n", it.name, short(&r.sha256()))),
+            Err(_) => s.push_str(&format!("- `{}`: no receipt (safety stop)\n", it.name)),
+        }
     }
     s.push_str("\n</details>\n\n");
     s.push_str(
@@ -1239,12 +1316,135 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
     s
 }
 
+/// Why `run_python` produced no verdict: a message (becomes a receipted
+/// could-not-check) or the wall-clock safety stop (no receipt at all).
+enum PyFail {
+    Msg(String),
+    Stopped,
+}
+
+impl From<String> for PyFail {
+    fn from(m: String) -> Self {
+        PyFail::Msg(m)
+    }
+}
+
+/// Process-group ids of evaluators currently running, so an interrupted CLI
+/// can take them down too (the evaluator runs in its own process group, out of
+/// reach of the terminal's Ctrl-C). Fixed slots: readable from a signal handler.
+#[cfg(unix)]
+static LIVE_GROUPS: [std::sync::atomic::AtomicI32; 16] =
+    [const { std::sync::atomic::AtomicI32::new(0) }; 16];
+
+/// Kill every evaluator process group still running. Async-signal-safe (atomic
+/// loads and `kill` only), for the CLI's SIGINT/SIGTERM/SIGHUP handler.
+pub fn kill_live_evaluators() {
+    #[cfg(unix)]
+    for slot in &LIVE_GROUPS {
+        let g = slot.load(std::sync::atomic::Ordering::SeqCst);
+        if g > 0 {
+            // SAFETY: plain syscall on a process-group id we created.
+            unsafe { libc::kill(-g, libc::SIGKILL) };
+        }
+    }
+}
+
+fn kill_group(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        // SAFETY: plain syscall. The child leads its own group (process_group(0)),
+        // and is not reaped yet, so the group id cannot have been reused.
+        unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
+    }
+    let _ = child.kill();
+}
+
+/// Run `cmd`, killing its whole process group if it (or anything holding its
+/// output pipes) is still going after `limit`. `Ok(None)` = safety stop. The
+/// limit is wall-clock: it only ever turns a check into "no receipt", it never
+/// chooses between verdicts.
+fn run_watched(
+    mut cmd: Command,
+    limit: std::time::Duration,
+) -> std::io::Result<Option<std::process::Output>> {
+    use std::io::Read;
+    use std::process::Stdio;
+    use std::time::{Duration, Instant};
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    let deadline = Instant::now() + limit;
+    let mut child = cmd.spawn()?;
+    #[cfg(unix)]
+    let slot = LIVE_GROUPS.iter().find(|s| {
+        s.compare_exchange(
+            0,
+            child.id() as i32,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok()
+    });
+    // Drain both pipes on their own threads: a child writing more than a pipe
+    // buffer would otherwise block and be mistaken for a long run.
+    let (tx, rx) = std::sync::mpsc::channel::<(u8, Vec<u8>)>();
+    for (k, pipe) in [
+        (0u8, child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>)),
+        (1u8, child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>)),
+    ] {
+        let tx = tx.clone();
+        let mut pipe = pipe.expect("piped");
+        std::thread::spawn(move || {
+            let mut b = Vec::new();
+            let _ = pipe.read_to_end(&mut b);
+            let _ = tx.send((k, b));
+        });
+    }
+    drop(tx);
+    let (mut out, mut err, mut status) = (None, None, None);
+    let mut nap = Duration::from_millis(1);
+    let result = loop {
+        if status.is_none() {
+            status = child.try_wait().ok().flatten();
+        }
+        while let Ok((k, b)) = rx.try_recv() {
+            if k == 0 { out = Some(b) } else { err = Some(b) }
+        }
+        if let (Some(st), Some(_), Some(_)) = (status, &out, &err) {
+            break Some(std::process::Output {
+                status: st,
+                stdout: out.take().unwrap_or_default(),
+                stderr: err.take().unwrap_or_default(),
+            });
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            kill_group(&mut child);
+            let _ = child.wait();
+            break None;
+        }
+        if let Ok((k, b)) = rx.recv_timeout(nap.min(deadline - now)) {
+            if k == 0 { out = Some(b) } else { err = Some(b) }
+        }
+        nap = (nap * 2).min(Duration::from_millis(50));
+    };
+    #[cfg(unix)]
+    if let Some(s) = slot {
+        s.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+    Ok(result)
+}
+
 fn run_python(
     cand: &Path,
     refr: &Path,
     spec: &ReviewSpec,
     cases: &[Vec<PyVal>],
-) -> Result<ReviewVerdict, String> {
+    safety_secs: u64,
+) -> Result<ReviewVerdict, PyFail> {
     let src = driver_source(cand, refr, spec, cases);
     // Content-addressed driver path: unique per distinct review (no clobber
     // between concurrent runs), stable for the same review.
@@ -1254,14 +1454,15 @@ fn run_python(
     f.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
     drop(f);
 
-    let out = Command::new("python3")
-        .arg(&driver)
+    let mut cmd = Command::new("python3");
+    cmd.arg(&driver)
         // Harden for determinism: stable hashing, no user site packages.
         .env("PYTHONHASHSEED", "0")
         .env("PYTHONDONTWRITEBYTECODE", "1")
-        .arg("")
-        .output()
-        .map_err(|e| format!("python3 not runnable: {e}"))?;
+        .arg("");
+    let out = run_watched(cmd, std::time::Duration::from_secs(safety_secs))
+        .map_err(|e| format!("python3 not runnable: {e}"))?
+        .ok_or(PyFail::Stopped)?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let last = err.lines().last().unwrap_or("python error").to_string();

@@ -24,8 +24,8 @@ fn dict_return_key_order_does_not_matter() {
     let cand = wp("ko_c", "def f(n):\n    return {'a': n, 'b': n + 1}\n");
     let refr = wp("ko_r", "def f(n):\n    return {'b': n + 1, 'a': n}\n");
     let s = spec("f", vec![ArgType::Int]);
-    let r1 = review(&cand, &refr, &s);
-    let r2 = review(&cand, &refr, &s);
+    let r1 = review(&cand, &refr, &s).expect("no safety stop");
+    let r2 = review(&cand, &refr, &s).expect("no safety stop");
     assert!(matches!(r1.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r1.verdict);
     assert_eq!(r1.sha256(), r2.sha256());
 }
@@ -35,7 +35,7 @@ fn dict_return_key_order_does_not_matter() {
 fn dict_content_divergence_caught() {
     let cand = wp("dc_c", "def f(n):\n    return {'a': n}\n");
     let refr = wp("dc_r", "def f(n):\n    return {'a': n + 1}\n");
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int]));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", r.verdict);
 }
 
@@ -44,21 +44,21 @@ fn dict_content_divergence_caught() {
 fn nested_dict_value_order_independent() {
     let cand = wp("nd_c", "def f(n):\n    return {'x': {'a': n, 'b': 1}}\n");
     let refr = wp("nd_r", "def f(n):\n    return {'x': {'b': 1, 'a': n}}\n");
-    assert!(matches!(review(&cand, &refr, &spec("f", vec![ArgType::Int])).verdict, ReviewVerdict::Equivalent { .. }));
+    assert!(matches!(review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict, ReviewVerdict::Equivalent { .. }));
 }
 
 // A set is not JSON-structural (no stable cross-host form): refuse, never judge.
 #[test]
 fn set_return_is_refused() {
     let p = wp("set", "def f(n):\n    return {n, n + 1}\n");
-    assert!(matches!(review(&p, &p, &spec("f", vec![ArgType::Int])).verdict, ReviewVerdict::Refused { .. }));
+    assert!(matches!(review(&p, &p, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict, ReviewVerdict::Refused { .. }));
 }
 
 // Non-string dict keys cannot be canonicalised as JSON: refuse.
 #[test]
 fn non_string_keys_refused() {
     let p = wp("nsk", "def f(n):\n    return {n: 'x'}\n");
-    assert!(matches!(review(&p, &p, &spec("f", vec![ArgType::Int])).verdict, ReviewVerdict::Refused { .. }));
+    assert!(matches!(review(&p, &p, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict, ReviewVerdict::Refused { .. }));
 }
 
 // The dict ARG type: a function that takes a dict is reviewed normally.
@@ -66,7 +66,7 @@ fn non_string_keys_refused() {
 fn dict_arg_function_reviewed() {
     let cand = wp("da_c", "def total(d):\n    return sum(d.values())\n");
     let refr = wp("da_r", "def total(d):\n    return sum(v for v in d.values())\n");
-    let r = review(&cand, &refr, &spec("total", vec![ArgType::Dict]));
+    let r = review(&cand, &refr, &spec("total", vec![ArgType::Dict])).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
 }
 
@@ -77,6 +77,6 @@ fn dict_arg_function_reviewed() {
 fn golden_dict_receipt_id_is_stable() {
     let cand = wp("gd_c", "def f(n):\n    return {'a': n}\n");
     let refr = wp("gd_r", "def f(n):\n    return {'a': n + 1}\n");
-    let id: String = review(&cand, &refr, &spec("f", vec![ArgType::Int])).sha256().iter().map(|b| format!("{b:02x}")).collect();
+    let id: String = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop").sha256().iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(id, "9d3c0a6f5bbd2e9c1c3eb633e80a79e41d00a5bc5fe6c8b3b3b9827100a9e3d3", "receipt-id drifted");
 }

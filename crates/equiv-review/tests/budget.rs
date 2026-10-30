@@ -32,7 +32,7 @@ const TERMINATES: &str = "def f(x):\n    return x\n";
 fn infinite_loop_is_could_not_check_with_reason() {
     let cand = tmp("loop_c", "def f(x):\n    while True:\n        pass\n");
     let refr = tmp("loop_r", TERMINATES);
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
     let why = reason(&r.verdict);
     assert!(why.contains("step budget"), "reason must name the budget: {why}");
     assert!(why.contains(&DEFAULT_BUDGET.to_string()), "reason must state the budget value: {why}");
@@ -44,7 +44,7 @@ fn infinite_loop_is_could_not_check_with_reason() {
 fn reference_side_running_out_is_named() {
     let cand = tmp("refloop_c", TERMINATES);
     let refr = tmp("refloop_r", "def f(x):\n    while True: pass\n");
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
     let why = reason(&r.verdict);
     assert!(why.contains("reference"), "{why}");
 }
@@ -58,7 +58,7 @@ fn swallowing_the_budget_exception_does_not_escape() {
         "def f(x):\n    while True:\n        try:\n            while True:\n                x += 1\n        except:\n            pass\n",
     );
     let refr = tmp("swallow_r", TERMINATES);
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
     assert!(reason(&r.verdict).contains("step budget"));
 }
 
@@ -75,7 +75,7 @@ fn single_line_loops_are_counted() {
     {
         let cand = tmp(&format!("oneline_{i}"), body);
         let refr = tmp(&format!("oneline_r_{i}"), TERMINATES);
-        let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET));
+        let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
         assert!(reason(&r.verdict).contains("step budget"), "shape {i}");
     }
 }
@@ -84,7 +84,7 @@ fn single_line_loops_are_counted() {
 fn ordinary_loops_fit_the_default_budget() {
     let cand = tmp("short_c", "def f(n):\n    s = 0\n    for i in range(abs(n) % 1000):\n        s += i\n    return s\n");
     let refr = tmp("short_r", "def f(n):\n    k = abs(n) % 1000\n    return k * (k - 1) // 2\n");
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
 }
 
@@ -95,14 +95,14 @@ fn the_budget_decides_the_outcome_and_is_recorded() {
     let src = "def f(n):\n    s = 0\n    for i in range(200):\n        s += i\n    return s + n\n";
     let cand = tmp("bud_c", src);
     let refr = tmp("bud_r", src);
-    let tight = review(&cand, &refr, &spec("f", vec![ArgType::Int], 10));
-    let roomy = review(&cand, &refr, &spec("f", vec![ArgType::Int], 100_000));
+    let tight = review(&cand, &refr, &spec("f", vec![ArgType::Int], 10)).expect("no safety stop");
+    let roomy = review(&cand, &refr, &spec("f", vec![ArgType::Int], 100_000)).expect("no safety stop");
     assert!(reason(&tight.verdict).contains("step budget of 10 "), "{:?}", tight.verdict);
     assert!(matches!(roomy.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", roomy.verdict);
     assert_eq!(tight.budget, 10);
     assert_eq!(roomy.budget, 100_000);
     assert_ne!(tight.spec_sha256, roomy.spec_sha256, "budget is part of the spec");
-    let again = review(&cand, &refr, &spec("f", vec![ArgType::Int], 10));
+    let again = review(&cand, &refr, &spec("f", vec![ArgType::Int], 10)).expect("no safety stop");
     assert_eq!(tight.to_bytes(), again.to_bytes(), "same budget, same receipt");
 }
 
@@ -112,7 +112,7 @@ fn a_counterexample_found_first_still_stands() {
     // already diverges, so the concrete counterexample is the verdict.
     let cand = tmp("cex_c", "def f(x):\n    if x == 777:\n        while True: pass\n    return x + 1\n");
     let refr = tmp("cex_r", TERMINATES);
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", r.verdict);
 }
 
@@ -120,7 +120,7 @@ fn a_counterexample_found_first_still_stands() {
 fn module_that_loops_at_import_is_could_not_check() {
     let cand = tmp("imp_c", "while True:\n    pass\ndef f(x):\n    return x\n");
     let refr = tmp("imp_r", TERMINATES);
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
     let why = reason(&r.verdict);
     assert!(why.contains("step budget") && why.contains("loading"), "{why}");
 }
@@ -133,7 +133,7 @@ fn module_that_loops_at_import_is_could_not_check() {
 fn golden_budget_receipt_id_is_stable() {
     let cand = tmp("gold_c", "def f(x):\n    while True:\n        pass\n");
     let refr = tmp("gold_r", TERMINATES);
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET));
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
     let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(id, "01d7f09f7eaa625064936232c907e092816a3886f61b14d384fba963cb4b084b", "receipt-id drifted");
 }

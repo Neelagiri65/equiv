@@ -18,7 +18,7 @@ fn equivalent_refactor_passes() {
     // Two correct implementations of the same function.
     let cand = tmp("rev_eq_cand.py", "def absdiff(a, b):\n    return a - b if a >= b else b - a\n");
     let refr = tmp("rev_eq_ref.py", "def absdiff(a, b):\n    return abs(a - b)\n");
-    let r = review(&cand, &refr, &spec("absdiff", vec![ArgType::Int, ArgType::Int]));
+    let r = review(&cand, &refr, &spec("absdiff", vec![ArgType::Int, ArgType::Int])).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
     assert_eq!(r.verdict.exit_code(), 0);
 }
@@ -28,7 +28,7 @@ fn buggy_refactor_caught_with_concrete_input() {
     // AI "optimised" version with an off-by-one for positive n.
     let cand = tmp("rev_bug_cand.py", "def count_upto(n):\n    return n + 1 if n > 0 else 0\n");
     let refr = tmp("rev_bug_ref.py", "def count_upto(n):\n    return len([i for i in range(n)]) if n > 0 else 0\n");
-    let r = review(&cand, &refr, &spec("count_upto", vec![ArgType::Int]));
+    let r = review(&cand, &refr, &spec("count_upto", vec![ArgType::Int])).expect("no safety stop");
     match &r.verdict {
         ReviewVerdict::Counterexample { candidate, reference, .. } => {
             assert_ne!(candidate, reference);
@@ -43,8 +43,8 @@ fn determinism_byte_identical_receipts() {
     let cand = tmp("rev_det_cand.py", "def f(xs):\n    return sorted(xs)\n");
     let refr = tmp("rev_det_ref.py", "def f(xs):\n    return list(sorted(xs))\n");
     let s = spec("f", vec![ArgType::ListInt]);
-    let r1 = review(&cand, &refr, &s);
-    let r2 = review(&cand, &refr, &s);
+    let r1 = review(&cand, &refr, &s).expect("no safety stop");
+    let r2 = review(&cand, &refr, &s).expect("no safety stop");
     assert_eq!(r1.to_bytes(), r2.to_bytes(), "review receipts must be reproducible");
     assert_eq!(r1.sha256(), r2.sha256());
 }
@@ -55,7 +55,7 @@ fn counterexample_is_in_the_receipt() {
     // just printed. That's the review payload.
     let cand = tmp("rev_cex_cand.py", "def g(s):\n    return s.upper()\n");
     let refr = tmp("rev_cex_ref.py", "def g(s):\n    return s.title()\n");
-    let r = review(&cand, &refr, &spec("g", vec![ArgType::Str]));
+    let r = review(&cand, &refr, &spec("g", vec![ArgType::Str])).expect("no safety stop");
     // upper() vs title() differ on any multi-letter string.
     assert!(matches!(r.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", r.verdict);
     assert!(!r.to_bytes().is_empty());
@@ -69,7 +69,7 @@ fn exception_on_one_side_reports_other_sides_real_value() {
     // candidate raises ZeroDivisionError on []; reference returns 0.
     let cand = tmp("rev_exc_cand.py", "def average(xs):\n    return sum(xs)//len(xs)\n");
     let refr = tmp("rev_exc_ref.py", "def average(xs):\n    return sum(xs)//len(xs) if xs else 0\n");
-    let r = review(&cand, &refr, &spec("average", vec![ArgType::ListInt]));
+    let r = review(&cand, &refr, &spec("average", vec![ArgType::ListInt])).expect("no safety stop");
     match &r.verdict {
         ReviewVerdict::Counterexample { input, candidate, reference } => {
             assert_eq!(input, "([])", "empty list is the diverging input");
@@ -116,5 +116,5 @@ fn pr_all_equivalent_passes_gate() {
     let (items, code) = run_pr(&checks);
     assert_eq!(code, 0);
     assert!(render_markdown(&items, None).contains("behaviour preserved"));
-    let _ = ReviewItem { name: "x".into(), receipt: items.into_iter().next().unwrap().receipt };
+    let _ = ReviewItem { name: "x".into(), outcome: items.into_iter().next().unwrap().outcome };
 }
