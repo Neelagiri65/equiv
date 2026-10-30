@@ -647,6 +647,52 @@ fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
         }
     }
 
+    if !spec.args.is_empty() {
+        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+        // Joint numeric corners: a divergence that needs two arguments to be
+        // related (cancelling magnitudes, equal values) is unreachable when
+        // the others sit at their default. For every pair of same-type
+        // numeric arguments a small fixed set is run: (x, -x), (-x, x) and
+        // (x, x). Floats use 2^54 (the smallest power of two where x - 1 and
+        // -x + 1 both round back to ±x, so `a + b + c` and `a + (b + c)`
+        // separate) and the largest finite value, plus (+inf, -inf) both
+        // ways. Ints stay inside INT_ENVELOPE. Fixed, so seed-free and the
+        // same on every host; single-argument reviews are untouched.
+        for ty in [ArgType::Int, ArgType::Float] {
+            let pairs: Vec<(PyVal, PyVal)> = match ty {
+                ArgType::Int => [1i64, 2, INT_ENVELOPE]
+                    .into_iter()
+                    .flat_map(|x| [(x, -x), (-x, x), (x, x)])
+                    .map(|(a, b)| (PyVal::Int(a), PyVal::Int(b)))
+                    .collect(),
+                ArgType::Float => {
+                    let two54 = 18014398509481984.0f64;
+                    let mut v: Vec<(f64, f64)> = [two54, f64::MAX]
+                        .into_iter()
+                        .flat_map(|x| [(x, -x), (-x, x), (x, x)])
+                        .collect();
+                    v.push((f64::INFINITY, f64::NEG_INFINITY));
+                    v.push((f64::NEG_INFINITY, f64::INFINITY));
+                    v.into_iter().map(|(a, b)| (PyVal::Float(a.to_bits()), PyVal::Float(b.to_bits()))).collect()
+                }
+                _ => unreachable!(),
+            };
+            let idx: Vec<usize> = spec.args.iter().enumerate().filter(|(_, t)| **t == ty).map(|(i, _)| i).collect();
+            for (x, &i) in idx.iter().enumerate() {
+                for &j in &idx[x + 1..] {
+                    for (l, r) in &pairs {
+                        let mut c = base.clone();
+                        c[i] = l.clone();
+                        c[j] = r.clone();
+                        if seen.insert(key(&c)) {
+                            cases.push(c);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let mut rng = Rng(spec.seed | 1);
     for _ in 0..spec.n {
         let c: Vec<PyVal> = spec.args.iter().map(|t| gen_arg(&mut rng, *t)).collect();

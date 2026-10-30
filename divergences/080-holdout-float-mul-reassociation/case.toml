@@ -1,0 +1,6 @@
+function = "prod3"
+args = "float,float,float"
+expected = "diverges"
+class = "holdout"
+pattern = "(a * b) * c reassociated to a * (b * c): the left form overflows to inf on the way, the right form never leaves range (witness deliberately not a cancelling pair)"
+witness = '''(1.7976931348623157e+308, 2.0, 0.5)'''

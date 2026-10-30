@@ -1,0 +1,5 @@
+function = "sq"
+args = "int,int"
+expected = "equivalent"
+class = "holdout"
+pattern = "binomial expansion over Python ints: exact for every pair, so a correct rewrite"

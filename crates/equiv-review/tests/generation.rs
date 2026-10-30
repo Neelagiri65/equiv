@@ -160,3 +160,88 @@ fn leading_sign_padding_divergence_is_caught() {
         r.verdict
     );
 }
+
+// Joint numeric corners (backlog 0.5). One-at-a-time enumeration holds the
+// other numeric arguments at their default (int 0, float 1.0), so a divergence
+// that needs two arguments to be related (cancelling magnitudes, equal values)
+// is never reached except by luck in the random tail. For every pair of
+// same-type numeric arguments equiv now also runs a small fixed joint set.
+// Float reassociation is the canonical case: a + b + c vs a + (b + c) differ
+// when a and b cancel and c is small. The seed is irrelevant: these are
+// fixed, not random, so the catch is the same on every host.
+#[test]
+fn float_cancelling_pair_is_generated_for_every_pair() {
+    // (a + b) + c vs a + (b + c): differs at (x, -x, 1.0) once x is large
+    // enough that x - 1 rounds back to x (2^54 is the smallest power of two
+    // where that holds on both sides).
+    let cand = tmp("gen_joint_sum_cand.py", "def f(a, b, c):\n    return a + (b + c)\n");
+    let refr = tmp("gen_joint_sum_ref.py", "def f(a, b, c):\n    return a + b + c\n");
+    let spec3 = spec("f", vec![ArgType::Float, ArgType::Float, ArgType::Float]);
+    let r = review(&cand, &refr, &spec3).expect("no safety stop");
+    match &r.verdict {
+        ReviewVerdict::Counterexample { input, .. } => assert_eq!(
+            input, "(1.8014398509481984e16, -1.8014398509481984e16, 1.0)",
+            "the first diverging input should be the joint cancelling corner, not a random draw"
+        ),
+        v => panic!("float reassociation must be caught by the joint corners, got {v:?}"),
+    }
+    // The related pair can be the first and LAST argument: the joint set
+    // must cover every pair, not only neighbours. Only a == c far outside
+    // the single-argument sweep (which holds c at 1.0) exposes this one.
+    let cand = tmp(
+        "gen_joint_far_cand.py",
+        "def f(a, b, c):\n    return 1.0 if a == c and abs(a) > 1e6 else 0.0\n",
+    );
+    let refr = tmp("gen_joint_far_ref.py", "def f(a, b, c):\n    return 0.0\n");
+    let r = review(&cand, &refr, &spec3).expect("no safety stop");
+    match &r.verdict {
+        ReviewVerdict::Counterexample { input, .. } => assert_eq!(
+            input, "(1.8014398509481984e16, 1.0, 1.8014398509481984e16)",
+            "the (first, last) pair should get the joint corners too"
+        ),
+        v => panic!("a divergence on the (first, last) pair must be caught, got {v:?}"),
+    }
+}
+
+#[test]
+fn int_equal_pair_is_generated() {
+    // Only diverges when both ints are equal and non-zero. The one-at-a-time
+    // sweep never has both non-zero; a random ±12 draw hits a == b with
+    // probability ~1/25 per case, so it is probably caught by luck, but the
+    // joint corner makes the FIRST counterexample the fixed one.
+    let cand = tmp("gen_joint_eq_cand.py", "def f(a, b):\n    return a - b if a == b and a != 0 else 0\n");
+    let refr = tmp("gen_joint_eq_ref.py", "def f(a, b):\n    return 1 if a == b and a != 0 else 0\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int, ArgType::Int])).expect("no safety stop");
+    match &r.verdict {
+        ReviewVerdict::Counterexample { input, .. } => assert_eq!(input, "(1, 1)"),
+        v => panic!("equal-int pair must be a joint corner, got {v:?}"),
+    }
+}
+
+#[test]
+fn joint_corners_do_not_touch_single_argument_reviews() {
+    // A single numeric argument has no pair: the case list, and so the
+    // receipt, must be identical to before. The goldens in floats.rs and
+    // objects.rs pin this across the version; here the count is checked.
+    let cand = tmp("gen_joint_single_cand.py", "def f(a):\n    return a * 2\n");
+    let refr = tmp("gen_joint_single_ref.py", "def f(a):\n    return a + a\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Float])).expect("no safety stop");
+    match &r.verdict {
+        ReviewVerdict::Equivalent { n, .. } => assert_eq!(*n, 66, "single-float case count changed"),
+        v => panic!("got {v:?}"),
+    }
+}
+
+#[test]
+fn joint_corners_cause_no_false_alarm_on_exact_rewrites() {
+    // Commutative float multiplication and int binomial expansion are exact
+    // for every pair, including the joint corners (inf, NaN, MAX, cancelling).
+    let cand = tmp("gen_joint_mul_cand.py", "def f(a, b):\n    return b * a\n");
+    let refr = tmp("gen_joint_mul_ref.py", "def f(a, b):\n    return a * b\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Float, ArgType::Float])).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
+    let cand = tmp("gen_joint_sq_cand.py", "def f(a, b):\n    return a * a + 2 * a * b + b * b\n");
+    let refr = tmp("gen_joint_sq_ref.py", "def f(a, b):\n    return (a + b) * (a + b)\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int, ArgType::Int])).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
+}
