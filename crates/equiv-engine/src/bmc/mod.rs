@@ -254,7 +254,12 @@ pub fn try_prove(wasm_bytes: &[u8], contract: &Contract) -> Outcome {
 /// Wrap an outcome as a verdict; None means "fall back to difftest".
 pub fn outcome_verdict(o: Outcome) -> Option<Verdict> {
     match o {
+        #[cfg(feature = "uncertified-proofs")]
         Outcome::Proved(ev) => Some(Verdict::Proved(ev)),
+        // No certificate, no `proved`: fall back to difftest so the receipt
+        // reports what was actually executed (tested-N), never a bare UNSAT.
+        #[cfg(not(feature = "uncertified-proofs"))]
+        Outcome::Proved(_) => None,
         Outcome::Counterexample { args } => Some(Verdict::Counterexample { args, trap: false }),
         Outcome::Disagreement => Some(Verdict::Unknown(
             equiv_core::UnknownReason::SolverDisagreement,

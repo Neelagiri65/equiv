@@ -32,6 +32,7 @@ const ADD_BUGGY: &str = r#"
 "#;
 
 /// A correct artifact is proved, not merely tested.
+#[cfg(feature = "uncertified-proofs")]
 #[test]
 fn add_is_proved() {
     let c = parse_contract(ADD_CONTRACT).unwrap();
@@ -93,6 +94,7 @@ fn wrap_boundary_caught_by_solver_not_luck() {
 }
 
 /// if/else control flow is provable: |a - b| via branch.
+#[cfg(feature = "uncertified-proofs")]
 #[test]
 fn if_else_absdiff_proved() {
     let absdiff = r#"
@@ -150,6 +152,7 @@ fn memory_function_falls_back_to_difftest() {
 }
 
 /// AC-1 over the proving path: proved receipts are byte-identical.
+#[cfg(feature = "uncertified-proofs")]
 #[test]
 fn ac1_proved_receipts_deterministic() {
     let c = parse_contract(ADD_CONTRACT).unwrap();
@@ -194,6 +197,7 @@ fn ac3_single_minting_site() {
 
 /// Loops are PROVED via bounded unrolling + unwinding assertion: doubling
 /// by repeated increment, bound provable from the pre (n <= 16, k = 64).
+#[cfg(feature = "uncertified-proofs")]
 #[test]
 fn loop_proved_with_unwinding_assertion() {
     let twice = r#"
@@ -297,6 +301,7 @@ fn buggy_loop_gets_counterexample() {
 }
 
 /// Early return through an if: clamp to 100.
+#[cfg(feature = "uncertified-proofs")]
 #[test]
 fn early_return_proved() {
     let clamp = r#"

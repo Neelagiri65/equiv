@@ -12,5 +12,12 @@ wasmi = "0.31"
 sha2 = "0.10"
 varisat = "0.2"
 
+[features]
+# P2 / AC-3: an UNSAT result is NOT a proof until an independent checker has
+# validated its certificate (DRAT/LRAT). Until that checker exists, the BMC
+# path may only report a counterexample; "proved" stays behind this off-by-
+# default feature for engine development. Release builds never enable it.
+uncertified-proofs = []
+
 [dev-dependencies]
 wat = "1"
