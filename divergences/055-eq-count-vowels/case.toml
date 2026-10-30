@@ -1,0 +1,5 @@
+function = "count_vowels"
+args = "str"
+expected = "equivalent"
+class = "unicode"
+pattern = "generator-sum vowel count rewritten as a sum of str.count"

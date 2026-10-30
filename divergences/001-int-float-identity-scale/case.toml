@@ -1,0 +1,6 @@
+function = "normalise"
+args = "int"
+expected = "diverges"
+class = "int-to-float"
+pattern = "an int passthrough becomes a float multiply, so 42 is returned as 42.0"
+witness = '''(42,)'''

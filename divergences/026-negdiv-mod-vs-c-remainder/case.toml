@@ -1,0 +1,7 @@
+function = "wrap_index"
+args = "int,int"
+expected = "diverges"
+class = "negative-division"
+pattern = "Python % replaced by a C-style remainder (i - n * int(i / n))"
+source = "https://docs.python.org/3/reference/expressions.html#binary-arithmetic-operations"
+witness = '''(-1, 5)'''

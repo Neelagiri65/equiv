@@ -1,0 +1,5 @@
+function = "to_int32"
+args = "int"
+expected = "equivalent"
+class = "fixed-width-int"
+pattern = "int32 sign wrap via mask-and-test rewritten as offset modulo"

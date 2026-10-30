@@ -1,0 +1,5 @@
+function = "twice"
+args = "float"
+expected = "equivalent"
+class = "float-specials"
+pattern = "x * 2.0 rewritten as x + x (exact in IEEE-754, incl. -0.0, inf, NaN)"

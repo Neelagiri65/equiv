@@ -1,0 +1,6 @@
+function = "clean"
+args = "str"
+expected = "diverges"
+class = "unicode"
+pattern = "strip() replaced by strip(' '); tabs and newlines are no longer removed"
+witness = '''('\tx\n',)'''

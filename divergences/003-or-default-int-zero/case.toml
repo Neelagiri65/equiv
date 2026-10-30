@@ -1,0 +1,7 @@
+function = "retries"
+args = "int"
+expected = "diverges"
+class = "or-default"
+pattern = "`n or 3` replaces an explicit None check, so a configured 0 becomes 3"
+source = "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing"
+witness = '''(0,)'''

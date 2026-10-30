@@ -1,0 +1,435 @@
+{
+  "equiv_version": "0.2.1",
+  "python": "3.14.9",
+  "summary": {
+    "cases": 60,
+    "diverges": 40,
+    "equivalent": 20,
+    "caught": 25,
+    "missed": 14,
+    "false_alarms": 0,
+    "could_not_check": 1
+  },
+  "cases": {
+    "001-int-float-identity-scale": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (0) | candidate -> 0x0.0p+0 | reference -> 0"
+    },
+    "002-int-float-empty-average": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ([]) | candidate -> 0x0.0p+0 | reference -> 0"
+    },
+    "003-or-default-int-zero": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (0) | candidate -> 3 | reference -> 0"
+    },
+    "004-or-default-str-empty": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ('') | candidate -> 'anonymous' | reference -> ''"
+    },
+    "005-or-default-list-empty": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ([]) | candidate -> [-1] | reference -> []"
+    },
+    "006-or-default-dict-rare-key": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 163,
+      "detail": "EQUIVALENT: agreed on all 163 generated inputs (seed 1)"
+    },
+    "007-float-nan-clamp": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (-0.0) | candidate -> 0x0.0p+0 | reference -> -0x0.0p+0"
+    },
+    "008-float-negzero-abs": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (-0.0) | candidate -> -0x0.0p+0 | reference -> 0x0.0p+0"
+    },
+    "009-float-inf-finite-check": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (-inf) | candidate -> True | reference -> False"
+    },
+    "010-float-round-half-even-int": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (-1.0) | candidate -> 0 | reference -> -1"
+    },
+    "011-float-round-half-even-floor": {
+      "expected": "diverges",
+      "exit": 2,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "REFUSED: calls math.floor outside the admissible set"
+    },
+    "012-float-reassociation": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 223,
+      "detail": "EQUIVALENT: agreed on all 223 generated inputs (seed 1)"
+    },
+    "013-int-percent-floor-vs-round": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (-421, 3) | candidate -> -14033 | reference -> -14034"
+    },
+    "014-exc-raise-to-sentinel": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ('') | candidate -> -1 | reference -> ValueError"
+    },
+    "015-exc-swallowed": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (0, 0) | candidate -> 0 | reference -> ZeroDivisionError"
+    },
+    "016-exc-type-changed": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ('') | candidate -> TypeError | reference -> ValueError"
+    },
+    "017-unicode-lower-vs-casefold": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 209,
+      "detail": "EQUIVALENT: agreed on all 209 generated inputs (seed 1)"
+    },
+    "018-unicode-isdigit-vs-isdecimal": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "019-unicode-strip-variants": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "020-unicode-byte-vs-char-length": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 181,
+      "detail": "EQUIVALENT: agreed on all 181 generated inputs (seed 1)"
+    },
+    "021-unicode-lone-surrogate": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 182,
+      "detail": "EQUIVALENT: agreed on all 182 generated inputs (seed 1)"
+    },
+    "022-fixedwidth-hash-mask-dropped": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ('abcdefghij') | candidate -> 2651042159334565 | reference -> 3660649637"
+    },
+    "023-fixedwidth-int32-wrap-large": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 103,
+      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
+    },
+    "024-int-float-precision-large": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 103,
+      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
+    },
+    "025-negdiv-floor-vs-trunc": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (-1) | candidate -> 0 | reference -> -1"
+    },
+    "026-negdiv-mod-vs-c-remainder": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (-695, 10) | candidate -> -5 | reference -> 5"
+    },
+    "027-negdiv-ceil-negative-divisor": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (0, -1) | candidate -> 2 | reference -> 0"
+    },
+    "028-boundary-off-by-one": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (18) | candidate -> False | reference -> True"
+    },
+    "029-boundary-empty-first": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ([]) | candidate -> IndexError | reference -> None"
+    },
+    "030-boundary-long-string-truncate": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "031-sort-stability-reverse": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ([-17, 12, -7, -12, -1]) | candidate -> [-17, -12, 12, -7, -1] | reference -> [-17, 12, -12, -7, -1]"
+    },
+    "032-dict-tie-order": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ({'h': -7, 'f': -17, 'c': -7}) | candidate -> 'c' | reference -> 'h'"
+    },
+    "033-dedupe-order": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ([3, 2, 1]) | candidate -> [1, 2, 3] | reference -> [3, 2, 1]"
+    },
+    "034-checkdigit-luhn-str-mod9": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "035-checkdigit-luhn-list-parity": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 159,
+      "detail": "EQUIVALENT: agreed on all 159 generated inputs (seed 1)"
+    },
+    "036-checkdigit-isbn10-x": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 181,
+      "detail": "EQUIVALENT: agreed on all 181 generated inputs (seed 1)"
+    },
+    "037-checkdigit-iban-letter-map": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ('skwez') | candidate -> False | reference -> True"
+    },
+    "038-checkdigit-ean-ten-vs-zero": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ([]) | candidate -> 10 | reference -> 0"
+    },
+    "039-rare-magic-literal": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (777313) | candidate -> 0 | reference -> 23319"
+    },
+    "040-rare-magic-computed": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 109,
+      "detail": "EQUIVALENT: agreed on all 109 generated inputs (seed 1)"
+    },
+    "041-eq-hash-mask-at-end": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "042-eq-int32-two-ways": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 103,
+      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
+    },
+    "043-eq-add32-mask-inputs": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 185,
+      "detail": "EQUIVALENT: agreed on all 185 generated inputs (seed 1)"
+    },
+    "044-eq-max-default": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 159,
+      "detail": "EQUIVALENT: agreed on all 159 generated inputs (seed 1)"
+    },
+    "045-eq-mean-guard": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 159,
+      "detail": "EQUIVALENT: agreed on all 159 generated inputs (seed 1)"
+    },
+    "046-eq-clamp-pct": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 106,
+      "detail": "EQUIVALENT: agreed on all 106 generated inputs (seed 1)"
+    },
+    "047-eq-luhn-refactor": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "048-eq-isbn10-refactor": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 181,
+      "detail": "EQUIVALENT: agreed on all 181 generated inputs (seed 1)"
+    },
+    "049-eq-iban-piecewise": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "050-eq-dict-sort-by-value": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 163,
+      "detail": "EQUIVALENT: agreed on all 163 generated inputs (seed 1)"
+    },
+    "051-eq-sort-reverse-ints": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 159,
+      "detail": "EQUIVALENT: agreed on all 159 generated inputs (seed 1)"
+    },
+    "052-eq-or-default-truthy": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 181,
+      "detail": "EQUIVALENT: agreed on all 181 generated inputs (seed 1)"
+    },
+    "053-eq-is-even-bitwise": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 103,
+      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
+    },
+    "054-eq-is-blank": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "055-eq-count-vowels": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 181,
+      "detail": "EQUIVALENT: agreed on all 181 generated inputs (seed 1)"
+    },
+    "056-eq-float-double": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 67,
+      "detail": "EQUIVALENT: agreed on all 67 generated inputs (seed 1)"
+    },
+    "057-eq-float-halve": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 68,
+      "detail": "EQUIVALENT: agreed on all 68 generated inputs (seed 1)"
+    },
+    "058-eq-floordiv-via-mod": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 185,
+      "detail": "EQUIVALENT: agreed on all 185 generated inputs (seed 1)"
+    },
+    "059-eq-strip-space-split": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 180,
+      "detail": "EQUIVALENT: agreed on all 180 generated inputs (seed 1)"
+    },
+    "060-eq-first-or-none": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 159,
+      "detail": "EQUIVALENT: agreed on all 159 generated inputs (seed 1)"
+    }
+  }
+}

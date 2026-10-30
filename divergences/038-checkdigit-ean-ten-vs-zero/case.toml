@@ -1,0 +1,7 @@
+function = "ean_check_digit"
+args = "list[int]"
+expected = "diverges"
+class = "check-digit"
+pattern = "EAN check digit drops the outer % 10, returning 10 instead of 0"
+source = "https://en.wikipedia.org/wiki/International_Article_Number#Calculation_of_checksum_digit"
+witness = '''([],)'''

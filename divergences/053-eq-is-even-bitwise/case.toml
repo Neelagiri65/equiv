@@ -1,0 +1,5 @@
+function = "is_even"
+args = "int"
+expected = "equivalent"
+class = "negative-division"
+pattern = "n % 2 == 0 rewritten as (n & 1) == 0; Python bitwise ops use two's complement on negatives"

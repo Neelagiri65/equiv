@@ -1,0 +1,6 @@
+function = "to_int32"
+args = "int"
+expected = "diverges"
+class = "fixed-width-int"
+pattern = "an in-range fast path uses the unsigned upper bound, so values in [2**31, 2**32) are not wrapped (only large ints diverge)"
+witness = '''(2147483648,)'''

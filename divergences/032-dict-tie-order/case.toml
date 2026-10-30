@@ -1,0 +1,6 @@
+function = "top_key"
+args = "dict"
+expected = "diverges"
+class = "ordering"
+pattern = "max(d, key=d.get) replaced by sorted(d, key=d.get)[-1]; ties pick a different key"
+witness = '''({'a': 1, 'b': 1},)'''

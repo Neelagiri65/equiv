@@ -1,0 +1,6 @@
+function = "hash32"
+args = "str"
+expected = "equivalent"
+class = "fixed-width-int"
+pattern = "32-bit mask applied once at the end instead of every step (modular arithmetic commutes)"
+source = "https://docs.oracle.com/javase/8/docs/api/java/lang/String.html#hashCode--"

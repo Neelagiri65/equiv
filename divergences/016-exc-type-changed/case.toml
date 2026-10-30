@@ -1,0 +1,6 @@
+function = "to_int"
+args = "str"
+expected = "diverges"
+class = "exception-vs-value"
+pattern = "pre-validation raises TypeError where int() raised ValueError"
+witness = '''('x',)'''

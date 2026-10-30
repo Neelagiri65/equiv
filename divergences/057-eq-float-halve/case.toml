@@ -1,0 +1,5 @@
+function = "halve"
+args = "float"
+expected = "equivalent"
+class = "float-specials"
+pattern = "x / 2.0 rewritten as x * 0.5 (both correctly rounded results of the same value)"

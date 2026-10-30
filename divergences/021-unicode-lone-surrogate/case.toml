@@ -1,0 +1,6 @@
+function = "utf8_size"
+args = "str"
+expected = "diverges"
+class = "unicode"
+pattern = "strict UTF-8 encoding replaced by errors='replace'; a lone surrogate no longer raises"
+witness = '''('\ud800',)'''

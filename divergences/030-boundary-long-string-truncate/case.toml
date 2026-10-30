@@ -1,0 +1,6 @@
+function = "column_value"
+args = "str"
+expected = "diverges"
+class = "rare-input"
+pattern = "a truncation limit moves by one; only strings longer than the limit diverge"
+witness = '''('a' * 300,)'''

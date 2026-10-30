@@ -1,0 +1,6 @@
+function = "ratio"
+args = "int,int"
+expected = "diverges"
+class = "exception-vs-value"
+pattern = "a broad try/except swallows ZeroDivisionError and returns 0"
+witness = '''(1, 0)'''

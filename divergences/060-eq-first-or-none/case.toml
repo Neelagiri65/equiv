@@ -1,0 +1,5 @@
+function = "first"
+args = "list[int]"
+expected = "equivalent"
+class = "boundary"
+pattern = "guarded xs[0] rewritten as next(iter(xs), None)"

@@ -1,0 +1,6 @@
+function = "parse_port"
+args = "str"
+expected = "diverges"
+class = "exception-vs-value"
+pattern = "raise ValueError on bad input replaced by returning -1"
+witness = '''('',)'''

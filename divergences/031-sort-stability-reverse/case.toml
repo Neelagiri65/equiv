@@ -1,0 +1,7 @@
+function = "by_magnitude_desc"
+args = "list[int]"
+expected = "diverges"
+class = "ordering"
+pattern = "sorted(key, reverse=True) replaced by sorted(key)[::-1], which reverses ties"
+source = "https://docs.python.org/3/howto/sorting.html#sort-stability-and-complex-sorts"
+witness = '''([1, -1],)'''

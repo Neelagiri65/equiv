@@ -1,0 +1,7 @@
+function = "parse_qty"
+args = "str"
+expected = "diverges"
+class = "unicode"
+pattern = "isdecimal() guard replaced by isdigit(); superscript digits pass the guard and int() raises"
+source = "https://docs.python.org/3/library/stdtypes.html#str.isdigit"
+witness = '''('\u00b2',)'''

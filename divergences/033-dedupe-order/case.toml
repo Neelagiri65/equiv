@@ -1,0 +1,6 @@
+function = "dedupe"
+args = "list[int]"
+expected = "diverges"
+class = "ordering"
+pattern = "order-preserving dict.fromkeys dedupe replaced by list(set(...))"
+witness = '''([3, 1, 2],)'''

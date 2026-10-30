@@ -23,6 +23,10 @@ live. Five it catches with the exact diverging input. One it honestly cannot
 
 Runnable files and the full write-up: [`examples/scenarios/`](examples/scenarios/).
 
+For a wider, scored measurement, see the [divergence corpus](divergences/):
+60 labelled pairs, with the current catch rate, false-alarm rate and every miss
+listed (`scripts/run-divergences.sh`).
+
 ## Quickstart: the PR gate
 
 List the functions whose behaviour must be preserved across a PR in a manifest

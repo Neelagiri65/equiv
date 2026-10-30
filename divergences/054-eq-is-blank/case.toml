@@ -1,0 +1,5 @@
+function = "is_blank"
+args = "str"
+expected = "equivalent"
+class = "unicode"
+pattern = "not s.strip() rewritten as s == '' or s.isspace() (same Unicode whitespace table)"

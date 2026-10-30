@@ -1,0 +1,5 @@
+function = "mean_floor"
+args = "list[int]"
+expected = "equivalent"
+class = "boundary"
+pattern = "empty-list branch replaced by dividing by max(len, 1)"

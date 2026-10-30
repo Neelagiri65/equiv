@@ -1,0 +1,6 @@
+function = "magnitude"
+args = "float"
+expected = "diverges"
+class = "float-specials"
+pattern = "a hand-written abs (x if x >= 0 else -x) returns -0.0 where abs() returns 0.0"
+witness = '''(-0.0,)'''

@@ -1,0 +1,5 @@
+function = "max_or_zero"
+args = "list[int]"
+expected = "equivalent"
+class = "boundary"
+pattern = "explicit empty guard replaced by max(..., default=0)"

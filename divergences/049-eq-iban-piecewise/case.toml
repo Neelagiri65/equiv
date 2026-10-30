@@ -1,0 +1,6 @@
+function = "iban_valid"
+args = "str"
+expected = "equivalent"
+class = "check-digit"
+pattern = "IBAN big-integer mod-97 rewritten as streaming (piecewise) mod-97"
+source = "https://en.wikipedia.org/wiki/International_Bank_Account_Number#Validating_the_IBAN"

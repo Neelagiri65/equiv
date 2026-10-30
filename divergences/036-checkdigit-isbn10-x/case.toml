@@ -1,0 +1,7 @@
+function = "isbn10_valid"
+args = "str"
+expected = "diverges"
+class = "check-digit"
+pattern = "ISBN-10 validator refactor forgets that the check character may be X (value 10)"
+source = "https://en.wikipedia.org/wiki/ISBN#ISBN-10_check_digits"
+witness = '''('080442957X',)'''

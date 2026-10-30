@@ -1,0 +1,6 @@
+function = "isbn10_valid"
+args = "str"
+expected = "equivalent"
+class = "check-digit"
+pattern = "ISBN-10 loop rewritten as a weighted sum that still accepts a final X"
+source = "https://en.wikipedia.org/wiki/ISBN#ISBN-10_check_digits"
