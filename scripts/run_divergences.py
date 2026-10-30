@@ -115,7 +115,7 @@ INT_CORNERS = sorted(
     {s * v + d for s in (1, -1) for v in (2**31, 2**32, 2**53, 2**63, 10**6, 10**18) for d in (-1, 0, 1)}
 )
 STR_POOL = (
-    "abcxyzAZ09 _-.,"
+    "abcxyzAZ09 _-.,+e"  # + and e: signed and exponent-shaped numeric text (P-0.4a)
     "\t\n\r\x0b\x0c\x1c\x1d\x1e\x1f\x85\xa0  　"
     "ßéİıﬀΣσς²³٣１①"
     "\U0001f600𐏿"
