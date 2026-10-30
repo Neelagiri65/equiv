@@ -1,0 +1,6 @@
+function = "sum3"
+args = "float,float,float"
+expected = "diverges"
+class = "holdout"
+pattern = "a + b + c reordered to (a + c) + b: the small middle term survives or is absorbed depending on which large term it meets first"
+witness = '''(1e16, 1.0, -1e16)'''

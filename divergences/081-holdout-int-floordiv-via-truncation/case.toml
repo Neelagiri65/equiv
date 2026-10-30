@@ -1,0 +1,6 @@
+function = "half"
+args = "int,int"
+expected = "diverges"
+class = "holdout"
+pattern = "floor division rewritten as truncating division: differs for a negative, inexact quotient"
+witness = '''(7, -2)'''
