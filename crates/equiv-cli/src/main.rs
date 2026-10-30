@@ -204,6 +204,11 @@ fn run() -> Result<u8, String> {
                 return Ok(0);
             }
             let (items, code) = run_pr_limited(&checks, safety);
+            // A changed function that auto-detection could not check is "not
+            // checked" like a safety stop or a refusal: nothing diverged, but
+            // the run is not a clean pass (0). Exit 2 says so; whether that
+            // blocks the merge is the Action's `fail-on-not-checked` input.
+            let code = if code == 0 && !unchecked.is_empty() { 2 } else { code };
 
             // Local-first verdict-rate metrics (fail-silent, counts only, no
             // network). This build reviews Python only, so the tag is "python".

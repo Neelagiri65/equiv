@@ -17,6 +17,9 @@ jobs:
         with:
           manifest: .equiv-review
           fail-on-divergence: "true"
+          # "Not checked" functions are listed in the comment, never shown as
+          # green, and block the merge only if you opt in:
+          # fail-on-not-checked: "true"
           # Keyless (recommended): no secret; signs with the run's OIDC identity.
           keyless: "true"
           # OR v0 self-attestation with a long-lived key (empty on fork PRs):

@@ -47,8 +47,9 @@ fn auto_with_only_unchecked_functions_exits_2_not_green() {
         .unwrap();
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(out.status.code(), Some(2), "{stdout}\n{}", String::from_utf8_lossy(&out.stderr));
-    assert!(stdout.contains("Nothing was checked"), "{stdout}");
-    assert!(!stdout.to_lowercase().contains("preserved"), "{stdout}");
+    let headline = stdout.lines().skip_while(|l| !l.starts_with("## equiv review")).skip(1).find(|l| !l.trim().is_empty()).unwrap();
+    assert!(headline.contains("Nothing was checked"), "{headline}");
+    assert!(!headline.to_lowercase().contains("preserved"), "{headline}");
     assert!(stdout.contains("`g`"), "{stdout}");
 }
 

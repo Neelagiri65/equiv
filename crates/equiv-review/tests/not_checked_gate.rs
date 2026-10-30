@@ -15,6 +15,11 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
     p
 }
 
+/// The first line of the comment body: what a reader sees before anything else.
+fn headline(md: &str) -> String {
+    md.lines().skip_while(|l| !l.starts_with("## equiv review")).skip(1).find(|l| !l.trim().is_empty()).unwrap().to_string()
+}
+
 fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
     ReviewSpec { func: func.into(), args, n: 50, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
 }
@@ -34,9 +39,9 @@ fn not_checked_is_exit_2_and_never_reads_green() {
     let (items, code) = run_pr_limited(&checks, 3);
     assert_eq!(code, 2, "not checked is reported as 2, distinct from a divergence (1)");
     let md = render_markdown(&items, None);
-    let headline = md.lines().find(|l| l.contains("could not be checked")).unwrap_or_else(|| panic!("{md}"));
-    assert!(headline.contains("1 of 2 functions could not be checked"), "{headline}");
-    assert!(!md.to_lowercase().contains("preserved"), "a run with an unchecked function must not read green:\n{md}");
+    let h = headline(&md);
+    assert!(h.contains("1 of 2 functions could not be checked"), "{h}");
+    assert!(!h.to_lowercase().contains("preserved"), "a run with an unchecked function must not read green:\n{md}");
 }
 
 /// Auto-detect found changed functions but could check none of them: the
@@ -48,10 +53,11 @@ fn nothing_checked_is_not_reported_as_preserved() {
         ("h".to_string(), "method, not checked (module-level functions only)".to_string()),
     ];
     let md = render_markdown_with_unchecked(&[], None, &unchecked);
-    assert!(!md.to_lowercase().contains("preserved"), "{md}");
-    assert!(md.contains("Nothing was checked"), "{md}");
-    assert!(md.contains("2 changed functions"), "{md}");
+    let h = headline(&md);
+    assert!(!h.to_lowercase().contains("preserved"), "{md}");
+    assert!(h.contains("Nothing was checked") && h.contains("2 changed functions"), "{h}");
     assert!(md.contains("changed, not checked"), "{md}");
+    assert!(!md.contains("| function | result | detail |"), "no empty result table when nothing ran:\n{md}");
 }
 
 /// Checked-and-equivalent functions next to unchecked ones: the headline must
@@ -65,6 +71,6 @@ fn headline_counts_unchecked_next_to_equivalent() {
     assert_eq!(code, 0);
     let unchecked = vec![("g".to_string(), "async function, not checked in this version".to_string())];
     let md = render_markdown_with_unchecked(&items, None, &unchecked);
-    let first = md.lines().find(|l| l.contains("checked")).unwrap();
-    assert!(first.contains("1 changed function was not checked"), "{first}");
+    let h = headline(&md);
+    assert!(h.contains("1 changed function was not checked"), "{h}");
 }

@@ -8,6 +8,7 @@ MANIFEST="${EQUIV_MANIFEST:-.equiv-review}"
 AUTO="${EQUIV_AUTO:-false}"
 BASE="${EQUIV_BASE_INPUT:-}"
 FAIL="${EQUIV_FAIL:-true}"
+FAIL_NOT_CHECKED="${EQUIV_FAIL_NOT_CHECKED:-false}"
 
 # In manifest mode, a missing manifest means there is nothing to review. In auto
 # mode there is no manifest: changed functions come from the diff.
@@ -73,8 +74,32 @@ if [[ -n "${PR_NUMBER:-}" && -n "${GH_TOKEN:-}" ]]; then
   fi
 fi
 
-if [[ "$CODE" -ne 0 && "$FAIL" == "true" ]]; then
-  echo "equiv-review: gate failed (exit $CODE)"
-  exit "$CODE"
-fi
-exit 0
+# Gate policy (backlog 0.3c). The binary's exit code is a plain report:
+#   0  every changed function was checked and preserved behaviour
+#   1  at least one function changed behaviour (a counterexample is in the comment)
+#   2  nothing diverged, but at least one function was NOT checked (safety stop,
+#      refused type, error, or a changed function auto-detect could not check)
+#   3+ the review itself did not run (bad manifest, no git repo, bad key)
+# Only a divergence blocks the merge by default. "Not checked" is listed in
+# the comment, never shown as green, and blocks only with fail-on-not-checked.
+# A run that did not happen always fails: a misconfigured check must not pass.
+case "$CODE" in
+  0) exit 0 ;;
+  1)
+    if [[ "$FAIL" == "true" ]]; then
+      echo "::error::equiv-review: a function changed behaviour; see the PR comment (exit 1)"
+      exit 1
+    fi
+    echo "::notice::equiv-review: a function changed behaviour but fail-on-divergence is off (exit 1 not enforced)"
+    exit 0 ;;
+  2)
+    if [[ "$FAIL_NOT_CHECKED" == "true" ]]; then
+      echo "::error::equiv-review: some changed functions were not checked and fail-on-not-checked is on (exit 2)"
+      exit 2
+    fi
+    echo "::notice::equiv-review: nothing diverged, but some changed functions were not checked (listed in the PR comment). Not blocking the merge; set fail-on-not-checked: \"true\" to block."
+    exit 0 ;;
+  *)
+    echo "::error::equiv-review: the review did not run (exit $CODE); this is never a pass"
+    exit "$CODE" ;;
+esac
