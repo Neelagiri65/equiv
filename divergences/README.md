@@ -87,31 +87,38 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.2.1 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.3.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 60 (40 diverges, 20 equivalent) |
-| Catch rate | 25 / 40 = 62.5% |
-| False-alarm rate | 0 / 20 = 0% |
+| Cases | 70 (46 diverges, 24 equivalent) |
+| Catch rate | 41 / 46 = 89.1% |
+| False-alarm rate | 0 / 24 = 0% |
 | Could not check | 1 |
+
+History: equiv 0.2.1 caught 25 / 40 of the original 60 cases. The 0.3.0
+generator catches 36 / 40 of them. Cases 061-070 (class `holdout`) were
+written *after* the 0.3.0 generator change, to check the improvement is not
+fitted to the original misses: 0.2.1 catches 2 / 6 of their diverging pairs,
+0.3.0 catches 5 / 6, with 0 / 4 false alarms.
 
 By class (diverges caught / total, equivalent passed / total):
 
 | class | diverges | equivalent |
 |-------|----------|------------|
 | int-to-float | 2/2 | - |
-| or-default | 3/4 | 1/1 |
+| or-default | 4/4 | 1/1 |
 | float-specials | 3/3 | 2/2 |
 | float-rounding | 2/4 | - |
 | exception-vs-value | 3/3 | - |
-| unicode | 0/5 | 3/3 |
-| fixed-width-int | 1/3 | 3/3 |
+| unicode | 4/5 | 3/3 |
+| fixed-width-int | 2/3 | 3/3 |
 | negative-division | 3/3 | 2/2 |
 | boundary | 2/2 | 4/4 |
 | ordering | 3/3 | 2/2 |
-| check-digit | 2/5 | 3/3 |
-| rare-input | 1/3 | - |
+| check-digit | 5/5 | 3/3 |
+| rare-input | 3/3 | - |
+| holdout | 5/6 | 4/4 |
 
 ### Misses and why
 
@@ -121,20 +128,10 @@ reported as equivalent. The reason is the generator's reach, read from
 
 | case | why equiv did not reach the witness |
 |------|-------------------------------------|
-| 006-or-default-dict-rare-key | dict inputs use keys `a`-`h` only; the `"port"` key is never generated |
-| 012-float-reassociation | needs operands that cancel (e.g. `1e16, -1e16, 1.0`); the random three-float draws did not produce one |
-| 017-unicode-lower-vs-casefold | string inputs are ASCII; `ß` is never generated |
-| 018-unicode-isdigit-vs-isdecimal | needs a non-ASCII digit such as `²` |
-| 019-unicode-strip-variants | the only whitespace generated is a single space; no tab or newline |
-| 020-unicode-byte-vs-char-length | for ASCII strings UTF-8 byte length equals character length |
-| 021-unicode-lone-surrogate | lone surrogates are never generated |
-| 023-fixedwidth-int32-wrap-large | ints stay within +/-1,000,000, below 2^31 |
-| 024-int-float-precision-large | ints stay within +/-1,000,000, far below 2^53 |
-| 030-boundary-long-string-truncate | generated strings are at most 10 characters; the limit is 255 |
-| 034-checkdigit-luhn-str-mod9 | no multi-digit strings are generated, so both validators reject every input |
-| 035-checkdigit-luhn-list-parity | random lists draw from -20..20, so all-digit lists are rare; the fixed corner lists happen to agree |
-| 036-checkdigit-isbn10-x | needs a 10-character ISBN-shaped string |
-| 040-rare-magic-computed | the magic value (`1 << 19`) is not a literal, so the source scan does not target it |
+| 012-float-reassociation | needs all three operands set together so they cancel (e.g. `1e16, -1e16, 1.0`); corner floats are varied one argument at a time and the random draws did not produce one |
+| 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
+| 024-int-float-precision-large | needs an int above 2^53 with no such constant in the source; random ints stay within +/-1,000,000 because a reference may loop `n` times and there is no execution time limit yet |
+| 064-holdout-zfill-vs-rjust | needs a string with a leading `-` or `+`; no string corner or random string has one |
 
 Could not check: `011-float-round-half-even-floor` is refused because
 `math.floor` is outside the float allowlist (only `+ - * /`, comparisons, a few
@@ -142,11 +139,10 @@ exact builtins and `math.sqrt` are admitted). Its sibling
 `010-float-round-half-even-int` (same bug, written with `int(x + 0.5)`) is
 caught.
 
-Contrast pairs worth reading together: `039-rare-magic-literal` (caught, because
-the magic amount is a literal and the source scan aims inputs at it) and
-`040-rare-magic-computed` (missed, same bug, value computed);
-`037-checkdigit-iban-letter-map` and `038-checkdigit-ean-ten-vs-zero` (caught)
-against `034`-`036` (missed).
+Contrast pair worth reading together: `023-fixedwidth-int32-wrap-large` is now
+caught because its masks (`0xFFFFFFFF`, `0x80000000`) are in the source and the
+literal scan aims at them; `024-int-float-precision-large` has no such constant
+and is still missed.
 
 ## Adding a case
 

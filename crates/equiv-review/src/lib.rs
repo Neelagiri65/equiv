@@ -113,7 +113,7 @@ impl PyVal {
     fn to_py(&self) -> String {
         match self {
             PyVal::Int(n) => n.to_string(),
-            PyVal::Str(s) => format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'")),
+            PyVal::Str(s) => py_str_literal(s),
             PyVal::ListInt(xs) => {
                 let inner: Vec<String> = xs.iter().map(|n| n.to_string()).collect();
                 format!("[{}]", inner.join(", "))
@@ -123,7 +123,7 @@ impl PyVal {
             }
             PyVal::Dict(pairs) => {
                 let inner: Vec<String> =
-                    pairs.iter().map(|(k, v)| format!("'{k}': {v}")).collect();
+                    pairs.iter().map(|(k, v)| format!("{}: {v}", py_str_literal(k))).collect();
                 format!("{{{}}}", inner.join(", "))
             }
         }
@@ -142,6 +142,28 @@ impl PyVal {
             _ => self.to_py(),
         }
     }
+}
+
+// A Python string literal for any Unicode string. Printable ASCII is emitted
+// as-is (so existing ASCII cases and receipts are byte-for-byte unchanged);
+// everything else uses an explicit escape, so tabs, newlines and non-ASCII
+// characters reach the evaluator exactly and the literal is the same on
+// every host.
+fn py_str_literal(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("\\'"),
+            ' '..='~' => out.push(ch),
+            c if (c as u32) <= 0xFF => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c if (c as u32) <= 0xFFFF => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push_str(&format!("\\U{:08x}", c as u32)),
+        }
+    }
+    out.push('\'');
+    out
 }
 
 fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
@@ -237,6 +259,26 @@ fn default_val(ty: ArgType) -> PyVal {
     }
 }
 
+// String corners the random generator (a-z, len<=8) cannot reach. Grouped by
+// the semantics they stress; each is a well-known place where string
+// refactors change behaviour. Fixed and ordered, so the case list is the same
+// on every host. (A lone surrogate cannot be held in a Rust String, so that
+// class stays out of reach; see divergences/README.md.)
+const STR_CORNERS: &[&str] = &[
+    // shape: empty, case, digit, space, longer than the random range
+    "", "a", "A", "0", " ", "abcdefghij",
+    // whitespace other than a single space
+    "\t", "\n", "\tx\n", " x ", "\r\n", "\u{0b}\u{0c}", "\u{a0}", "\u{2003}", "\u{3000}",
+    // case mapping that differs between lower() and casefold()/upper()
+    "Straße", "ß", "İ", "ς", "ﬁ",
+    // digits outside ASCII: isdigit/isdecimal/isnumeric disagree
+    "²", "٣", "７",
+    // multi-byte, combining and astral characters: char vs byte length
+    "éééééé", "e\u{301}", "😀",
+    // digit strings in identifier shape (check digits: Luhn, ISBN, IBAN-like)
+    "91", "0123456789", "79927398713", "4111111111111111", "123456789X", "0306406152",
+];
+
 // Deterministic corner inputs the seeded random generator reaches rarely or
 // never: the exact shapes where refactors break. All stay inside the O(n)-safe
 // envelope so a linear reference cannot hang on them.
@@ -246,10 +288,7 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
         ArgType::Int => [0, 1, -1, 2, -2].into_iter().map(PyVal::Int).collect(),
         // Shapes the random generator (a-z, len<=8) cannot reach: empty,
         // uppercase, digit, whitespace, and a string longer than 8.
-        ArgType::Str => ["", "a", "A", "0", " ", "abcdefghij"]
-            .into_iter()
-            .map(|s| PyVal::Str(s.to_string()))
-            .collect(),
+        ArgType::Str => STR_CORNERS.iter().map(|s| PyVal::Str(s.to_string())).collect(),
         // Structural corners the random generator (len<=6, vals -20..20) misses:
         // empty, singleton, all-equal, sorted, reverse-sorted, length>6.
         ArgType::ListInt => [
@@ -259,6 +298,11 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
             vec![1, 2, 3],
             vec![3, 2, 1],
             (0..10).collect::<Vec<i64>>(),
+            // Digit lists in check-digit shape: an even-length list that is a
+            // valid Luhn number only when read from the right (so position-
+            // parity bugs diverge), and a 16-digit card-length list.
+            vec![1, 8],
+            vec![4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
         ]
         .into_iter()
         .map(PyVal::ListInt)
@@ -295,32 +339,83 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
 // The discriminating input usually sits on a branch condition, and the branch
 // constants live in the source, so we aim inputs at and around them.
 
+// Literal-derived ints may exceed INT_ENVELOPE: they are the source's own
+// branch constants (masks such as 0xFFFFFFFF, limits such as 2**31), so the
+// function under review already expects values of that size. Capped so L+1
+// cannot overflow.
+const LITERAL_INT_CAP: i64 = i64::MAX - 1;
+
+// One integer literal token: decimal, 0x/0o/0b, with optional underscores.
+// Returns (value, end index). Floats (1.5, 1e3) and identifiers (x1) are not
+// integer literals and return None.
+fn int_token(b: &[u8], start: usize) -> Option<(i64, usize)> {
+    let prev = if start > 0 { b[start - 1] } else { b' ' };
+    if prev == b'_' || prev.is_ascii_alphanumeric() || prev == b'.' {
+        return None;
+    }
+    let (radix, digits_from) = match (b.get(start), b.get(start + 1).map(|c| c.to_ascii_lowercase())) {
+        (Some(b'0'), Some(b'x')) => (16, start + 2),
+        (Some(b'0'), Some(b'o')) => (8, start + 2),
+        (Some(b'0'), Some(b'b')) => (2, start + 2),
+        _ => (10, start),
+    };
+    let mut i = digits_from;
+    let mut text = String::new();
+    while i < b.len() && (b[i] == b'_' || (b[i] as char).is_digit(radix)) {
+        if b[i] != b'_' {
+            text.push(b[i] as char);
+        }
+        i += 1;
+    }
+    let next = if i < b.len() { b[i] } else { b' ' };
+    if text.is_empty() || next == b'.' || next == b'_' || next.is_ascii_alphanumeric() {
+        return None;
+    }
+    i64::from_str_radix(&text, radix).ok().map(|v| (v, i))
+}
+
+// Integer literals in the source, plus simple constant expressions of two
+// literals (`1 << 19`, `2 ** 31`, `60 * 60`) folded to their value: a branch
+// constant is often written as an expression, not a bare number. A token
+// scan, not an evaluator: only literal-op-literal with checked arithmetic.
 fn scan_int_literals(src: &str) -> Vec<i64> {
     let b = src.as_bytes();
-    let mut out = Vec::new();
+    let mut toks: Vec<(i64, usize, usize)> = Vec::new();
     let mut i = 0;
     while i < b.len() {
         if b[i].is_ascii_digit() {
-            let prev = if i > 0 { b[i - 1] } else { b' ' };
-            let start = i;
-            while i < b.len() && b[i].is_ascii_digit() {
-                i += 1;
-            }
-            let next = if i < b.len() { b[i] } else { b' ' };
-            // Skip identifiers (x1) and floats (1.5): part of a name or a dot.
-            let prev_bad = prev == b'_' || prev.is_ascii_alphabetic() || prev == b'.';
-            let next_bad = next == b'.' || next == b'_' || next.is_ascii_alphabetic();
-            if !prev_bad && !next_bad {
-                if let Ok(n) = src[start..i].parse::<i64>() {
-                    if n.abs() <= INT_ENVELOPE {
-                        out.push(n);
+            match int_token(b, i) {
+                Some((v, end)) => {
+                    toks.push((v, i, end));
+                    i = end;
+                }
+                None => {
+                    while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_' || b[i] == b'.') {
+                        i += 1;
                     }
                 }
+            }
+        } else if b[i].is_ascii_alphabetic() || b[i] == b'_' {
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
             }
         } else {
             i += 1;
         }
     }
+    let mut out: Vec<i64> = toks.iter().map(|t| t.0).collect();
+    for w in toks.windows(2) {
+        let (a, _, a_end) = w[0];
+        let (c, c_start, _) = w[1];
+        let folded = match src[a_end..c_start].trim() {
+            "<<" if (0..63).contains(&c) => a.checked_shl(c as u32).filter(|v| v >> c == a),
+            "**" if (0..64).contains(&c) => a.checked_pow(c as u32),
+            "*" => a.checked_mul(c),
+            _ => None,
+        };
+        out.extend(folded);
+    }
+    out.retain(|n| n.abs() <= LITERAL_INT_CAP);
     out
 }
 
@@ -403,22 +498,47 @@ fn literal_inputs(src: &str, ty: ArgType) -> Vec<PyVal> {
             for n in scan_int_literals(src) {
                 for d in [-1i64, 0, 1] {
                     if let Some(v) = n.checked_add(d) {
-                        if v.abs() <= INT_ENVELOPE {
-                            out.push(PyVal::Int(v));
-                        }
+                        out.push(PyVal::Int(v));
                     }
                 }
             }
             out
         }
-        ArgType::Str => scan_str_literals(src).into_iter().map(PyVal::Str).collect(),
+        // String literals by value, plus strings whose LENGTH sits on an int
+        // literal and its neighbours (a `s[:255]` or `len(s) <= 10` limit),
+        // in both one-byte and two-byte characters so char-vs-byte length
+        // bugs diverge at the same limit.
+        ArgType::Str => {
+            let mut out: Vec<PyVal> = scan_str_literals(src).into_iter().map(PyVal::Str).collect();
+            for n in scan_int_literals(src) {
+                if (1..=STR_LEN_CAP).contains(&n) {
+                    for len in [n - 1, n, n + 1] {
+                        out.push(PyVal::Str("a".repeat(len as usize)));
+                        out.push(PyVal::Str("é".repeat(len as usize)));
+                    }
+                }
+            }
+            out
+        }
         ArgType::Float => scan_float_literals(src)
             .into_iter()
             .map(|f| PyVal::Float(f.to_bits()))
             .collect(),
-        ArgType::ListInt | ArgType::Dict => Vec::new(),
+        // A dict keyed by each string literal in the source, with falsy and
+        // truthy values: `d.get("port") or 8080` only diverges when the key
+        // is present and its value is falsy.
+        ArgType::Dict => scan_str_literals(src)
+            .into_iter()
+            .filter(|k| !k.is_empty())
+            .flat_map(|k| [PyVal::Dict(vec![(k.clone(), 0)]), PyVal::Dict(vec![(k, 1)])])
+            .collect(),
+        ArgType::ListInt => Vec::new(),
     }
 }
+
+// Longest string synthesised from a length literal: covers common limits
+// (255, 1024, 4096) without building huge inputs.
+const STR_LEN_CAP: i64 = 4096;
 
 // Deterministic, ordered case list: the all-default base first (simplest
 // counterexample reported first), then one-at-a-time boundary + source-literal
@@ -449,6 +569,32 @@ fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
                 c[i] = v;
                 if seen.insert(key(&c)) {
                     cases.push(c);
+                }
+            }
+        }
+        // Paired string corners: a function comparing two strings only
+        // diverges when both sides are related (same text, or one is the
+        // other's case mapping, e.g. "Straße" vs "STRASSE"). One-at-a-time
+        // enumeration holds the other argument at "", so it can never reach
+        // these. Rust's own case mapping is compiled in, so this is the same
+        // on every host.
+        let str_args: Vec<usize> =
+            spec.args.iter().enumerate().filter(|(_, t)| **t == ArgType::Str).map(|(i, _)| i).collect();
+        for (x, &i) in str_args.iter().enumerate() {
+            for &j in &str_args[x + 1..] {
+                for s in STR_CORNERS {
+                    for (l, r) in [
+                        (s.to_string(), s.to_string()),
+                        (s.to_string(), s.to_uppercase()),
+                        (s.to_string(), s.to_lowercase()),
+                    ] {
+                        let mut c = base.clone();
+                        c[i] = PyVal::Str(l);
+                        c[j] = PyVal::Str(r);
+                        if seen.insert(key(&c)) {
+                            cases.push(c);
+                        }
+                    }
                 }
             }
         }

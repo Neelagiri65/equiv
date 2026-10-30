@@ -1,0 +1,6 @@
+function = "title"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "per-word capitalize rewritten as str.title, which also capitalises after apostrophes and digits"
+witness = '''("don't",)'''

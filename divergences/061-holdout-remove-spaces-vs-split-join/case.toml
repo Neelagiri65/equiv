@@ -1,0 +1,6 @@
+function = "compact"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "remove all whitespace rewritten to remove only spaces (tabs, newlines, NBSP survive)"
+witness = '''("a\tb",)'''
