@@ -91,9 +91,9 @@ Recorded with equiv 0.5.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 78 (51 diverges, 27 equivalent) |
-| Catch rate | 45 / 51 = 88.2% |
-| False-alarm rate | 0 / 27 = 0% |
+| Cases | 82 (54 diverges, 28 equivalent) |
+| Catch rate | 49 / 54 = 90.7% |
+| False-alarm rate | 0 / 28 = 0% |
 | Could not check | 1 |
 
 History: equiv 0.2.1 caught 25 / 40 of the original 60 cases. The 0.3.0
@@ -112,6 +112,16 @@ they do not; 074 began as an equivalent pair and was relabelled before equiv
 ran on it, when a check of the code showed `str.strip()` removes the
 U+001C-U+001F separators that `int()` rejects.
 
+Cases 079-082 (also `holdout`) were written *before* the 0.6.0 joint numeric
+corners (for every pair of same-type int or float arguments: `(x, -x)`,
+`(-x, x)`, `(x, x)` with `x` in 1, 2, 1,000,000 for ints and 2^54, the largest
+finite float for floats, plus `(+inf, -inf)` both ways) and recorded against
+0.5.0 first: 0.5.0 catches 2 / 3 of their diverging pairs, 0.6.0 catches 3 / 3,
+with 0 / 1 false alarms. 012 is caught by the same change. 080 (product
+reassociation, witness `MAX, 2.0, 0.5`) was written off the planned corner list
+on purpose and was already caught by the random draws on 0.5.0, so it measures
+nothing about the new corners either way.
+
 By class (diverges caught / total, equivalent passed / total):
 
 | class | diverges | equivalent |
@@ -119,7 +129,7 @@ By class (diverges caught / total, equivalent passed / total):
 | int-to-float | 2/2 | - |
 | or-default | 4/4 | 1/1 |
 | float-specials | 3/3 | 2/2 |
-| float-rounding | 2/4 | - |
+| float-rounding | 3/4 | - |
 | exception-vs-value | 3/3 | - |
 | unicode | 4/5 | 3/3 |
 | fixed-width-int | 2/3 | 3/3 |
@@ -128,7 +138,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 9/11 | 7/7 |
+| holdout | 12/14 | 8/8 |
 
 ### Misses and why
 
@@ -138,7 +148,6 @@ reported as equivalent. The reason is the generator's reach, read from
 
 | case | why equiv did not reach the witness |
 |------|-------------------------------------|
-| 012-float-reassociation | needs all three operands set together so they cancel (e.g. `1e16, -1e16, 1.0`); corner floats are varied one argument at a time and the random draws did not produce one |
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
 | 024-int-float-precision-large | needs an int above 2^53 with no such constant in the source; random ints stay within +/-1,000,000 because a reference may loop `n` times; the step budget and safety limit would turn such a run into could-not-check, not a catch |
 | 074-holdout-int-strip-separators | needs digits wrapped in U+001C-U+001F, which `str.strip()` removes and `int()` rejects; no string corner contains those characters |

@@ -1,12 +1,12 @@
 {
-  "equiv_version": "0.5.0",
+  "equiv_version": "0.6.0",
   "python": "3.14.9",
   "summary": {
     "cases": 82,
     "diverges": 54,
     "equivalent": 28,
-    "caught": 47,
-    "missed": 6,
+    "caught": 49,
+    "missed": 4,
     "false_alarms": 0,
     "could_not_check": 1
   },
@@ -90,10 +90,10 @@
     },
     "012-float-reassociation": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 223,
-      "detail": "EQUIVALENT: agreed on all 223 generated inputs (seed 1)"
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (1.8014398509481984e16, -1.8014398509481984e16, 1.0) | candidate -> 0x0.0p+0 | reference -> 0x1.0000000000000p+0"
     },
     "013-int-percent-floor-vs-round": {
       "expected": "diverges",
@@ -309,8 +309,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 191,
-      "detail": "EQUIVALENT: agreed on all 191 generated inputs (seed 1)"
+      "n": 199,
+      "detail": "EQUIVALENT: agreed on all 199 generated inputs (seed 1)"
     },
     "044-eq-max-default": {
       "expected": "equivalent",
@@ -414,8 +414,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 185,
-      "detail": "EQUIVALENT: agreed on all 185 generated inputs (seed 1)"
+      "n": 193,
+      "detail": "EQUIVALENT: agreed on all 193 generated inputs (seed 1)"
     },
     "059-eq-strip-space-split": {
       "expected": "equivalent",
@@ -559,10 +559,10 @@
     },
     "079-holdout-float-sum-reorder": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 223,
-      "detail": "EQUIVALENT: agreed on all 223 generated inputs (seed 1)"
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (1.8014398509481984e16, -1.8014398509481984e16, 1.0) | candidate -> 0x0.0p+0 | reference -> 0x1.0000000000000p+0"
     },
     "080-holdout-float-mul-reassociation": {
       "expected": "diverges",
@@ -582,8 +582,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 186,
-      "detail": "EQUIVALENT: agreed on all 186 generated inputs (seed 1)"
+      "n": 194,
+      "detail": "EQUIVALENT: agreed on all 194 generated inputs (seed 1)"
     }
   }
 }
