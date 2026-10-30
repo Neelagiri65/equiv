@@ -20,13 +20,13 @@ fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
     // Exhaustive literal on purpose: adding a tolerance/approximate-equality
     // field to ReviewSpec breaks this test and forces the P5 decision to be
     // made explicitly (opt-in, default exact, written into the receipt).
-    ReviewSpec { func: func.into(), args, n: 200, seed: 1 }
+    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
 }
 
 fn diverges(name: &str, cand: &str, refr: &str, args: Vec<ArgType>, func: &str) {
     let c = write_py(&format!("{name}_c"), cand);
     let r = write_py(&format!("{name}_r"), refr);
-    let v = review(&c, &r, &spec(func, args)).verdict;
+    let v = review(&c, &r, &spec(func, args)).expect("safety stop in a tiny function").verdict;
     assert!(
         matches!(v, ReviewVerdict::Counterexample { .. }),
         "{name}: exact comparison must report a divergence, got {v:?}"
@@ -97,6 +97,6 @@ fn list_order_diverges() {
 fn exact_refactor_still_equivalent() {
     let c = write_py("same_c", "def f(x):\n    if x < 0:\n        raise ValueError('a')\n    return [x * 2, x]\n");
     let r = write_py("same_r", "def f(x):\n    if x < 0:\n        raise ValueError('b')\n    return [x + x, x]\n");
-    let v = review(&c, &r, &spec("f", vec![ArgType::Int])).verdict;
+    let v = review(&c, &r, &spec("f", vec![ArgType::Int])).expect("safety stop in a tiny function").verdict;
     assert!(matches!(v, ReviewVerdict::Equivalent { .. }), "got {v:?}");
 }
