@@ -31,6 +31,10 @@ fn run_auto(d: &Path) -> (Option<i32>, String, String) {
         .args(["review-pr", "--auto", "--base", "HEAD"])
         .current_dir(d)
         .env("EQUIV_METRICS", "off")
+        // The temp dir may itself sit inside some git checkout (a CI workspace,
+        // a mutation-testing tree): stop git's discovery at the temp root so
+        // only the repo each test creates is ever seen.
+        .env("GIT_CEILING_DIRECTORIES", std::env::temp_dir().canonicalize().unwrap_or_else(|_| std::env::temp_dir()))
         .output()
         .unwrap();
     (out.status.code(), String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned())
