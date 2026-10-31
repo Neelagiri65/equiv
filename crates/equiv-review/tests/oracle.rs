@@ -3,7 +3,7 @@ use equiv_review::{review, ArgType, ReviewSpec, ReviewVerdict};
 use std::io::Write;
 
 fn tmp(name: &str, body: &str) -> std::path::PathBuf {
-    let p = std::env::temp_dir().join(name);
+    let p = std::env::temp_dir().join(format!("equiv_t{}_{name}", std::process::id()));
     let mut f = std::fs::File::create(&p).unwrap();
     f.write_all(body.as_bytes()).unwrap();
     p
