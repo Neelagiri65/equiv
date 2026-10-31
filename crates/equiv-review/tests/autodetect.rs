@@ -124,3 +124,15 @@ fn nested_changed_function_is_surfaced() {
     let inner = find(&d, "outer.inner").expect("nested fn must be surfaced");
     assert!(matches!(inner.status, DetectedStatus::NotChecked { .. }));
 }
+
+// A head file that does not parse is a whole-run error, never an empty list:
+// an empty list would render as "0 checked functions: behaviour preserved",
+// the gate-level false pass the invariant above forbids.
+#[test]
+fn unparseable_head_is_an_error_not_an_empty_list() {
+    let err = detect_changed_functions("def f(x: int):\n    return x\n", "def f(x: int:\n    return x\n")
+        .expect_err("a syntax-broken head must not detect as 'nothing changed'");
+    assert!(err.contains("head source could not be parsed"), "{err}");
+    let err = detect_changed_functions("", "def f(:\n").expect_err("no base, broken head");
+    assert!(err.contains("could not be parsed"), "{err}");
+}

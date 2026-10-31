@@ -1604,3 +1604,97 @@ fn run_python(
     // deduplicated), not just the requested random count: an honest tally.
     Ok(ReviewVerdict::Equivalent { n: cases.len() as u32 })
 }
+
+// Tests only: these pin properties of the private generators that the
+// mutation audit (2026-10-30) found unasserted. No release code lives here.
+#[cfg(test)]
+mod generator_tests {
+    use super::*;
+
+    fn spec(args: Vec<ArgType>, seed: u64) -> ReviewSpec {
+        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET }
+    }
+
+    fn matches_type(v: &PyVal, t: ArgType) -> bool {
+        matches!(
+            (v, t),
+            (PyVal::Int(_), ArgType::Int)
+                | (PyVal::Str(_), ArgType::Str)
+                | (PyVal::ListInt(_), ArgType::ListInt)
+                | (PyVal::Float(_), ArgType::Float)
+                | (PyVal::Dict(_), ArgType::Dict)
+        )
+    }
+
+    // Every generated input matches the declared type of its slot. A
+    // type-invalid input reaching both sides could manufacture a false
+    // counterexample under the declared contract (audit FLAG 1).
+    #[test]
+    fn every_generated_input_matches_its_declared_type() {
+        let src = "def f(a, b):\n    if a == 0xFF or b == \"port\":\n        return 1 << 19\n    return 2 ** 31\n";
+        for args in [
+            vec![ArgType::Int, ArgType::Int],
+            vec![ArgType::Str, ArgType::Int],
+            vec![ArgType::Int, ArgType::Str, ArgType::Float, ArgType::Dict, ArgType::ListInt],
+            vec![ArgType::Str, ArgType::Str, ArgType::Float, ArgType::Float],
+        ] {
+            let cases = gen_cases(&spec(args.clone(), 1), &[src, src]);
+            assert!(cases.len() > args.len() * 5, "too few cases for {args:?}: {}", cases.len());
+            for c in &cases {
+                assert_eq!(c.len(), args.len(), "arity of case {c:?}");
+                for (v, t) in c.iter().zip(&args) {
+                    assert!(matches_type(v, *t), "slot of type {t:?} received {v:?} (case {c:?})");
+                }
+            }
+        }
+    }
+
+    // Without source literals, every int stays inside the O(n)-safe envelope
+    // (random arms, boundary corners and joint corners alike).
+    #[test]
+    fn generated_ints_stay_inside_the_envelope_without_literals() {
+        let cases = gen_cases(&spec(vec![ArgType::Int, ArgType::Int], 1), &["def f(a, b):\n    return a\n"]);
+        for c in &cases {
+            for v in c {
+                if let PyVal::Int(n) = v {
+                    assert!(n.abs() <= INT_ENVELOPE, "{n} is outside the envelope");
+                }
+            }
+        }
+    }
+
+    // The deterministic int corners are pinned: dropping one changes which
+    // off-by-one bugs are reachable, silently.
+    #[test]
+    fn int_boundary_corners_are_pinned() {
+        assert_eq!(boundary_cases(ArgType::Int), [0, 1, -1, 2, -2].map(PyVal::Int).to_vec());
+    }
+
+    // The random stream must not collapse for an even seed. xorshift has an
+    // all-zero fixed point; the seed is made odd before use, so seed 2 runs
+    // a full stream like seed 1 (the suite and the CLI default otherwise only
+    // ever use seed 1).
+    #[test]
+    fn even_seed_runs_a_full_random_stream() {
+        let src = "def f(a, b):\n    return a + b\n";
+        let args = vec![ArgType::Int, ArgType::Int];
+        let n1 = gen_cases(&spec(args.clone(), 1), &[src]).len();
+        let n2 = gen_cases(&spec(args.clone(), 2), &[src]).len();
+        let n4 = gen_cases(&spec(args, 4), &[src]).len();
+        assert!(n1 > 150, "seed 1 produced only {n1} cases");
+        assert!(n2 > 150, "seed 2 produced only {n2} cases: the random stream collapsed");
+        assert!(n4 > 150, "seed 4 produced only {n4} cases: the random stream collapsed");
+    }
+
+    // Different seeds give different random cases (the seed is live, not
+    // decorative), and the same seed gives the same list (determinism).
+    #[test]
+    fn seed_changes_random_cases_and_is_deterministic() {
+        let src = "def f(a):\n    return a\n";
+        let a = gen_cases(&spec(vec![ArgType::Int], 1), &[src]);
+        let b = gen_cases(&spec(vec![ArgType::Int], 1), &[src]);
+        let c = gen_cases(&spec(vec![ArgType::Int], 2), &[src]);
+        assert_eq!(a, b, "same seed, same cases");
+        assert_ne!(a, c, "a different seed must change the random cases");
+    }
+}

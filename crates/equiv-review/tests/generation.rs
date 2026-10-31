@@ -245,3 +245,103 @@ fn joint_corners_cause_no_false_alarm_on_exact_rewrites() {
     let r = review(&cand, &refr, &spec("f", vec![ArgType::Int, ArgType::Int])).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
 }
+
+// The literal scan must read every literal shape a branch constant is
+// commonly written in, not just a bare decimal: radix prefixes, underscores,
+// and literal-op-literal folds. Each pair differs only at that constant, far
+// outside the boundary corners and (deterministically) outside the random
+// stream, so only the scan can reach it.
+#[test]
+fn literal_scan_reads_radix_underscore_and_folded_constants() {
+    for (tag, lit, value) in [
+        ("hex", "0xFF", "255"),
+        ("underscore", "1_000", "1000"),
+        ("shift", "1 << 19", "524288"),
+        ("pow", "2 ** 31", "2147483648"),
+        ("mul", "60 * 60", "3600"),
+        ("octal", "0o777", "511"),
+        ("binary", "0b1010_1010", "170"),
+    ] {
+        let cand = tmp(&format!("gen_rad_{tag}_cand.py"), &format!("def f(x):\n    return 1 if x == {lit} else 0\n"));
+        let refr = tmp(&format!("gen_rad_{tag}_ref.py"), "def f(x):\n    return 0\n");
+        let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
+        match &r.verdict {
+            ReviewVerdict::Counterexample { input, .. } => {
+                assert_eq!(input, &format!("({value})"), "{tag}: wrong counterexample for literal {lit}")
+            }
+            v => panic!("{tag}: literal {lit} should be reached by the scan, got {v:?}"),
+        }
+    }
+}
+
+// A string literal in the source becomes an input by value; a dict keyed by a
+// source string literal with a falsy value reaches `d.get(k) or default`.
+#[test]
+fn literal_scan_reads_string_literals_for_str_and_dict_inputs() {
+    let cand = tmp("gen_strlit_cand.py", "def f(s):\n    return 1 if s == \"xyzzy\" else 0\n");
+    let refr = tmp("gen_strlit_ref.py", "def f(s):\n    return 0\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Str])).expect("no safety stop");
+    match &r.verdict {
+        ReviewVerdict::Counterexample { input, .. } => assert!(input.contains("xyzzy"), "got {input}"),
+        v => panic!("string literal should be reached by the scan, got {v:?}"),
+    }
+    let cand = tmp("gen_dictlit_cand.py", "def f(d):\n    return d.get(\"port\") or 8080\n");
+    let refr = tmp("gen_dictlit_ref.py", "def f(d):\n    return d.get(\"port\", 8080)\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Dict])).expect("no safety stop");
+    match &r.verdict {
+        ReviewVerdict::Counterexample { input, candidate, reference } => {
+            assert!(input.contains("port"), "got {input}");
+            assert_eq!(candidate, "8080");
+            assert_eq!(reference, "0");
+        }
+        v => panic!("dict literal key with a falsy value should be reached, got {v:?}"),
+    }
+}
+
+// Under an int signature the scan walks past float literals, exponents,
+// identifiers that start with a digit and escaped string literals without
+// stalling or mis-tokenising; the review completes and is equivalent.
+#[test]
+fn int_signature_source_with_float_and_escape_literals_reviews_cleanly() {
+    let body = "def f(x):\n    y = 0.5 + 1e3 + 2.\n    x1 = \"a\\n\" + 'b\\\\' + \"\"\n    z = [1.0, 3e-2]\n    return x + 0 if x != 1e3 else x\n";
+    let cand = tmp("gen_mixed_cand.py", body);
+    let refr = tmp("gen_mixed_ref.py", "def f(x):\n    return x\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
+}
+
+// Type-invalid inputs must never reach a function: `a + b` and `b + a` agree
+// on every pair of ints but not on strings, so a string pair leaking into
+// int slots would show as a false counterexample.
+#[test]
+fn commutative_int_add_has_no_false_counterexample() {
+    let cand = tmp("gen_comm_cand.py", "def f(a, b):\n    return a + b\n");
+    let refr = tmp("gen_comm_ref.py", "def f(a, b):\n    return b + a\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int, ArgType::Int])).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
+    let cand = tmp("gen_comm3_cand.py", "def f(a, b, c):\n    return a + b + len(c)\n");
+    let refr = tmp("gen_comm3_ref.py", "def f(a, b, c):\n    return len(c) + b + a\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int, ArgType::Int, ArgType::Str])).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
+}
+
+// An even seed runs a full random stream end to end (the suite otherwise
+// only ever uses seed 1): the honest tally n stays close to seed 1's.
+#[test]
+fn even_seed_checks_a_full_set_of_cases() {
+    let cand = tmp("gen_seed_cand.py", "def f(a):\n    return a * 2\n");
+    let refr = tmp("gen_seed_ref.py", "def f(a):\n    return a + a\n");
+    let n_of = |seed: u64| {
+        let s = ReviewSpec { func: "f".into(), args: vec![ArgType::Int], n: 200, seed, budget: equiv_review::DEFAULT_BUDGET };
+        match review(&cand, &refr, &s).expect("no safety stop").verdict {
+            ReviewVerdict::Equivalent { n } => n,
+            v => panic!("got {v:?}"),
+        }
+    };
+    // Single-int random draws dedup heavily (the small arm has 25 values), so
+    // the tally is well below n for every seed; a collapsed stream would be
+    // the handful of corner cases only.
+    let (n1, n2) = (n_of(1), n_of(2));
+    assert!(n1 > 60, "seed 1 checked only {n1} cases");
+    assert!(n2 * 10 >= n1 * 8, "seed 2 checked {n2} cases against {n1} for seed 1: the random stream collapsed");
+}
