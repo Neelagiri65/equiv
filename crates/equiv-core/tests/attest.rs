@@ -69,3 +69,30 @@ fn dsse_signature_roundtrips_offline() {
     let pae2 = dsse_pae(DSSE_PAYLOAD_TYPE, b"{\"_type\":\"forged\"}");
     assert!(!verify(&pae2, &sig, &key.public_key()));
 }
+
+#[test]
+fn control_chars_are_escaped_as_unicode() {
+    // Control characters below 0x20 (other than \n \r \t) must be emitted as
+    // \u00XX escapes, never as raw bytes -- RFC 8259 forbids them unescaped.
+    let detail = "\u{1}\u{1f}\u{7}";
+    let name = "fn\u{1}name";
+    let pred = ReviewPredicate {
+        verdict: "error",
+        detail,
+        receipt_id_hex: "00",
+        checker: "equiv-review",
+        checker_version: "0.0.1",
+    };
+    let s = statement(name, "ff", &pred.to_json());
+
+    assert!(s.contains("\\u0001"), "0x01 must be escaped as \\u0001: {s}");
+    assert!(s.contains("\\u001f"), "0x1f must be escaped as \\u001f: {s}");
+    assert!(s.contains("\\u0007"), "0x07 must be escaped as \\u0007: {s}");
+    for raw in [0x01u8, 0x1f, 0x07] {
+        assert!(!s.as_bytes().contains(&raw), "raw control byte {raw:#04x} leaked into JSON");
+    }
+
+    let v: serde_json::Value = serde_json::from_str(&s).expect("escaped JSON must parse");
+    assert_eq!(v["predicate"]["detail"], detail);
+    assert_eq!(v["subject"][0]["name"], name);
+}

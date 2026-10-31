@@ -259,3 +259,58 @@ fn receipt_verdict_distinguishes() {
     tested.verdict = Verdict::TestedN { n_cases: 64, seed: 7 };
     assert_ne!(base.to_bytes(), tested.to_bytes());
 }
+
+/// AC-5 / RFC 8949 §4.2.1: integer and length heads use the shortest form at
+/// every boundary (23/24, 255/256, 65535/65536), and the decoder rejects any
+/// wider-than-necessary head as NonShortestForm.
+#[test]
+fn ac5_cbor_shortest_form_boundaries() {
+    // (value, exact canonical encoding)
+    let uint_vectors: Vec<(Value, Vec<u8>)> = vec![
+        (Value::Uint(23), vec![0x17]),
+        (Value::Uint(24), vec![0x18, 0x18]),
+        (Value::Uint(25), vec![0x18, 0x19]),
+        (Value::Uint(255), vec![0x18, 0xff]),
+        (Value::Uint(256), vec![0x19, 0x01, 0x00]),
+        (Value::Uint(65535), vec![0x19, 0xff, 0xff]),
+        (Value::Uint(65536), vec![0x1a, 0x00, 0x01, 0x00, 0x00]),
+    ];
+    for (v, bytes) in &uint_vectors {
+        assert_eq!(&cbor::to_bytes(v), bytes, "encoding of {:?}", v);
+        assert_eq!(cbor::from_bytes(bytes), Ok(v.clone()), "decoding of {:?}", bytes);
+    }
+
+    // Length heads for text / bytes / arrays: (value, expected head prefix)
+    let text23 = Value::Text("a".repeat(23));
+    let text24 = Value::Text("a".repeat(24));
+    let bytes24 = Value::Bytes(vec![0xab; 24]);
+    let array24 = Value::Array(vec![Value::Uint(0); 24]);
+    let len_vectors: Vec<(&Value, Vec<u8>, usize)> = vec![
+        (&text23, vec![0x77], 1 + 23),
+        (&text24, vec![0x78, 0x18], 2 + 24),
+        (&bytes24, vec![0x58, 0x18], 2 + 24),
+        (&array24, vec![0x98, 0x18], 2 + 24),
+    ];
+    for (v, head, total_len) in &len_vectors {
+        let enc = cbor::to_bytes(v);
+        assert!(enc.starts_with(head), "head of {:?}: got {:02x?}", v, &enc[..head.len()]);
+        assert_eq!(enc.len(), *total_len, "total length of {:?}", v);
+        assert_eq!(cbor::from_bytes(&enc), Ok((*v).clone()), "roundtrip of {:?}", v);
+    }
+
+    // Decoder: non-shortest heads are rejected, exact-boundary heads accepted.
+    for bad in [
+        vec![0x18, 23],                      // 23 needs no extra byte
+        vec![0x19, 0x00, 0xff],              // 255 fits in 1 extra byte
+        vec![0x1a, 0x00, 0x00, 0xff, 0xff],  // 65535 fits in 2 extra bytes
+    ] {
+        assert_eq!(
+            cbor::from_bytes(&bad),
+            Err(CborError::NonShortestForm),
+            "{:02x?} must be rejected",
+            bad
+        );
+    }
+    assert_eq!(cbor::from_bytes(&[0x18, 24]), Ok(Value::Uint(24)));
+    assert_eq!(cbor::from_bytes(&[0x19, 0x01, 0x00]), Ok(Value::Uint(256)));
+}

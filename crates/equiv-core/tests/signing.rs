@@ -72,3 +72,26 @@ fn hex_seed_roundtrip() {
     let key2 = SigningKey::from_hex(&h).unwrap();
     assert_eq!(key.public_key(), key2.public_key());
 }
+
+#[test]
+fn receipt_id_is_sha256_of_unsigned_receipt_bytes() {
+    use sha2::{Digest, Sha256};
+    // The trust anchor is SHA-256 of the *unsigned* receipt bytes only --
+    // not of the signed envelope, and independent of which key signed it.
+    let bytes = sample_receipt().to_bytes();
+    let expected: [u8; 32] = Sha256::digest(&bytes).into();
+
+    let signed = SignedReceipt::sign(bytes.clone(), &SigningKey::from_seed(&[7u8; 32]));
+    assert_eq!(signed.receipt_id(), expected, "receipt_id must be SHA-256(receipt bytes)");
+    assert_ne!(signed.receipt_id(), [0u8; 32], "receipt_id must not be all-zero");
+
+    // Same receipt bytes, different key: id unchanged (covers receipt, not sig/pubkey).
+    let other_key = SignedReceipt::sign(bytes, &SigningKey::from_seed(&[8u8; 32]));
+    assert_eq!(other_key.receipt_id(), expected);
+
+    // Different receipt (different artifact hash): different id.
+    let mut different = sample_receipt();
+    different.artifact_sha256 = [9; 32];
+    let signed_diff = SignedReceipt::sign(different.to_bytes(), &SigningKey::from_seed(&[7u8; 32]));
+    assert_ne!(signed_diff.receipt_id(), expected);
+}
