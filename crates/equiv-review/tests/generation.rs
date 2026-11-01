@@ -103,7 +103,10 @@ fn determinism_preserved_with_enumeration() {
 }
 
 // Magnitude safety: an O(n) reference must not hang on the enumerated inputs.
-// Boundary/literal ints stay inside the envelope, so range(abs(n)) is bounded.
+// Boundary/literal ints stay inside the envelope, so range(abs(n)) is bounded
+// there; the large-magnitude corners (up to 2^63 - 1) run last and exhaust
+// the deterministic step budget, which ends the review as could-not-check
+// in bounded time. Never a hang, never green.
 #[test]
 fn linear_reference_does_not_hang() {
     let cand = tmp("gen_lin_cand.py", "def f(n):\n    return abs(n)\n");
@@ -112,12 +115,13 @@ fn linear_reference_does_not_hang() {
         "def f(n):\n    c = 0\n    for _ in range(abs(n)): c += 1\n    return c\n",
     );
     let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
-    // Equivalent (both count |n|); the point is it completes, not the verdict.
-    assert!(
-        matches!(r.verdict, ReviewVerdict::Equivalent { .. }),
-        "got {:?}",
-        r.verdict
-    );
+    match &r.verdict {
+        ReviewVerdict::Error { reason } => assert!(
+            reason.contains("step budget") && reason.contains("reference"),
+            "expected the reference to run out of budget at a large corner, got {reason}"
+        ),
+        v => panic!("an O(n) reference meets the 2^63 corner and must end as could-not-check, got {v:?}"),
+    }
 }
 
 // Numeric text: signed, decimal, exponent and whitespace-padded numbers are
@@ -344,4 +348,66 @@ fn even_seed_checks_a_full_set_of_cases() {
     let (n1, n2) = (n_of(1), n_of(2));
     assert!(n1 > 60, "seed 1 checked only {n1} cases");
     assert!(n2 * 10 >= n1 * 8, "seed 2 checked {n2} cases against {n1} for seed 1: the random stream collapsed");
+}
+
+// Large-magnitude int corners (backlog 0.5b). The random envelope is
+// +/-1,000,000, so a divergence that lives only above 2^53 (where float64
+// stops being exact for ints) is unreachable by draws or by the literal scan
+// when the source names no such constant. Fixed corners at the float64
+// cliffs reach it, and they must name the exact witness.
+#[test]
+fn int_to_float_precision_divergence_above_2_53_is_caught() {
+    let cand = tmp("gen_big_cand.py", "def double(n):\n    return int(n * 2.0)\n");
+    let refr = tmp("gen_big_ref.py", "def double(n):\n    return n * 2\n");
+    let r = review(&cand, &refr, &spec("double", vec![ArgType::Int])).expect("no safety stop");
+    match &r.verdict {
+        ReviewVerdict::Counterexample { input, .. } => assert!(
+            input.contains("9007199254740993") || input.contains("-9007199254740993"),
+            "expected 2^53 + 1 (or its negative) as the counterexample, got {input}"
+        ),
+        v => panic!("large int corner should catch this, got {v:?}"),
+    }
+}
+
+// Holdout 083 shape: abs via math.fabs clears the last bit above 2^53.
+#[test]
+fn abs_via_fabs_divergence_is_caught() {
+    let cand = tmp("gen_fabs_cand.py", "import math\n\ndef m(n):\n    return int(math.fabs(n))\n");
+    let refr = tmp("gen_fabs_ref.py", "def m(n):\n    return abs(n)\n");
+    let r = review(&cand, &refr, &spec("m", vec![ArgType::Int])).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", r.verdict);
+}
+
+// The corners must not raise a false alarm on an exact rewrite at any
+// magnitude: Python ints are arbitrary precision, so `not n & 1` and
+// `n % 2 == 0` agree everywhere, including at i64::MIN.
+#[test]
+fn large_int_corners_cause_no_false_alarm_on_exact_rewrites() {
+    let cand = tmp("gen_even_cand.py", "def e(n):\n    return not n & 1\n");
+    let refr = tmp("gen_even_ref.py", "def e(n):\n    return n % 2 == 0\n");
+    let r = review(&cand, &refr, &spec("e", vec![ArgType::Int])).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
+    let cand = tmp("gen_sq_cand.py", "def q(a, b):\n    return a * a + b\n");
+    let refr = tmp("gen_sq_ref.py", "def q(a, b):\n    return a ** 2 + b\n");
+    let r = review(&cand, &refr, &spec("q", vec![ArgType::Int, ArgType::Int])).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
+}
+
+// The large corners run AFTER the random cases. A function whose work grows
+// with n exhausts the step budget on a 2^63 input; placing those inputs last
+// means a counterexample the small cases find still stands, and a run that
+// is fine inside the envelope ends with the same verdict it had before the
+// corners existed if it never reaches them.
+#[test]
+fn large_int_corners_run_after_the_random_cases() {
+    let cand = tmp("gen_ord_cand.py", "def f(n):\n    t = 0\n    for i in range(abs(n) % 1000):\n        t += i\n    return t + (1 if n % 7 == 3 else 0)\n");
+    let refr = tmp("gen_ord_ref.py", "def f(n):\n    t = 0\n    for i in range(abs(n) % 1000):\n        t += i\n    return t\n");
+    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
+    match &r.verdict {
+        ReviewVerdict::Counterexample { input, .. } => {
+            let n: i64 = input.trim_matches(|c| c == '(' || c == ')' || c == ',').trim().parse().expect("int input");
+            assert!(n.abs() <= 1_000_000, "the small cases should find this first, got {input}");
+        }
+        v => panic!("expected a counterexample from the small cases, got {v:?}"),
+    }
 }
