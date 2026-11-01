@@ -2,11 +2,11 @@
   "equiv_version": "0.7.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 85,
-    "diverges": 56,
-    "equivalent": 29,
-    "caught": 51,
-    "missed": 4,
+    "cases": 88,
+    "diverges": 58,
+    "equivalent": 30,
+    "caught": 52,
+    "missed": 5,
     "false_alarms": 0,
     "could_not_check": 1
   },
@@ -605,6 +605,27 @@
       "outcome": "missed",
       "n": 122,
       "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
+    },
+    "086-holdout-digit-count-via-log-base": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 122,
+      "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
+    },
+    "087-holdout-eq-gcd-euclid-vs-math": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 231,
+      "detail": "EQUIVALENT: agreed on all 231 generated inputs (seed 1)"
+    },
+    "088-holdout-list-bit-length-via-log2": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ([0]) | candidate -> ValueError | reference -> [0]"
     }
   }
 }

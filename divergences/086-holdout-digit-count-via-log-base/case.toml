@@ -1,0 +1,6 @@
+function = "digit_count"
+args = "int"
+expected = "diverges"
+class = "holdout"
+pattern = "len(str(abs(n))) rewritten as int(math.log(abs(n), 10)) + 1: the two-argument log is a quotient of two library logarithms and lands just under 3.0 at n = 1000; an int signature reaching libm must be refused by name, not judged"
+witness = '''(1000,)'''
