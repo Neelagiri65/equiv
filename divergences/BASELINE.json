@@ -1,14 +1,14 @@
 {
-  "equiv_version": "0.7.0",
+  "equiv_version": "0.8.0",
   "python": "3.14.9",
   "summary": {
     "cases": 88,
     "diverges": 58,
     "equivalent": 30,
-    "caught": 52,
-    "missed": 5,
+    "caught": 51,
+    "missed": 3,
     "false_alarms": 0,
-    "could_not_check": 1
+    "could_not_check": 4
   },
   "cases": {
     "001-int-float-identity-scale": {
@@ -601,17 +601,17 @@
     },
     "085-holdout-digit-count-via-log10": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 122,
-      "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
+      "exit": 2,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "REFUSED: reaches math.log10, a maths-library result whose last bit is not reproducible across hosts"
     },
     "086-holdout-digit-count-via-log-base": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 122,
-      "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
+      "exit": 2,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "REFUSED: reaches math.log, a maths-library result whose last bit is not reproducible across hosts"
     },
     "087-holdout-eq-gcd-euclid-vs-math": {
       "expected": "equivalent",
@@ -622,10 +622,10 @@
     },
     "088-holdout-list-bit-length-via-log2": {
       "expected": "diverges",
-      "exit": 1,
-      "outcome": "caught",
+      "exit": 2,
+      "outcome": "could-not-check",
       "n": null,
-      "detail": "COUNTEREXAMPLE at input ([0]) | candidate -> ValueError | reference -> [0]"
+      "detail": "REFUSED: reaches math.log2, a maths-library result whose last bit is not reproducible across hosts"
     }
   }
 }

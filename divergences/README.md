@@ -87,14 +87,14 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.7.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.8.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 85 (56 diverges, 29 equivalent) |
-| Catch rate | 51 / 56 = 91.1% |
-| False-alarm rate | 0 / 29 = 0% |
-| Could not check | 1 |
+| Cases | 88 (58 diverges, 30 equivalent) |
+| Catch rate | 51 / 58 = 87.9% |
+| False-alarm rate | 0 / 30 = 0% |
+| Could not check | 4 |
 
 History: equiv 0.2.1 caught 25 / 40 of the original 60 cases. The 0.3.0
 generator catches 36 / 40 of them. Cases 061-070 (class `holdout`) were
@@ -135,6 +135,16 @@ corner is recorded in the receipt as not judged and the review goes on, so
 no corpus case changed outcome for that reason (no equivalent case carries
 an unjudged count).
 
+Cases 086-088 (also `holdout`) were written *before* the 0.8.0 admissibility
+guard on every signature (a function that reaches a maths-library result is
+refused by name whatever its argument types; exact functions such as `gcd`,
+`isqrt` and `fabs` stay admitted) and recorded against 0.7.0 first: 0.7.0
+judges both libm pairs and catches 1 / 2 (088 at `[0]`, an exception
+difference); 0.8.0 refuses both, so they count as could-not-check, and the
+exact pair 087 passes on both (0 / 1 false alarms). 085 is refused by the same
+change. A refusal is not a miss and not a catch: the receipt says the function
+was not judged, and why.
+
 By class (diverges caught / total, equivalent passed / total):
 
 | class | diverges | equivalent |
@@ -151,7 +161,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 13/16 | 9/9 |
+| holdout | 13/18 | 10/10 |
 
 ### Misses and why
 
@@ -163,12 +173,14 @@ reported as equivalent. The reason is the generator's reach, read from
 |------|-------------------------------------|
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
 | 074-holdout-int-strip-separators | needs digits wrapped in U+001C-U+001F, which `str.strip()` removes and `int()` rejects; no string corner contains those characters |
-| 085-holdout-digit-count-via-log10 | needs 10^18 - 1 (or another 10^k - 1 above 2^53); the large-magnitude corners sit at powers of two and the i64 limits, and the source names no such constant |
 | 076-holdout-is-int-double-sign | needs a repeated sign such as `--1`; the sign corners carry a single sign, and the source only spells `+-`, on which both sides agree |
 
 Could not check: `011-float-round-half-even-floor` is refused because
 `math.floor` is outside the float allowlist (only `+ - * /`, comparisons, a few
-exact builtins and `math.sqrt` are admitted). Its sibling
+exact builtins and `math.sqrt` are admitted). `085`, `086` and `088` are refused
+under their int and list signatures because they reach `math.log10`,
+`math.log` and `math.log2`: results whose last bit is not the same on every
+host, so no cross-host verdict is possible. Its sibling
 `010-float-round-half-even-int` (same bug, written with `int(x + 0.5)`) is
 caught.
 
