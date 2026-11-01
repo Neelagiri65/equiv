@@ -17,6 +17,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # One Python minor on every host: the receipt carries the evaluator's
+      # major.minor and the goldens pin their id to this one.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - name: Toolchain versions
         run: rustc --version && cargo --version && python3 --version
       - name: cargo test (includes the cross-host golden receipt)

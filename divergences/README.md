@@ -87,7 +87,7 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.8.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.9.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|

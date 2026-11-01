@@ -51,6 +51,11 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # The step budget needs Python 3.12+ (sys.monitoring). Install it so the
+    # runner's default never decides whether a review can run.
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
     - name: Resolve equiv binary (prebuilt release, else build from source)
       shell: bash
       env:

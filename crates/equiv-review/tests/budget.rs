@@ -133,7 +133,9 @@ fn module_that_loops_at_import_is_could_not_check() {
 fn golden_budget_receipt_id_is_stable() {
     let cand = tmp("gold_c", "def f(x):\n    while True:\n        pass\n");
     let refr = tmp("gold_r", TERMINATES);
-    let r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
+    // python field pinned to the CI minor before hashing; see floats.rs.
+    let mut r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
+    r.python = "3.12".into();
     let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "6be1cc9346b32f3da02aaf6a40e940206805c2a43bc5e9d930e6fdf8c5e29b16", "receipt-id drifted");
+    assert_eq!(id, "436207af2d12d0a94bccecd8f2fc8942847c8c1dc7589ace9adb6dcad2eb0f9e", "receipt-id drifted");
 }

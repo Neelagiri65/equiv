@@ -126,6 +126,12 @@ fn golden_receipt_id_is_stable() {
     let cand = write_py("gold_c", "def s(x):\n    return x * 2.0 + 1.0\n");
     let refr = write_py("gold_r", "def s(x):\n    return x + x + 1.0\n");
     let s = spec("s", vec![ArgType::Float]);
-    let id: String = review(&cand, &refr, &s).expect("no safety stop").sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "6c1dc47b0e408da8aafc8c2e60c73c58a12aecec60846c6fe951850eb6489907", "receipt-id drifted");
+    // The receipt's python field is pinned to the CI minor (3.12) before
+    // hashing: "same bytes on every host" holds for the same evaluator
+    // version, and this test must stay runnable on a developer's newer
+    // Python. The real field is checked in tests/receipt_fields.rs.
+    let mut r = review(&cand, &refr, &s).expect("no safety stop");
+    r.python = "3.12".into();
+    let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(id, "037bbd24442b142606e2d57c88f7a08b4646f3129096329b73b64fa4a5a4290b", "receipt-id drifted");
 }
