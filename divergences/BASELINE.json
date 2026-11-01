@@ -2,11 +2,11 @@
   "equiv_version": "0.6.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 82,
-    "diverges": 54,
-    "equivalent": 28,
+    "cases": 85,
+    "diverges": 56,
+    "equivalent": 29,
     "caught": 49,
-    "missed": 4,
+    "missed": 6,
     "false_alarms": 0,
     "could_not_check": 1
   },
@@ -584,6 +584,27 @@
       "outcome": "pass",
       "n": 194,
       "detail": "EQUIVALENT: agreed on all 194 generated inputs (seed 1)"
+    },
+    "083-holdout-int-abs-via-fabs": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 103,
+      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
+    },
+    "084-holdout-eq-is-even-bitmask": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 103,
+      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
+    },
+    "085-holdout-digit-count-via-log10": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 103,
+      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
     }
   }
 }

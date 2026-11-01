@@ -1,0 +1,6 @@
+function = "magnitude"
+args = "int"
+expected = "diverges"
+class = "holdout"
+pattern = "abs(n) rewritten as int(math.fabs(n)): fabs converts to float64 first, so odd values above 2**53 come back with their last bit cleared; exact at every value inside a 1e6 envelope"
+witness = '''(9007199254740993,)'''
