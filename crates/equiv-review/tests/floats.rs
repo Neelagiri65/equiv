@@ -6,7 +6,7 @@ use equiv_review::{review, ArgType, ReviewSpec, ReviewVerdict};
 use std::io::Write;
 
 fn write_py(name: &str, body: &str) -> std::path::PathBuf {
-    let p = std::env::temp_dir().join(format!("equiv_ftest_{name}.py"));
+    let p = std::env::temp_dir().join(format!("equiv_ftest_{}_{name}.py", std::process::id()));
     let mut f = std::fs::File::create(&p).unwrap();
     f.write_all(body.as_bytes()).unwrap();
     p

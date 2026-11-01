@@ -17,7 +17,7 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 
 fn tmp(name: &str, body: &str) -> std::path::PathBuf {
-    let p = std::env::temp_dir().join(format!("equiv_safety_{name}.py"));
+    let p = std::env::temp_dir().join(format!("equiv_safety_{}_{name}.py", std::process::id()));
     let mut f = std::fs::File::create(&p).unwrap();
     f.write_all(body.as_bytes()).unwrap();
     p
@@ -52,12 +52,46 @@ fn long_c_level_run_is_stopped_within_the_limit() {
 fn whole_process_group_is_killed() {
     // A grandchild that keeps the output pipes open must die too, or the
     // review would hang waiting for end-of-output after Python is killed.
-    let cand = tmp("grandchild_c", "import os\ndef f(x):\n    os.system('sleep 300')\n    return x\n");
+    // The grandchild records its own pid (exec makes the shell become
+    // `sleep`), so group death is asserted directly, not inferred from the
+    // review returning promptly.
+    let pidfile = std::env::temp_dir().join(format!("equiv_safety_{}_grandchild.pid", std::process::id()));
+    let _ = std::fs::remove_file(&pidfile);
+    let cand = tmp(
+        "grandchild_c",
+        &format!(
+            "import os\ndef f(x):\n    os.system('echo $$ > {} ; exec sleep 300')\n    return x\n",
+            pidfile.display()
+        ),
+    );
     let refr = tmp("grandchild_r", TERMINATES);
     let t = Instant::now();
     let out = review_limited(&cand, &refr, &spec("f"), 2);
     assert!(t.elapsed() < RETURN_WITHIN, "group kill took {:?}", t.elapsed());
     assert!(out.is_err(), "expected a safety stop");
+    let pid: u32 = std::fs::read_to_string(&pidfile)
+        .expect("the grandchild must have started and written its pid")
+        .trim()
+        .parse()
+        .expect("pid");
+    // Reaping after the kill can take a moment; the grandchild must be gone
+    // (or a zombie already reparented away from us) within a few seconds.
+    let alive = |pid: u32| {
+        std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", &pid.to_string()])
+            .output()
+            .map(|o| {
+                let st = String::from_utf8_lossy(&o.stdout);
+                o.status.success() && !st.trim().is_empty() && !st.trim_start().starts_with('Z')
+            })
+            .unwrap_or(false)
+    };
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while alive(pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(!alive(pid), "grandchild sleep (pid {pid}) survived the group kill");
+    let _ = std::fs::remove_file(&pidfile);
 }
 
 #[test]

@@ -3,7 +3,7 @@ use equiv_review::{review, ArgType, ReviewSpec, ReviewVerdict};
 use std::io::Write;
 
 fn tmp(name: &str, body: &str) -> std::path::PathBuf {
-    let p = std::env::temp_dir().join(name);
+    let p = std::env::temp_dir().join(format!("equiv_t{}_{name}", std::process::id()));
     let mut f = std::fs::File::create(&p).unwrap();
     f.write_all(body.as_bytes()).unwrap();
     p
@@ -80,7 +80,7 @@ fn exception_on_one_side_reports_other_sides_real_value() {
     }
 }
 
-use equiv_review::{render_markdown, run_pr, PrCheck, ReviewItem, MARKER};
+use equiv_review::{render_markdown, run_pr, PrCheck, ReviewItem, ReviewReceipt, MARKER};
 
 #[test]
 fn pr_markdown_reports_divergence_and_equivalence() {
@@ -100,6 +100,17 @@ fn pr_markdown_reports_divergence_and_equivalence() {
     assert!(md.contains("`total`") && md.contains("equivalent"));
     assert!(md.contains("`clamp`") && md.contains("DIVERGES"));
     assert!(md.contains("receipt-id"));
+    // The headline is the first line a reviewer reads: it must state the
+    // divergence count exactly, never fall through to "preserved".
+    let headline = md.lines().skip_while(|l| !l.starts_with("## equiv review")).skip(1).find(|l| !l.trim().is_empty()).unwrap();
+    assert_eq!(headline, "1 of 2 checked functions changed behaviour.");
+    // The receipt-id shown is the re-run handle: exactly 12 hex chars.
+    let ids: Vec<&str> = md.lines().filter(|l| l.contains("receipt-id ")).map(|l| l.rsplit(' ').next().unwrap()).collect();
+    assert_eq!(ids.len(), 2, "{md}");
+    for id in ids {
+        assert_eq!(id.len(), 12, "short receipt-id `{id}`");
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit()), "short receipt-id `{id}`");
+    }
     // Honest-scope disclaimer must be present.
     assert!(md.to_lowercase().contains("does not check"));
     // Signed render surfaces the signer pubkey.
@@ -117,4 +128,28 @@ fn pr_all_equivalent_passes_gate() {
     assert_eq!(code, 0);
     assert!(render_markdown(&items, None).contains("behaviour preserved"));
     let _ = ReviewItem { name: "x".into(), outcome: items.into_iter().next().unwrap().outcome };
+}
+
+// A function that cannot be imported is an Error item: the headline counts it
+// as "could not be checked" and never reads as preserved. (The error tally is
+// a separate counter from the divergence tally; both are pinned here.)
+#[test]
+fn pr_markdown_counts_errors_in_the_headline() {
+    let ok_h = tmp("pr_err_ok_head.py", "def f(a):\n    return a + 0\n");
+    let ok_b = tmp("pr_err_ok_base.py", "def f(a):\n    return a\n");
+    let bad_h = tmp("pr_err_bad_head.py", "def g(a:\n    return a\n");
+    let bad_b = tmp("pr_err_bad_base.py", "def g(a):\n    return a\n");
+    let checks = vec![
+        PrCheck { name: "f".into(), head_path: ok_h, base_path: ok_b, spec: spec("f", vec![ArgType::Int]) },
+        PrCheck { name: "g".into(), head_path: bad_h, base_path: bad_b, spec: spec("g", vec![ArgType::Int]) },
+    ];
+    let (items, code) = run_pr(&checks);
+    assert_eq!(items.len(), 2);
+    assert_eq!(code, 2, "not checked is never green");
+    assert!(matches!(items[1].outcome, Ok(ReviewReceipt { verdict: ReviewVerdict::Error { .. }, .. })), "{:?}", items[1].outcome);
+    let md = render_markdown(&items, None);
+    let headline = md.lines().skip_while(|l| !l.starts_with("## equiv review")).skip(1).find(|l| !l.trim().is_empty()).unwrap();
+    assert_eq!(headline, "1 of 2 functions could not be checked.");
+    assert!(md.contains("| `g` | not checked |"), "{md}");
+    assert!(!headline.contains("preserved") && !md.contains("| `g` | equivalent"), "{md}");
 }
