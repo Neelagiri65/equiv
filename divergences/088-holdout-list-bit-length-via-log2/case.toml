@@ -1,0 +1,6 @@
+function = "bit_lengths"
+args = "list[int]"
+expected = "diverges"
+class = "holdout"
+pattern = "x.bit_length() rewritten as int(math.log2(x)) + 1 over a list: log2(2**53 - 1) rounds up to 53.0 so the count is one too many; written under a list[int] signature, off the planned int-signature list, to test whether the guard generalises across signatures"
+witness = '''([9007199254740991],)'''

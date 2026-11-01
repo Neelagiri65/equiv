@@ -1,0 +1,5 @@
+function = "gcd"
+args = "int,int"
+expected = "equivalent"
+class = "holdout"
+pattern = "Euclid loop rewritten as math.gcd: exact integer arithmetic on both sides, no libm; an admissibility guard on every signature must leave exact math functions admitted and not raise a false alarm or a refusal here"

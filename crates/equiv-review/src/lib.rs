@@ -901,6 +901,57 @@ fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal
     // math.sqrt, comparisons, literals, a small set of exact builtins). Anything
     // else (** , //, %, dynamic dispatch, unknown calls, foreign imports) is
     // refused by name. This is the allowlist the spec mandates, not a denylist.
+    // Always on, every signature: a function body that reaches a maths-library
+    // result is refused by name. libm's last bit (log, exp, sin, pow with a
+    // float, ...) differs between hosts, so a verdict resting on it would not
+    // be byte-identical everywhere. The exact set is what IEEE-754 or integer
+    // arithmetic pins on every host. Walks the target function only and
+    // follows `import math as m` / `from math import x as y`; a libm call
+    // hidden in a helper or `(n / 2) ** 2` without a float literal is not
+    // seen (DECISIONS #17).
+    let libm = format!(
+        r#"import ast as _ast, sys as _sys
+_EXACT = {{'sqrt', 'fabs', 'floor', 'ceil', 'trunc', 'copysign', 'fmod', 'modf', 'frexp', 'ldexp', 'fsum',
+          'isqrt', 'gcd', 'lcm', 'factorial', 'comb', 'perm', 'isfinite', 'isnan', 'isinf'}}
+_LIBM = ', a maths-library result whose last bit is not reproducible across hosts'
+def _libm(_path):
+    try: _t = _ast.parse(open(_path, encoding='utf-8').read())
+    except Exception: return None
+    _mods = {{}}
+    _names = {{}}
+    for _n in _ast.walk(_t):
+        if isinstance(_n, _ast.Import):
+            for _a in _n.names:
+                if _a.name in ('math', 'cmath'): _mods[_a.asname or _a.name] = _a.name
+        elif isinstance(_n, _ast.ImportFrom) and _n.module in ('math', 'cmath'):
+            for _a in _n.names: _names[_a.asname or _a.name] = (_n.module, _a.name)
+    _target = None
+    for _n in _ast.walk(_t):
+        if isinstance(_n, _ast.FunctionDef) and _n.name == {fn:?}: _target = _n; break
+    if _target is None: return None
+    for _node in _ast.walk(_target):
+        if isinstance(_node, _ast.Call):
+            _f = _node.func
+            if isinstance(_f, _ast.Attribute) and isinstance(_f.value, _ast.Name) and _f.value.id in _mods:
+                _m = _mods[_f.value.id]
+                if _m == 'cmath' or _f.attr not in _EXACT: return 'reaches ' + _m + '.' + _f.attr + _LIBM
+            if isinstance(_f, _ast.Name) and _f.id in _names:
+                _m, _o = _names[_f.id]
+                if _m == 'cmath' or _o not in _EXACT: return 'reaches ' + _m + '.' + _o + _LIBM
+        if isinstance(_node, _ast.BinOp) and isinstance(_node.op, _ast.Pow):
+            for _s in (_node.left, _node.right):
+                if isinstance(_s, _ast.Constant) and isinstance(_s.value, float):
+                    return 'uses ** (Pow) with a float operand: pow is' + _LIBM[1:]
+    return None
+for _p in ({cand:?}, {refr:?}):
+    _w = _libm(_p)
+    if _w:
+        print('__REFUSED__\t' + _w); _sys.exit(0)
+"#,
+        fn = spec.func,
+        cand = cand,
+        refr = refr,
+    );
     let admis = if spec.args.iter().any(|a| *a == ArgType::Float) {
         format!(
             r#"import ast as _ast, sys as _sys
@@ -948,7 +999,7 @@ for _p in ({cand:?}, {refr:?}):
 import struct
 import sys as _sys
 import os as _os
-{admis}# Deterministic step budget (backlog 0.3, gate P3). Every LINE and JUMP event
+{libm}{admis}# Deterministic step budget (backlog 0.3, gate P3). Every LINE and JUMP event
 # raised by code outside this driver file counts one step; past the budget the
 # callback raises _Budget, and keeps raising on every later event, so user code
 # that swallows it (even a bare except) cannot loop on. No clock is read.
@@ -1055,6 +1106,7 @@ for i, args in enumerate(cases):
     else:
         print(f"{{i}}\t{{'EQ' if cv == rv else 'NE'}}\t{{cv}}\t{{rv}}")
 "#,
+        libm = libm,
         admis = admis,
         cand = cand,
         refr = refr,
