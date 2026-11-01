@@ -325,8 +325,11 @@ fn run() -> Result<u8, String> {
                 }
             };
             match &r.verdict {
-                ReviewVerdict::Equivalent { n } => {
-                    println!("EQUIVALENT: agreed on all {n} generated inputs (seed {seed})");
+                ReviewVerdict::Equivalent { n, not_judged } => {
+                    println!(
+                        "EQUIVALENT: agreed on all {n} generated inputs (seed {seed}){}",
+                        equiv_review::not_judged_note(*not_judged)
+                    );
                 }
                 ReviewVerdict::Counterexample { input, candidate, reference } => {
                     println!("COUNTEREXAMPLE at input {input}");

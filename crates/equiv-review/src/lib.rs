@@ -289,6 +289,38 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
 // bound the random generator respects, applied to boundary and literal inputs.
 const INT_ENVELOPE: i64 = 1_000_000;
 
+// Large-magnitude int corners (backlog 0.5b): the places where an int stops
+// surviving a trip through a 32-bit field or a float64. 2^31 and 2^32 are
+// the fixed-width wrap points; 2^49 + 1 is where log2(n).is_integer() starts
+// lying; 2^53 is the last int float64 holds exactly, so n * 2.0, fabs and
+// true division lose their last bit from 2^53 + 1; i64::MAX / i64::MIN are
+// the widest this value type carries (2^63 + 1 is out of reach without a
+// wider PyVal::Int, and is not part of this item). Each with its negative.
+// They sit OUTSIDE the random envelope, so they are not in boundary_cases
+// (which an O(n) reference must survive) but in their own block that runs
+// after the random cases: see gen_cases.
+const LARGE_INT_CORNERS: &[i64] = &[
+    2_147_483_647,
+    2_147_483_648,
+    2_147_483_649,
+    4_294_967_296,
+    562_949_953_421_313,
+    9_007_199_254_740_991,
+    9_007_199_254_740_992,
+    9_007_199_254_740_993,
+    i64::MAX,
+    -2_147_483_647,
+    -2_147_483_648,
+    -2_147_483_649,
+    -4_294_967_296,
+    -562_949_953_421_313,
+    -9_007_199_254_740_991,
+    -9_007_199_254_740_992,
+    -9_007_199_254_740_993,
+    -i64::MAX,
+    i64::MIN,
+];
+
 // A neutral, non-degenerate value per type: held constant for the other
 // arguments while one argument is varied across its corners (one-at-a-time
 // enumeration keeps the case count linear, not a cartesian explosion).
@@ -594,7 +626,16 @@ const STR_LEN_CAP: i64 = 4096;
 // reference texts, scanned for branch literals. Same inputs => same cases on
 // every host (AC-1); changing this generator is a versioned change (the
 // receipt carries checker_version).
+#[cfg(test)]
 fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
+    gen_cases_tail(spec, sources).0
+}
+
+// The case list plus the index where the large-magnitude int corners begin
+// (== cases.len() when the signature has no int argument). Inside that
+// index a budget exhaustion is an Error; from it on, a per-input "not
+// judged" (see run_python).
+fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usize) {
     let mut cases: Vec<Vec<PyVal>> = Vec::new();
     let mut seen: std::collections::BTreeSet<Vec<String>> = std::collections::BTreeSet::new();
     fn key(c: &[PyVal]) -> Vec<String> {
@@ -700,15 +741,43 @@ fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
             cases.push(c);
         }
     }
-    cases
+
+    // Large-magnitude int corners, one argument at a time, LAST. A function
+    // whose work grows with n exhausts the step budget on a 2^63 input; such
+    // an input is recorded as not judged (counted in the receipt, printed
+    // with the verdict) and the review goes on, so a linear reference is
+    // still judged everywhere inside the envelope exactly as before. Running
+    // these after every other case means a counterexample the small inputs
+    // find still comes first. Fixed and seed-free, so the same on every host.
+    let large_from = cases.len();
+    if !spec.args.is_empty() {
+        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+        for (i, ty) in spec.args.iter().enumerate() {
+            if *ty != ArgType::Int {
+                continue;
+            }
+            for &n in LARGE_INT_CORNERS {
+                let mut c = base.clone();
+                c[i] = PyVal::Int(n);
+                if seen.insert(key(&c)) {
+                    cases.push(c);
+                }
+            }
+        }
+    }
+    (cases, large_from)
 }
 
 // ---------- verdict + receipt ----------
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewVerdict {
-    /// Candidate and reference agreed on all N generated cases.
-    Equivalent { n: u32 },
+    /// Candidate and reference agreed on all `n` judged cases. `not_judged`
+    /// counts the large-magnitude int corners (outside the random envelope,
+    /// run last) where a side exhausted the step budget: no verdict at that
+    /// input, stated here and in the receipt bytes rather than silently
+    /// dropped. Zero for any function that finishes at every corner.
+    Equivalent { n: u32, not_judged: u32 },
     /// First input where they diverge (the review's payload).
     Counterexample {
         input: String,
@@ -736,8 +805,8 @@ impl ReviewVerdict {
     }
     fn value(&self) -> Value {
         match self {
-            ReviewVerdict::Equivalent { n } => {
-                Value::Array(vec![Value::Uint(0), Value::Uint(*n as u64)])
+            ReviewVerdict::Equivalent { n, not_judged } => {
+                Value::Array(vec![Value::Uint(0), Value::Uint(*n as u64), Value::Uint(*not_judged as u64)])
             }
             ReviewVerdict::Counterexample { input, candidate, reference } => Value::Array(vec![
                 Value::Uint(1),
@@ -752,6 +821,16 @@ impl ReviewVerdict {
                 Value::Array(vec![Value::Uint(3), Value::Text(reason.clone())])
             }
         }
+    }
+}
+
+/// The clause appended to an equivalent verdict when large-magnitude corners
+/// went unjudged; empty when none did. One wording everywhere it is printed.
+pub fn not_judged_note(k: u32) -> String {
+    if k == 0 {
+        String::new()
+    } else {
+        format!("; {k} large-magnitude input{} not judged (step budget)", if k == 1 { "" } else { "s" })
     }
 }
 
@@ -806,7 +885,7 @@ impl ReviewReceipt {
 
 // ---------- the oracle ----------
 
-fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal>]) -> String {
+fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize) -> String {
     let cases_py: Vec<String> = cases
         .iter()
         .map(|c| {
@@ -879,6 +958,10 @@ _M = _sys.monitoring
 _TOOL = 4
 _EV = _M.events.LINE | _M.events.JUMP
 _BUDGET = {budget}
+# Cases from index _LARGE on are the large-magnitude int corners (outside
+# the envelope). Exhausting the budget there is 'not judged at this input',
+# printed as SKIP and counted; before it, exhaustion ends the review.
+_LARGE = {large_from}
 _left = [0]
 class _Budget(BaseException): pass
 def _tick(code, *_a):
@@ -951,6 +1034,8 @@ for i, args in enumerate(cases):
     _cv, _ce, _oc = _metered(cf, *args)
     _rv, _re, _or = _metered(rf, *args)
     if _oc or _or:
+        if i >= _LARGE:
+            print(f"{{i}}\tSKIP"); continue
         _side = 'candidate and reference' if (_oc and _or) else ('candidate' if _oc else 'reference')
         print(f"__BUDGET__\t{{i}}\t{{_side}}"); _sys.exit(0)
     try: cv = canon(_cv) if _ce is None else None; ce = None if _ce is None else type(_ce).__name__
@@ -976,6 +1061,7 @@ for i, args in enumerate(cases):
         fn = spec.func,
         cases = cases_py.join(", "),
         budget = spec.budget,
+        large_from = large_from,
     )
 }
 
@@ -1003,9 +1089,9 @@ pub fn review_limited(
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
     let cand_text = String::from_utf8_lossy(&cand_src);
     let ref_text = String::from_utf8_lossy(&ref_src);
-    let cases = gen_cases(spec, &[&cand_text, &ref_text]);
+    let (cases, large_from) = gen_cases_tail(spec, &[&cand_text, &ref_text]);
 
-    let verdict = match run_python(candidate_path, reference_path, spec, &cases, safety_secs) {
+    let verdict = match run_python(candidate_path, reference_path, spec, &cases, large_from, safety_secs) {
         Ok(v) => v,
         Err(PyFail::Msg(reason)) => ReviewVerdict::Error { reason },
         Err(PyFail::Stopped) => {
@@ -1248,8 +1334,8 @@ fn short(id: &[u8; 32]) -> String {
 pub fn intoto_statement(file: &str, name: &str, receipt: &ReviewReceipt) -> String {
     use equiv_core::attest::{statement, ReviewPredicate};
     let (verdict, detail) = match &receipt.verdict {
-        ReviewVerdict::Equivalent { n } => {
-            ("equivalent".to_string(), format!("agreed on {n} cases"))
+        ReviewVerdict::Equivalent { n, not_judged } => {
+            ("equivalent".to_string(), format!("agreed on {n} cases{}", not_judged_note(*not_judged)))
         }
         ReviewVerdict::Counterexample { input, candidate, reference } => (
             "counterexample".to_string(),
@@ -1348,9 +1434,9 @@ fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecke
             }
         };
         let (v, detail) = match &r.verdict {
-            ReviewVerdict::Equivalent { n } => (
+            ReviewVerdict::Equivalent { n, not_judged } => (
                 "equivalent".to_string(),
-                format!("{n}/{n} generated inputs agree"),
+                format!("{n}/{n} generated inputs agree{}", not_judged_note(*not_judged)),
             ),
             ReviewVerdict::Counterexample { input, candidate, reference } => (
                 "DIVERGES".to_string(),
@@ -1522,9 +1608,10 @@ fn run_python(
     refr: &Path,
     spec: &ReviewSpec,
     cases: &[Vec<PyVal>],
+    large_from: usize,
     safety_secs: u64,
 ) -> Result<ReviewVerdict, PyFail> {
-    let src = driver_source(cand, refr, spec, cases);
+    let src = driver_source(cand, refr, spec, cases, large_from);
     // Content-addressed driver path: unique per distinct review (no clobber
     // between concurrent runs), stable for the same review.
     let tag = hex(&sha256(src.as_bytes()))[..16].to_string();
@@ -1563,6 +1650,7 @@ fn run_python(
         }
     }
     let budget = spec.budget;
+    let mut not_judged: u32 = 0;
     for line in stdout.lines() {
         // Lines arrive in case order and the driver stops at the first budget
         // exhaustion, so a counterexample printed earlier still stands. The
@@ -1587,6 +1675,10 @@ fn run_python(
             return Ok(ReviewVerdict::Error { reason });
         }
         let parts: Vec<&str> = line.splitn(4, '\t').collect();
+        if parts.len() == 2 && parts[1] == "SKIP" {
+            not_judged += 1;
+            continue;
+        }
         if parts.len() < 4 {
             continue;
         }
@@ -1600,9 +1692,11 @@ fn run_python(
             });
         }
     }
-    // n is the number of cases actually checked (boundary + literal + random,
-    // deduplicated), not just the requested random count: an honest tally.
-    Ok(ReviewVerdict::Equivalent { n: cases.len() as u32 })
+    // n is the number of cases actually judged (boundary + literal + random +
+    // the large corners that finished, deduplicated), not the requested random
+    // count: an honest tally. not_judged is the number of large-magnitude
+    // corners where a side ran out of budget; both are in the receipt.
+    Ok(ReviewVerdict::Equivalent { n: cases.len() as u32 - not_judged, not_judged })
 }
 
 // Tests only: these pin properties of the private generators that the
@@ -1649,17 +1743,42 @@ mod generator_tests {
         }
     }
 
-    // Without source literals, every int stays inside the O(n)-safe envelope
-    // (random arms, boundary corners and joint corners alike).
+    // Without source literals, every int outside the O(n)-safe envelope is one
+    // of the fixed large corners, and those all run after the random cases
+    // (random arms, boundary corners and joint corners stay inside).
     #[test]
     fn generated_ints_stay_inside_the_envelope_without_literals() {
         let cases = gen_cases(&spec(vec![ArgType::Int, ArgType::Int], 1), &["def f(a, b):\n    return a\n"]);
-        for c in &cases {
+        let n_large = cases
+            .iter()
+            .filter(|c| c.iter().any(|v| matches!(v, PyVal::Int(n) if n.unsigned_abs() > INT_ENVELOPE as u64)))
+            .count();
+        assert!(n_large > 0, "the large corners must be present");
+        for (idx, c) in cases.iter().enumerate() {
             for v in c {
                 if let PyVal::Int(n) = v {
-                    assert!(n.abs() <= INT_ENVELOPE, "{n} is outside the envelope");
+                    if n.unsigned_abs() > INT_ENVELOPE as u64 {
+                        assert!(LARGE_INT_CORNERS.contains(n), "{n} is outside the envelope and not a fixed corner");
+                        assert!(idx >= cases.len() - n_large, "large corner {n} ran at {idx}, before the random cases");
+                    }
                 }
             }
+        }
+    }
+
+    // The large corners are pinned, with their negatives, and never inside
+    // the envelope (there they would belong to boundary_cases).
+    #[test]
+    fn large_int_corners_are_pinned() {
+        assert_eq!(LARGE_INT_CORNERS.len(), 19);
+        for &n in LARGE_INT_CORNERS {
+            assert!(n.unsigned_abs() > INT_ENVELOPE as u64, "{n} is inside the envelope");
+            if n != i64::MIN {
+                assert!(LARGE_INT_CORNERS.contains(&-n), "{n} has no negative");
+            }
+        }
+        for n in [2_147_483_648i64, 4_294_967_296, 562_949_953_421_313, 9_007_199_254_740_993, i64::MAX, i64::MIN] {
+            assert!(LARGE_INT_CORNERS.contains(&n), "{n} missing");
         }
     }
 
