@@ -113,7 +113,7 @@ rather than judged. Its last bit is not reproducible across maths libraries.
 Each call of either version, and each module load, runs under a step budget:
 1,000,000 Python line and jump events by default, counted through
 `sys.monitoring`. No clock is read, so the same budget gives the same result on
-every host. A version that exceeds it (an infinite loop, or a loop over a huge
+every host running the same Python minor; the receipt records which one ran. A version that exceeds it (an infinite loop, or a loop over a huge
 literal-derived input) ends the review as could not check (exit `2`), naming the
 budget, the input and the side; a counterexample found on an earlier input still
 stands. The budget is written into the receipt. Work done inside C code (for
