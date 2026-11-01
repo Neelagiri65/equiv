@@ -1,0 +1,6 @@
+function = "digit_count"
+args = "int"
+expected = "diverges"
+class = "holdout"
+pattern = "len(str(abs(n))) rewritten as int(math.log10(abs(n))) + 1: log10 of 10**k - 1 rounds up to k once the value exceeds float64 precision, so the count is one too many; written off the planned corner list (powers of two) to test whether the corners generalise"
+witness = '''(999999999999999999,)'''

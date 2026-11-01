@@ -1,0 +1,5 @@
+function = "is_even"
+args = "int"
+expected = "equivalent"
+class = "holdout"
+pattern = "n % 2 == 0 rewritten as not n & 1: Python ints are arbitrary precision and & on negatives is two's-complement, so the two agree at every magnitude; a large corner must not raise a false alarm"

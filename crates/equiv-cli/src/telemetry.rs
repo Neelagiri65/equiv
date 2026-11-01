@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn event_json_is_exact_and_deterministic() {
         let items = vec![
-            item("a", ReviewVerdict::Equivalent { n: 300 }),
+            item("a", ReviewVerdict::Equivalent { n: 300, not_judged: 0 }),
             item("b", ReviewVerdict::Counterexample {
                 input: "(1)".into(),
                 candidate: "1".into(),

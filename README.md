@@ -92,9 +92,12 @@ longer than 8, lists longer than 6, the float special values), inputs read from
 the source's own branch literals (a constant `== 777` in the code is tested
 directly, with its neighbours), then seeded random cases. This is still bounded
 testing, not exhaustive verification: a pass means no divergence was found on the
-generated inputs. Two limits are deliberate. A divergence that only appears for
-an integer over the magnitude envelope (|n| over 1,000,000, kept so a linear
-reference cannot hang) is not reached. Arguments are varied one at a time, which
+generated inputs. Two limits are deliberate. Random integers stay inside a magnitude envelope
+(|n| up to 1,000,000) so a linear reference cannot hang; fixed large-magnitude
+corners (the 32-bit wrap points, the float64 exactness cliff at 2^53 and the
+64-bit limits, each with its negative) are tried after every other input, and
+a version that cannot finish one of them inside the step budget has that input
+recorded in the receipt as not judged rather than failing the review. Arguments are varied one at a time, which
 means a divergence that needs two specific arguments at once may be missed. It does not check intent, architecture, security. It
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not

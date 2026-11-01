@@ -1,11 +1,11 @@
 {
-  "equiv_version": "0.6.0",
+  "equiv_version": "0.7.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 82,
-    "diverges": 54,
-    "equivalent": 28,
-    "caught": 49,
+    "cases": 85,
+    "diverges": 56,
+    "equivalent": 29,
+    "caught": 51,
     "missed": 4,
     "false_alarms": 0,
     "could_not_check": 1
@@ -174,10 +174,10 @@
     },
     "024-int-float-precision-large": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 103,
-      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (9007199254740993) | candidate -> 18014398509481984 | reference -> 18014398509481986"
     },
     "025-negdiv-floor-vs-trunc": {
       "expected": "diverges",
@@ -302,15 +302,15 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 110,
-      "detail": "EQUIVALENT: agreed on all 110 generated inputs (seed 1)"
+      "n": 125,
+      "detail": "EQUIVALENT: agreed on all 125 generated inputs (seed 1)"
     },
     "043-eq-add32-mask-inputs": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 199,
-      "detail": "EQUIVALENT: agreed on all 199 generated inputs (seed 1)"
+      "n": 235,
+      "detail": "EQUIVALENT: agreed on all 235 generated inputs (seed 1)"
     },
     "044-eq-max-default": {
       "expected": "equivalent",
@@ -330,8 +330,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 106,
-      "detail": "EQUIVALENT: agreed on all 106 generated inputs (seed 1)"
+      "n": 125,
+      "detail": "EQUIVALENT: agreed on all 125 generated inputs (seed 1)"
     },
     "047-eq-luhn-refactor": {
       "expected": "equivalent",
@@ -379,8 +379,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 103,
-      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1)"
+      "n": 122,
+      "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
     },
     "054-eq-is-blank": {
       "expected": "equivalent",
@@ -414,8 +414,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 193,
-      "detail": "EQUIVALENT: agreed on all 193 generated inputs (seed 1)"
+      "n": 231,
+      "detail": "EQUIVALENT: agreed on all 231 generated inputs (seed 1)"
     },
     "059-eq-strip-space-split": {
       "expected": "equivalent",
@@ -477,8 +477,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 106,
-      "detail": "EQUIVALENT: agreed on all 106 generated inputs (seed 1)"
+      "n": 125,
+      "detail": "EQUIVALENT: agreed on all 125 generated inputs (seed 1)"
     },
     "068-holdout-eq-sum-loop": {
       "expected": "equivalent",
@@ -582,8 +582,29 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 194,
-      "detail": "EQUIVALENT: agreed on all 194 generated inputs (seed 1)"
+      "n": 232,
+      "detail": "EQUIVALENT: agreed on all 232 generated inputs (seed 1)"
+    },
+    "083-holdout-int-abs-via-fabs": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (9007199254740993) | candidate -> 9007199254740992 | reference -> 9007199254740993"
+    },
+    "084-holdout-eq-is-even-bitmask": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 122,
+      "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
+    },
+    "085-holdout-digit-count-via-log10": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 122,
+      "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
     }
   }
 }

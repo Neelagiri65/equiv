@@ -87,13 +87,13 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.5.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.7.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 82 (54 diverges, 28 equivalent) |
-| Catch rate | 49 / 54 = 90.7% |
-| False-alarm rate | 0 / 28 = 0% |
+| Cases | 85 (56 diverges, 29 equivalent) |
+| Catch rate | 51 / 56 = 91.1% |
+| False-alarm rate | 0 / 29 = 0% |
 | Could not check | 1 |
 
 History: equiv 0.2.1 caught 25 / 40 of the original 60 cases. The 0.3.0
@@ -122,6 +122,19 @@ reassociation, witness `MAX, 2.0, 0.5`) was written off the planned corner list
 on purpose and was already caught by the random draws on 0.5.0, so it measures
 nothing about the new corners either way.
 
+Cases 083-085 (also `holdout`) were written *before* the 0.7.0 large-magnitude
+int corners (2^31 - 1, 2^31, 2^31 + 1, 2^32, 2^49 + 1, 2^53 - 1, 2^53,
+2^53 + 1 and the i64 limits, each with its negative, run after every other
+input) and recorded against 0.6.0 first: 0.6.0 catches 0 / 2 of their
+diverging pairs, 0.7.0 catches 1 / 2, with 0 / 1 false alarms. 024 is caught
+by the same change. 085 (digit count via `math.log10`, witness 10^18 - 1) was
+written off the planned power-of-two list on purpose, to test whether the
+corners generalise; they do not reach it. A function whose work grows with
+`n` cannot finish at these corners inside the step budget; from 0.7.0 such a
+corner is recorded in the receipt as not judged and the review goes on, so
+no corpus case changed outcome for that reason (no equivalent case carries
+an unjudged count).
+
 By class (diverges caught / total, equivalent passed / total):
 
 | class | diverges | equivalent |
@@ -132,13 +145,13 @@ By class (diverges caught / total, equivalent passed / total):
 | float-rounding | 3/4 | - |
 | exception-vs-value | 3/3 | - |
 | unicode | 4/5 | 3/3 |
-| fixed-width-int | 2/3 | 3/3 |
+| fixed-width-int | 3/3 | 3/3 |
 | negative-division | 3/3 | 2/2 |
 | boundary | 2/2 | 4/4 |
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 12/14 | 8/8 |
+| holdout | 13/16 | 9/9 |
 
 ### Misses and why
 
@@ -149,8 +162,8 @@ reported as equivalent. The reason is the generator's reach, read from
 | case | why equiv did not reach the witness |
 |------|-------------------------------------|
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
-| 024-int-float-precision-large | needs an int above 2^53 with no such constant in the source; random ints stay within +/-1,000,000 because a reference may loop `n` times; the step budget and safety limit would turn such a run into could-not-check, not a catch |
 | 074-holdout-int-strip-separators | needs digits wrapped in U+001C-U+001F, which `str.strip()` removes and `int()` rejects; no string corner contains those characters |
+| 085-holdout-digit-count-via-log10 | needs 10^18 - 1 (or another 10^k - 1 above 2^53); the large-magnitude corners sit at powers of two and the i64 limits, and the source names no such constant |
 | 076-holdout-is-int-double-sign | needs a repeated sign such as `--1`; the sign corners carry a single sign, and the source only spells `+-`, on which both sides agree |
 
 Could not check: `011-float-round-half-even-floor` is refused because
