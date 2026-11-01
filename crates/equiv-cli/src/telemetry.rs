@@ -199,6 +199,11 @@ mod tests {
                 verdict,
                 checker_version: "test".to_string(),
                 budget: equiv_review::DEFAULT_BUDGET,
+                python: "3.12".to_string(),
+                seed: 1,
+                inputs: equiv_review::InputCounts::default(),
+                exceptions: 0,
+                tier: "tested".to_string(),
             }),
         }
     }

@@ -635,8 +635,9 @@ fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
 // (== cases.len() when the signature has no int argument). Inside that
 // index a budget exhaustion is an Error; from it on, a per-input "not
 // judged" (see run_python).
-fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usize) {
+fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usize, InputCounts) {
     let mut cases: Vec<Vec<PyVal>> = Vec::new();
+    let mut counts = InputCounts::default();
     let mut seen: std::collections::BTreeSet<Vec<String>> = std::collections::BTreeSet::new();
     fn key(c: &[PyVal]) -> Vec<String> {
         c.iter().map(|v| v.to_py()).collect()
@@ -646,17 +647,26 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
         let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
         if seen.insert(key(&base)) {
             cases.push(base.clone());
+            counts.corner += 1;
         }
         for (i, ty) in spec.args.iter().enumerate() {
+            // Order is unchanged from before counting existed (corners, then
+            // literals, per argument); only the attribution is recorded.
+            let n_corner = boundary_cases(*ty).len();
             let mut vals = boundary_cases(*ty);
             for s in sources {
                 vals.extend(literal_inputs(s, *ty));
             }
-            for v in vals {
+            for (k, v) in vals.into_iter().enumerate() {
                 let mut c = base.clone();
                 c[i] = v;
                 if seen.insert(key(&c)) {
                     cases.push(c);
+                    if k < n_corner {
+                        counts.corner += 1;
+                    } else {
+                        counts.literal += 1;
+                    }
                 }
             }
         }
@@ -681,6 +691,7 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
                         c[j] = PyVal::Str(r);
                         if seen.insert(key(&c)) {
                             cases.push(c);
+                            counts.corner += 1;
                         }
                     }
                 }
@@ -727,6 +738,7 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
                         c[j] = r.clone();
                         if seen.insert(key(&c)) {
                             cases.push(c);
+                            counts.corner += 1;
                         }
                     }
                 }
@@ -739,6 +751,7 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
         let c: Vec<PyVal> = spec.args.iter().map(|t| gen_arg(&mut rng, *t)).collect();
         if seen.insert(key(&c)) {
             cases.push(c);
+            counts.random += 1;
         }
     }
 
@@ -761,11 +774,12 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
                 c[i] = PyVal::Int(n);
                 if seen.insert(key(&c)) {
                     cases.push(c);
+                    counts.corner += 1;
                 }
             }
         }
     }
-    (cases, large_from)
+    (cases, large_from, counts)
 }
 
 // ---------- verdict + receipt ----------
@@ -857,6 +871,34 @@ pub struct ReviewReceipt {
     pub checker_version: String,
     /// The step budget the review ran under (see `ReviewSpec::budget`).
     pub budget: u64,
+    /// The evaluator's Python `major.minor`, as reported by the interpreter
+    /// that ran the cases. Line/jump event counts differ between minors, so
+    /// the claim is "reproducible on the same evaluator version". Empty only
+    /// when no evaluator ran at all (python3 not runnable).
+    pub python: String,
+    /// The seed the random cases were drawn with (also inside `spec_sha256`,
+    /// here readable).
+    pub seed: u64,
+    /// How many inputs came from each source; see `InputCounts`.
+    pub inputs: InputCounts,
+    /// Judged inputs on which at least one side raised (and both agreed).
+    pub exceptions: u32,
+    /// The claim tier. This checker only ever produces `tested`: bounded
+    /// testing on generated inputs, never a proof.
+    pub tier: String,
+}
+
+/// Inputs by source. `corner` is every fixed input (type corners, paired
+/// string corners, joint numeric corners and the large-magnitude corners),
+/// `literal` the inputs read from the sources' own literals, `random` the
+/// seeded draws. Cases are deduplicated; a value two sources both produce is
+/// credited to the first source that produced it, in the order the case list
+/// is built. corner + literal + random = judged + not judged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct InputCounts {
+    pub corner: u32,
+    pub literal: u32,
+    pub random: u32,
 }
 
 impl ReviewReceipt {
@@ -875,6 +917,18 @@ impl ReviewReceipt {
                 ]),
             ),
             (6, Value::Uint(self.budget)),
+            (7, Value::Text(self.python.clone())),
+            (8, Value::Uint(self.seed)),
+            (
+                9,
+                Value::Array(vec![
+                    Value::Uint(self.inputs.corner as u64),
+                    Value::Uint(self.inputs.literal as u64),
+                    Value::Uint(self.inputs.random as u64),
+                ]),
+            ),
+            (10, Value::Uint(self.exceptions as u64)),
+            (11, Value::Text(self.tier.clone())),
         ];
         cbor::to_bytes(&Value::Map(entries))
     }
@@ -999,6 +1053,7 @@ for _p in ({cand:?}, {refr:?}):
 import struct
 import sys as _sys
 import os as _os
+print('__PY__\t' + str(_sys.version_info[0]) + '.' + str(_sys.version_info[1]))
 {libm}{admis}# Deterministic step budget (backlog 0.3, gate P3). Every LINE and JUMP event
 # raised by code outside this driver file counts one step; past the budget the
 # callback raises _Budget, and keeps raising on every later event, so user code
@@ -1102,7 +1157,8 @@ for i, args in enumerate(cases):
         # side reported None instead of its real value.)
         dc = ce if ce is not None else cv
         dr = re_ if re_ is not None else rv
-        print(f"{{i}}\t{{'EQ' if ok else 'NE'}}\t{{dc}}\t{{dr}}")
+        # EQX: agreed, and a side raised (counted as an exception observed).
+        print(f"{{i}}\t{{'EQX' if ok else 'NE'}}\t{{dc}}\t{{dr}}")
     else:
         print(f"{{i}}\t{{'EQ' if cv == rv else 'NE'}}\t{{cv}}\t{{rv}}")
 "#,
@@ -1141,11 +1197,11 @@ pub fn review_limited(
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
     let cand_text = String::from_utf8_lossy(&cand_src);
     let ref_text = String::from_utf8_lossy(&ref_src);
-    let (cases, large_from) = gen_cases_tail(spec, &[&cand_text, &ref_text]);
+    let (cases, large_from, inputs) = gen_cases_tail(spec, &[&cand_text, &ref_text]);
 
-    let verdict = match run_python(candidate_path, reference_path, spec, &cases, large_from, safety_secs) {
+    let ev = match run_python(candidate_path, reference_path, spec, &cases, large_from, safety_secs) {
         Ok(v) => v,
-        Err(PyFail::Msg(reason)) => ReviewVerdict::Error { reason },
+        Err(PyFail::Msg(reason)) => Evaluated { verdict: ReviewVerdict::Error { reason }, python: String::new(), exceptions: 0 },
         Err(PyFail::Stopped) => {
             return Err(SafetyStop { func: spec.func.clone(), limit_secs: safety_secs });
         }
@@ -1155,10 +1211,30 @@ pub fn review_limited(
         candidate_sha256: sha256(&cand_src),
         reference_sha256: sha256(&ref_src),
         spec_sha256: sha256(&spec.canonical()),
-        verdict,
+        verdict: ev.verdict,
         checker_version: env!("CARGO_PKG_VERSION").into(),
         budget: spec.budget,
+        python: ev.python,
+        seed: spec.seed,
+        inputs,
+        exceptions: ev.exceptions,
+        tier: "tested".into(),
     })
+}
+
+/// One line of provenance, the same wording everywhere a receipt is shown.
+pub fn provenance_note(r: &ReviewReceipt) -> String {
+    let i = &r.inputs;
+    format!(
+        "python {}, seed {}; inputs {} corner + {} literal + {} random; {} raised on both sides; tier {}",
+        if r.python.is_empty() { "unknown" } else { &r.python },
+        r.seed,
+        i.corner,
+        i.literal,
+        i.random,
+        r.exceptions,
+        r.tier
+    )
 }
 
 // ---------- PR review loop: base vs head ----------
@@ -1386,9 +1462,10 @@ fn short(id: &[u8; 32]) -> String {
 pub fn intoto_statement(file: &str, name: &str, receipt: &ReviewReceipt) -> String {
     use equiv_core::attest::{statement, ReviewPredicate};
     let (verdict, detail) = match &receipt.verdict {
-        ReviewVerdict::Equivalent { n, not_judged } => {
-            ("equivalent".to_string(), format!("agreed on {n} cases{}", not_judged_note(*not_judged)))
-        }
+        ReviewVerdict::Equivalent { n, not_judged } => (
+            "equivalent".to_string(),
+            format!("agreed on {n} cases{}; {}", not_judged_note(*not_judged), provenance_note(receipt)),
+        ),
         ReviewVerdict::Counterexample { input, candidate, reference } => (
             "counterexample".to_string(),
             format!("diverges at {input}: this={candidate} base={reference}"),
@@ -1488,11 +1565,14 @@ fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecke
         let (v, detail) = match &r.verdict {
             ReviewVerdict::Equivalent { n, not_judged } => (
                 "equivalent".to_string(),
-                format!("{n}/{n} generated inputs agree{}", not_judged_note(*not_judged)),
+                format!("{n}/{n} generated inputs agree{} ({})", not_judged_note(*not_judged), provenance_note(r)),
             ),
             ReviewVerdict::Counterexample { input, candidate, reference } => (
                 "DIVERGES".to_string(),
-                format!("input `{input}`: this PR returns `{candidate}`, base returns `{reference}`"),
+                format!(
+                    "input `{input}`: this PR returns `{candidate}`, base returns `{reference}` ({})",
+                    provenance_note(r)
+                ),
             ),
             ReviewVerdict::Error { reason } => {
                 ("not checked".to_string(), format!("`{}`", reason.replace('`', "")))
@@ -1662,7 +1742,7 @@ fn run_python(
     cases: &[Vec<PyVal>],
     large_from: usize,
     safety_secs: u64,
-) -> Result<ReviewVerdict, PyFail> {
+) -> Result<Evaluated, PyFail> {
     let src = driver_source(cand, refr, spec, cases, large_from);
     // Content-addressed driver path: unique per distinct review (no clobber
     // between concurrent runs), stable for the same review.
@@ -1681,28 +1761,40 @@ fn run_python(
     let out = run_watched(cmd, std::time::Duration::from_secs(safety_secs))
         .map_err(|e| format!("python3 not runnable: {e}"))?
         .ok_or(PyFail::Stopped)?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // The evaluator names itself on its first line, before the admissibility
+    // and budget checks, so every receipt carries it. Empty if it never ran.
+    let python = stdout
+        .lines()
+        .find_map(|l| l.strip_prefix("__PY__\t"))
+        .map(|v| v.trim().to_string())
+        .unwrap_or_default();
+    let done = |verdict: ReviewVerdict, exceptions: u32| Evaluated { verdict, python: python.clone(), exceptions };
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let last = err.lines().last().unwrap_or("python error").to_string();
-        return Ok(ReviewVerdict::Error { reason: last });
+        return Ok(done(ReviewVerdict::Error { reason: last }, 0));
     }
-    let stdout = String::from_utf8_lossy(&out.stdout);
     // The driver's AST allowlist refuses inadmissible float functions before any
     // case runs, signalled on its own line.
     for line in stdout.lines() {
         if let Some(reason) = line.strip_prefix("__REFUSED__\t") {
-            return Ok(ReviewVerdict::Refused { reason: reason.to_string() });
+            return Ok(done(ReviewVerdict::Refused { reason: reason.to_string() }, 0));
         }
         if let Some(found) = line.strip_prefix("__NOBUDGET__\t") {
-            return Ok(ReviewVerdict::Error {
-                reason: format!(
-                    "the step budget needs Python 3.12 or newer (sys.monitoring); found {found}"
-                ),
-            });
+            return Ok(done(
+                ReviewVerdict::Error {
+                    reason: format!(
+                        "the step budget needs Python 3.12 or newer (sys.monitoring); found {found}"
+                    ),
+                },
+                0,
+            ));
         }
     }
     let budget = spec.budget;
     let mut not_judged: u32 = 0;
+    let mut exceptions: u32 = 0;
     for line in stdout.lines() {
         // Lines arrive in case order and the driver stops at the first budget
         // exhaustion, so a counterexample printed earlier still stands. The
@@ -1724,7 +1816,7 @@ fn run_python(
                     input.join(", ")
                 )
             };
-            return Ok(ReviewVerdict::Error { reason });
+            return Ok(done(ReviewVerdict::Error { reason }, exceptions));
         }
         let parts: Vec<&str> = line.splitn(4, '\t').collect();
         if parts.len() == 2 && parts[1] == "SKIP" {
@@ -1734,21 +1826,35 @@ fn run_python(
         if parts.len() < 4 {
             continue;
         }
+        if parts[1] == "EQX" {
+            exceptions += 1;
+        }
         if parts[1] == "NE" {
             let idx: usize = parts[0].parse().map_err(|_| "bad index".to_string())?;
             let input: Vec<String> = cases[idx].iter().map(|v| v.display()).collect();
-            return Ok(ReviewVerdict::Counterexample {
-                input: format!("({})", input.join(", ")),
-                candidate: parts[2].to_string(),
-                reference: parts[3].to_string(),
-            });
+            return Ok(done(
+                ReviewVerdict::Counterexample {
+                    input: format!("({})", input.join(", ")),
+                    candidate: parts[2].to_string(),
+                    reference: parts[3].to_string(),
+                },
+                exceptions,
+            ));
         }
     }
     // n is the number of cases actually judged (boundary + literal + random +
     // the large corners that finished, deduplicated), not the requested random
     // count: an honest tally. not_judged is the number of large-magnitude
     // corners where a side ran out of budget; both are in the receipt.
-    Ok(ReviewVerdict::Equivalent { n: cases.len() as u32 - not_judged, not_judged })
+    Ok(done(ReviewVerdict::Equivalent { n: cases.len() as u32 - not_judged, not_judged }, exceptions))
+}
+
+/// What one evaluator run produced: the verdict plus the provenance the
+/// receipt records (evaluator version, exceptions observed).
+struct Evaluated {
+    verdict: ReviewVerdict,
+    python: String,
+    exceptions: u32,
 }
 
 // Tests only: these pin properties of the private generators that the

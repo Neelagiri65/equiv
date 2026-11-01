@@ -77,6 +77,9 @@ fn dict_arg_function_reviewed() {
 fn golden_dict_receipt_id_is_stable() {
     let cand = wp("gd_c", "def f(n):\n    return {'a': n}\n");
     let refr = wp("gd_r", "def f(n):\n    return {'a': n + 1}\n");
-    let id: String = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop").sha256().iter().map(|b| format!("{b:02x}")).collect();
+    // python field pinned to the CI minor before hashing; see floats.rs.
+    let mut r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
+    r.python = "3.12".into();
+    let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(id, "f860f0c4b1f6e9ca12d5716cc48011f3a234e2c0dba86fab7df1b6398bf14600", "receipt-id drifted");
 }

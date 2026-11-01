@@ -339,6 +339,7 @@ fn run() -> Result<u8, String> {
                 ReviewVerdict::Error { reason } => println!("ERROR: {reason}"),
                 ReviewVerdict::Refused { reason } => println!("REFUSED: {reason}"),
             }
+            println!("provenance: {}", equiv_review::provenance_note(&r));
             println!("receipt-id: {}", hex(&r.sha256()));
             if want_sign {
                 let seed = std::env::var("EQUIV_SIGNING_KEY")

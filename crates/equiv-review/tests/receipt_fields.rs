@@ -72,7 +72,7 @@ fn input_counts_by_source_add_up_to_the_case_list() {
     assert_eq!(i.corner + i.literal + i.random, n + not_judged, "{i:?} vs n={n} not_judged={not_judged}");
     assert!(i.literal >= 3, "777 and its neighbours are literal inputs: {i:?}");
     assert!(i.corner >= 5 + 19, "int corners plus the large corners: {i:?}");
-    assert!(i.random > 100, "{i:?}");
+    assert!(i.random > 60, "single-int draws dedup heavily, but a full stream is still well over 60: {i:?}");
 }
 
 // A function that raises on some inputs and agrees with its reference there
