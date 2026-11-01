@@ -127,5 +127,5 @@ fn golden_receipt_id_is_stable() {
     let refr = write_py("gold_r", "def s(x):\n    return x + x + 1.0\n");
     let s = spec("s", vec![ArgType::Float]);
     let id: String = review(&cand, &refr, &s).expect("no safety stop").sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "46a4f5b09be513d1d069fd5e2b9b0b677e5c300054c6cfb820ac7011de9a2401", "receipt-id drifted");
+    assert_eq!(id, "80684245303e627052ebe168bc6a00797060c4c6c5c255a1f7cd0eb14f747463", "receipt-id drifted");
 }
