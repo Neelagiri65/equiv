@@ -39,6 +39,19 @@ fn bool_flag_divergence_is_caught() {
     assert!(matches!(v, ReviewVerdict::Counterexample { .. }), "{v:?}");
 }
 
+// True is a fixed corner, not a lucky draw: a function that diverges only
+// when the flag is set is caught at the first bool corner, (0, True).
+#[test]
+fn true_is_a_fixed_bool_corner() {
+    let c = tmp("tr_c", "def f(n, flag):\n    return n + 1 if flag else n\n");
+    let r = tmp("tr_r", "def f(n, flag):\n    return n\n");
+    let v = review(&c, &r, &spec("f", vec![ArgType::Int, ArgType::Bool])).expect("no safety stop").verdict;
+    match v {
+        ReviewVerdict::Counterexample { input, .. } => assert_eq!(input, "(0, True)"),
+        v => panic!("expected a counterexample at the bool corner, got {v:?}"),
+    }
+}
+
 #[test]
 fn bool_exact_rewrite_passes() {
     let c = tmp("be_c", "def g(n, neg):\n    return -n if neg else n\n");
@@ -50,10 +63,18 @@ fn bool_exact_rewrite_passes() {
 // Holdout 090's shape: max keeps the first of a tie, a stable sort the last.
 #[test]
 fn list_str_tiebreak_divergence_is_caught() {
-    let c = tmp("lo_c", "def longest(xs):\n    return sorted(xs, key=len)[-1]\n");
-    let r = tmp("lo_r", "def longest(xs):\n    return max(xs, key=len)\n");
+    // Both sides agree on the empty list, so only a tie can separate them:
+    // the catch must come from the tie corner, not from an exception type.
+    let c = tmp("lo_c", "def longest(xs):\n    return sorted(xs, key=len)[-1] if xs else ''\n");
+    let r = tmp("lo_r", "def longest(xs):\n    return max(xs, key=len) if xs else ''\n");
     let v = review(&c, &r, &spec("longest", vec![ArgType::ListStr])).expect("no safety stop").verdict;
-    assert!(matches!(v, ReviewVerdict::Counterexample { .. }), "{v:?}");
+    match v {
+        ReviewVerdict::Counterexample { input, .. } => {
+            assert_ne!(input, "([])");
+            assert!(input.contains("'ab', 'cd'") || input.contains("\"ab\", \"cd\""), "expected the tie corner, got {input}");
+        }
+        v => panic!("expected a counterexample at the tie corner, got {v:?}"),
+    }
 }
 
 // A list[str] divergence that needs a string corner inside the list: lower()
