@@ -126,21 +126,51 @@ fn run() -> Result<u8, String> {
             if auto {
                 // Detect changed functions from the diff. No manifest needed, so
                 // a refactored function can no longer be silently left out.
+                //
+                // The diff is taken against the merge-base of the base ref and
+                // HEAD when git can find one: a local run from a branch that is
+                // behind its base then reviews only the branch's own changes,
+                // never a function that moved on the base branch after the
+                // branch point (which would otherwise appear with the roles
+                // reversed). In the Action's merge-ref checkout the merge-base
+                // is the base tip itself, so nothing changes there. No
+                // merge-base (no repo, unrelated histories) falls back to the
+                // ref as given, and the diff below reports the failure.
+                let diff_base = std::process::Command::new("git")
+                    .args(["merge-base", &base, "HEAD"])
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| base.clone());
+                // --name-status with rename detection: a renamed file is the
+                // same functions under a new path, so its base version is read
+                // from the old path and its changed functions are checked
+                // instead of being listed as "new" (plus "removed").
                 let listed = std::process::Command::new("git")
-                    .args(["-c", "core.quotepath=false", "diff", "--name-only", &base, "--", "*.py"])
+                    .args(["-c", "core.quotepath=false", "diff", "-M", "--name-status", &diff_base, "--", "*.py"])
                     .output()
                     .map_err(|e| format!("git diff: {e}"))?;
                 if !listed.status.success() {
                     return Err("git diff failed (need a git repo and a valid base ref)".into());
                 }
-                for file in String::from_utf8_lossy(&listed.stdout)
-                    .lines()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                {
+                let mut entries: Vec<(String, String)> = Vec::new(); // (head path, base path)
+                for line in String::from_utf8_lossy(&listed.stdout).lines() {
+                    let f: Vec<&str> = line.split('\t').map(str::trim).collect();
+                    match f.as_slice() {
+                        [st, old, new] if st.starts_with('R') || st.starts_with('C') => {
+                            entries.push((new.to_string(), old.to_string()));
+                        }
+                        [_, path] if !path.is_empty() => entries.push((path.to_string(), path.to_string())),
+                        _ => {}
+                    }
+                }
+                for (file, base_file) in &entries {
+                    let file = file.as_str();
                     let head_src = std::fs::read_to_string(file).unwrap_or_default();
                     let base_out = std::process::Command::new("git")
-                        .args(["-c", "core.quotepath=false", "show", &format!("{base}:{file}")])
+                        .args(["-c", "core.quotepath=false", "show", &format!("{diff_base}:{base_file}")])
                         .output();
                     let base_src = match base_out {
                         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),

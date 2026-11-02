@@ -27,8 +27,12 @@ fn git(d: &Path, args: &[&str]) {
 }
 
 fn run_auto(d: &Path) -> (Option<i32>, String, String) {
+    run_auto_base(d, "HEAD")
+}
+
+fn run_auto_base(d: &Path, base: &str) -> (Option<i32>, String, String) {
     let out = Command::new(BIN)
-        .args(["review-pr", "--auto", "--base", "HEAD"])
+        .args(["review-pr", "--auto", "--base", base])
         .current_dir(d)
         .env("EQUIV_METRICS", "off")
         // The temp dir may itself sit inside some git checkout (a CI workspace,
@@ -97,4 +101,48 @@ fn auto_without_a_usable_git_base_is_an_error() {
     assert_eq!(code, Some(3), "{stdout}\n{stderr}");
     assert!(!stdout.contains("preserved"), "{stdout}");
     assert!(stderr.contains("git diff failed"), "{stderr}");
+}
+
+/// A renamed file is still the same functions: the base version is read from
+/// the old path and the changed function is checked, not listed as "new".
+/// (Backlog 1.2, gap 3: before this, a rename read as delete plus new file
+/// and nothing in it was checked.)
+#[test]
+fn auto_follows_a_renamed_file_and_checks_its_changed_function() {
+    let d = dir("rename");
+    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x * 2\n\ndef h(x: int):\n    return x\n").unwrap();
+    git(&d, &["init", "-q"]);
+    git(&d, &["add", "."]);
+    git(&d, &["commit", "-q", "-m", "base"]);
+    git(&d, &["mv", "m.py", "n.py"]);
+    std::fs::write(d.join("n.py"), "def f(x: int):\n    return x + x + (1 if x == 777 else 0)\n\ndef h(x: int):\n    return x\n").unwrap();
+    let (code, stdout, stderr) = run_auto(&d);
+    assert_eq!(code, Some(1), "f diverges at 777 and must be checked by name:\n{stdout}\n{stderr}");
+    assert!(stdout.contains("| `f` | DIVERGES |"), "{stdout}");
+    assert!(!stdout.contains("new function"), "a rename is not a new file:\n{stdout}");
+    assert!(!stdout.contains("removed in this change"), "{stdout}");
+}
+
+/// A local run from a branch that is behind its base: only the branch's own
+/// changes are reviewed. A function changed on the base branch after the
+/// branch point is not "changed in this PR" (and must not be reported with
+/// the roles reversed). (Backlog 1.2, gap 2: diff against the merge-base.)
+#[test]
+fn auto_diffs_against_the_merge_base_not_the_base_tip() {
+    let d = dir("mergebase");
+    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x * 2\n\ndef g(x: int):\n    return x\n").unwrap();
+    git(&d, &["init", "-q", "-b", "main"]);
+    git(&d, &["add", "."]);
+    git(&d, &["commit", "-q", "-m", "base"]);
+    git(&d, &["checkout", "-q", "-b", "pr"]);
+    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x\n\ndef g(x: int):\n    return x\n").unwrap();
+    git(&d, &["commit", "-q", "-am", "pr: f rewritten"]);
+    git(&d, &["checkout", "-q", "main"]);
+    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x * 2\n\ndef g(x: int):\n    return x + 1\n").unwrap();
+    git(&d, &["commit", "-q", "-am", "main moved on: g changed"]);
+    git(&d, &["checkout", "-q", "pr"]);
+    let (code, stdout, stderr) = run_auto_base(&d, "main");
+    assert_eq!(code, Some(0), "only f changed on the branch, and it is equivalent:\n{stdout}\n{stderr}");
+    assert!(stdout.contains("| `f` | equivalent |"), "{stdout}");
+    assert!(!stdout.contains("`g`"), "g changed on main, not in this PR:\n{stdout}");
 }
