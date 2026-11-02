@@ -1,0 +1,5 @@
+function = "clamp"
+args = "int,bool"
+expected = "equivalent"
+class = "holdout"
+pattern = "a sign-selected clamp rewritten with max(): equal for every int with either flag value, including the large-magnitude corners; must not raise a false alarm when the corners also run with the flag set"

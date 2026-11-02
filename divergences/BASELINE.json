@@ -2,11 +2,11 @@
   "equiv_version": "0.10.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 92,
-    "diverges": 61,
-    "equivalent": 31,
+    "cases": 95,
+    "diverges": 63,
+    "equivalent": 32,
     "caught": 53,
-    "missed": 4,
+    "missed": 6,
     "false_alarms": 0,
     "could_not_check": 4
   },
@@ -654,6 +654,27 @@
       "outcome": "missed",
       "n": 147,
       "detail": "EQUIVALENT: agreed on all 147 generated inputs (seed 1)"
+    },
+    "093-holdout-bool-gated-strip": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 212,
+      "detail": "EQUIVALENT: agreed on all 212 generated inputs (seed 1)"
+    },
+    "094-holdout-eq-bool-signed-clamp": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 147,
+      "detail": "EQUIVALENT: agreed on all 147 generated inputs (seed 1)"
+    },
+    "095-holdout-two-bools-gated-large-int": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 159,
+      "detail": "EQUIVALENT: agreed on all 159 generated inputs (seed 1)"
     }
   }
 }

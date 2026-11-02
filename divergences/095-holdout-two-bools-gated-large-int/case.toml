@@ -1,0 +1,6 @@
+function = "scale"
+args = "int,bool,bool"
+expected = "diverges"
+class = "holdout"
+pattern = "n * 2 rewritten as int(n * 2.0) only when two flags are both set: diverges above 2**53 with a and b True; written off the planned list on purpose, to test whether setting one flag at a time reaches a divergence that needs two"
+witness = '''(9007199254740993, True, True)'''
