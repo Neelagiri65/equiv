@@ -1,0 +1,6 @@
+function = "mix"
+args = "int"
+expected = "equivalent"
+class = "holdout"
+pattern = "a four-line loop body over |n| up to 1e6 tidied into one tuple assignment; correct; sits past the stated budget scope (a loop with a one-line body), so the reference is expected to stay unjudged after the change"
+integrity_max_abs_int = 1000001

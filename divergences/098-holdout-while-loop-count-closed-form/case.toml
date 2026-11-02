@@ -1,0 +1,6 @@
+function = "steps_of_three"
+args = "int"
+expected = "equivalent"
+class = "holdout"
+pattern = "a while loop that counts subtractions rewritten as floor division; correct; written off the planned list on purpose (while, not for; a third of the iterations of a summing loop) to test the budget on a different loop shape"
+integrity_max_abs_int = 1000001

@@ -213,6 +213,13 @@ def integrity(case, n):
     rng = random.Random(case["id"])
     inputs = list(exhaustive_inputs(types))
     inputs += [tuple(rand_val(rng, t) for t in types) for _ in range(n)]
+    # A case whose reference loops |n| times sets `integrity_max_abs_int`: plain
+    # Python cannot finish it at 2**63, so the label check skips ints above the
+    # bound (equiv's own envelope is |n| <= 1e6; past it equiv does not judge
+    # either). The bound only narrows this label check, never equiv's scoring.
+    cap = case.get("integrity_max_abs_int")
+    if cap is not None:
+        inputs = [a for a in inputs if not any(type(x) is int and abs(x) > cap for x in a)]
     for args in inputs:
         r, c = outcome(ref, args), outcome(cand, args)
         if r != c:

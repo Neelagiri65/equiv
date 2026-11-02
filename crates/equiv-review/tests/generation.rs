@@ -166,12 +166,15 @@ fn loop_to_closed_form_is_equivalent_with_the_corners_recorded_as_not_judged() {
 // the envelope get the per-input treatment.
 #[test]
 fn budget_exhaustion_inside_the_envelope_is_still_an_error() {
-    let cand = tmp("gen_inb_cand.py", "def f(n):\n    t = 0\n    for i in range(abs(n)):\n        t += i\n    return t\n");
-    let refr = tmp("gen_inb_ref.py", "def f(n):\n    t = 0\n    for i in range(abs(n)):\n        t += i\n    return t\n");
+    // A five-line loop body: past the stated scope of the default budget
+    // (a loop over |n| up to 1e6 with a one-line body fits).
+    let body = "def f(n):\n    t = 0\n    for i in range(abs(n)):\n        t += i\n        t -= 1\n        t += 1\n        t ^= 0\n        t |= 0\n    return t\n";
+    let cand = tmp("gen_inb_cand.py", body);
+    let refr = tmp("gen_inb_ref.py", body);
     let r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
     match &r.verdict {
         ReviewVerdict::Error { reason } => assert!(reason.contains("step budget"), "{reason}"),
-        v => panic!("a two-line loop over a random |n| near 1e6 must exhaust the budget inside the envelope, got {v:?}"),
+        v => panic!("a five-line loop body over a random |n| near 1e6 must exhaust the budget inside the envelope, got {v:?}"),
     }
 }
 

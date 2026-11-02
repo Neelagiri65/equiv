@@ -1,0 +1,6 @@
+function = "total"
+args = "int"
+expected = "equivalent"
+class = "holdout"
+pattern = "the repo's own gated example: a two-line summing loop rewritten as the closed form; correct, but the loop over a random n near 1e6 runs past the 1e6 step budget inside the envelope"
+integrity_max_abs_int = 1000001

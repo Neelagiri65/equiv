@@ -11,7 +11,7 @@ Each case is a directory:
 |------|----------|
 | `reference.py` | the original function |
 | `candidate.py` | the rewrite |
-| `case.toml` | `function`, `args` (equiv arg types), `expected` (`"diverges"` or `"equivalent"`), `class`, a one-line `pattern`, optional `source` (URL of real-world inspiration or the documented behaviour), and for `diverges` cases a `witness` |
+| `case.toml` | `function`, `args` (equiv arg types), `expected` (`"diverges"` or `"equivalent"`), `class`, a one-line `pattern`, optional `source` (URL of real-world inspiration or the documented behaviour), for `diverges` cases a `witness`, and optional `integrity_max_abs_int` (skips larger ints in the plain-Python label check, for references that loop \|n\| times) |
 
 `witness` is a Python tuple literal of arguments, stored as a TOML literal string
 so NaN, infinities, `-0.0` and lone surrogates can be written, for example
