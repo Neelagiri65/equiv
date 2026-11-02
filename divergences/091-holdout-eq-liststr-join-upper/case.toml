@@ -1,0 +1,5 @@
+function = "shout"
+args = "list[str]"
+expected = "equivalent"
+class = "holdout"
+pattern = "upper-casing each element then joining on a comma, rewritten as joining then upper-casing: the separator is unchanged by upper(), so the two agree on every list including multi-character case mappings"

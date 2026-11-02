@@ -2,13 +2,13 @@
   "equiv_version": "0.9.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 88,
-    "diverges": 58,
-    "equivalent": 30,
+    "cases": 92,
+    "diverges": 61,
+    "equivalent": 31,
     "caught": 51,
     "missed": 3,
     "false_alarms": 0,
-    "could_not_check": 4
+    "could_not_check": 8
   },
   "cases": {
     "001-int-float-identity-scale": {
@@ -626,6 +626,34 @@
       "outcome": "could-not-check",
       "n": null,
       "detail": "REFUSED: reaches math.log2, a maths-library result whose last bit is not reproducible across hosts"
+    },
+    "089-holdout-bool-flag-swapped": {
+      "expected": "diverges",
+      "exit": 3,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "error: bad arg type `bool`"
+    },
+    "090-holdout-liststr-longest-tiebreak": {
+      "expected": "diverges",
+      "exit": 3,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "error: bad arg type `list[str]`"
+    },
+    "091-holdout-eq-liststr-join-upper": {
+      "expected": "equivalent",
+      "exit": 3,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "error: bad arg type `list[str]`"
+    },
+    "092-holdout-bool-gated-large-int": {
+      "expected": "diverges",
+      "exit": 3,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "error: bad arg type `bool`"
     }
   }
 }
