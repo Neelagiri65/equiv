@@ -67,11 +67,12 @@ fn usage() -> &'static str {
     "equiv: deterministic checker for behaviour-preserving code changes
 
 USAGE:
-  equiv review <cand.py> <ref.py> <fn> <sig> [n] [seed] [--sign]
+  equiv review <cand.py> <ref.py> <fn> <sig> [n] [seed] [--sign] [--all]
         Check a function against a reference on generated inputs. <sig> is the
         argument types (int|str|list[int]|list[str]|float|dict|bool), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
-        $EQUIV_SIGNING_KEY (64 hex chars).
+        $EQUIV_SIGNING_KEY (64 hex chars). A counterexample is followed by how
+        many judged inputs disagreed; --all lists every one, in case order.
   equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]
         Check every listed (or auto-detected) changed function against base.
 
@@ -333,7 +334,8 @@ fn run() -> Result<u8, String> {
             use equiv_review::{review_limited, ArgType, ReviewSpec, ReviewVerdict};
             let safety = safety_seconds()?;
             let want_sign = args.iter().any(|a| a == "--sign");
-            let pos: Vec<&String> = args.iter().skip(1).filter(|a| *a != "--sign").collect();
+            let want_all = args.iter().any(|a| a == "--all");
+            let pos: Vec<&String> = args.iter().skip(1).filter(|a| *a != "--sign" && *a != "--all").collect();
             let cand = pos.first().ok_or("review: missing candidate .py")?;
             let refr = pos.get(1).ok_or("review: missing reference .py")?;
             let func = pos.get(2).ok_or("review: missing function name")?;
@@ -367,10 +369,16 @@ fn run() -> Result<u8, String> {
                         equiv_review::not_judged_note(*not_judged)
                     );
                 }
-                ReviewVerdict::Counterexample { input, candidate, reference } => {
+                ReviewVerdict::Counterexample { input, candidate, reference, .. } => {
                     println!("COUNTEREXAMPLE at input {input}");
                     println!("  candidate -> {candidate}");
                     println!("  reference -> {reference}");
+                    println!("{}", equiv_review::disagreements_note(&r.verdict));
+                    if want_all {
+                        for d in &r.disagreements {
+                            println!("  at {}: candidate -> {}, reference -> {}", d.input, d.candidate, d.reference);
+                        }
+                    }
                 }
                 ReviewVerdict::Error { reason } => println!("ERROR: {reason}"),
                 ReviewVerdict::Refused { reason } => println!("REFUSED: {reason}"),

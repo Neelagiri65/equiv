@@ -896,11 +896,18 @@ pub enum ReviewVerdict {
     /// input, stated here and in the receipt bytes rather than silently
     /// dropped. Zero for any function that finishes at every corner.
     Equivalent { n: u32, not_judged: u32 },
-    /// First input where they diverge (the review's payload).
+    /// First input where they diverge (the review's payload), plus how many
+    /// inputs were judged and on how many the two sides disagreed. `stopped`
+    /// is empty unless the run ended early (a side exhausted the step budget
+    /// after the first disagreement); it then names the budget and the input,
+    /// and `judged` counts only the inputs run before the stop.
     Counterexample {
         input: String,
         candidate: String,
         reference: String,
+        judged: u32,
+        disagreeing: u32,
+        stopped: String,
     },
     /// The harness could not run (load error, missing function, runtime gone).
     Error { reason: String },
@@ -926,12 +933,17 @@ impl ReviewVerdict {
             ReviewVerdict::Equivalent { n, not_judged } => {
                 Value::Array(vec![Value::Uint(0), Value::Uint(*n as u64), Value::Uint(*not_judged as u64)])
             }
-            ReviewVerdict::Counterexample { input, candidate, reference } => Value::Array(vec![
-                Value::Uint(1),
-                Value::Text(input.clone()),
-                Value::Text(candidate.clone()),
-                Value::Text(reference.clone()),
-            ]),
+            ReviewVerdict::Counterexample { input, candidate, reference, judged, disagreeing, stopped } => {
+                Value::Array(vec![
+                    Value::Uint(1),
+                    Value::Text(input.clone()),
+                    Value::Text(candidate.clone()),
+                    Value::Text(reference.clone()),
+                    Value::Uint(*judged as u64),
+                    Value::Uint(*disagreeing as u64),
+                    Value::Text(stopped.clone()),
+                ])
+            }
             ReviewVerdict::Error { reason } => {
                 Value::Array(vec![Value::Uint(2), Value::Text(reason.clone())])
             }
@@ -939,6 +951,29 @@ impl ReviewVerdict {
                 Value::Array(vec![Value::Uint(3), Value::Text(reason.clone())])
             }
         }
+    }
+}
+
+/// One input on which the two sides disagreed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Disagreement {
+    pub input: String,
+    pub candidate: String,
+    pub reference: String,
+}
+
+/// The line that follows a counterexample wherever it is shown: how many of
+/// the judged inputs disagreed, and where the run stopped if it stopped early.
+pub fn disagreements_note(v: &ReviewVerdict) -> String {
+    match v {
+        ReviewVerdict::Counterexample { judged, disagreeing, stopped, .. } => {
+            let mut s = format!("disagreements: {disagreeing} of {judged} judged inputs");
+            if !stopped.is_empty() {
+                s.push_str(&format!(" (stopped: {stopped})"));
+            }
+            s
+        }
+        _ => String::new(),
     }
 }
 
@@ -990,6 +1025,11 @@ pub struct ReviewReceipt {
     /// The claim tier. This checker only ever produces `tested`: bounded
     /// testing on generated inputs, never a proof.
     pub tier: String,
+    /// Every input on which the sides disagreed, in case order (the first is
+    /// the verdict's headline). NOT in the receipt bytes: its length is
+    /// (verdict `disagreeing`), and each entry is re-derived by re-running the
+    /// pinned candidate, reference and spec. Empty unless a counterexample.
+    pub disagreements: Vec<Disagreement>,
 }
 
 /// Inputs by source. `corner` is every fixed input (type corners, paired
@@ -1305,7 +1345,7 @@ pub fn review_limited(
 
     let ev = match run_python(candidate_path, reference_path, spec, &cases, large_from, safety_secs) {
         Ok(v) => v,
-        Err(PyFail::Msg(reason)) => Evaluated { verdict: ReviewVerdict::Error { reason }, python: String::new(), exceptions: 0 },
+        Err(PyFail::Msg(reason)) => Evaluated { verdict: ReviewVerdict::Error { reason }, python: String::new(), exceptions: 0, disagreements: Vec::new() },
         Err(PyFail::Stopped) => {
             return Err(SafetyStop { func: spec.func.clone(), limit_secs: safety_secs });
         }
@@ -1323,6 +1363,7 @@ pub fn review_limited(
         inputs,
         exceptions: ev.exceptions,
         tier: "tested".into(),
+        disagreements: ev.disagreements,
     })
 }
 
@@ -1579,9 +1620,9 @@ pub fn intoto_statement(file: &str, name: &str, receipt: &ReviewReceipt) -> Stri
             "equivalent".to_string(),
             format!("agreed on {n} cases{}; {}", not_judged_note(*not_judged), provenance_note(receipt)),
         ),
-        ReviewVerdict::Counterexample { input, candidate, reference } => (
+        ReviewVerdict::Counterexample { input, candidate, reference, .. } => (
             "counterexample".to_string(),
-            format!("diverges at {input}: this={candidate} base={reference}"),
+            format!("diverges at {input}: this={candidate} base={reference}; {}", disagreements_note(&receipt.verdict)),
         ),
         ReviewVerdict::Error { reason } => ("error".to_string(), reason.clone()),
         ReviewVerdict::Refused { reason } => ("refused".to_string(), reason.clone()),
@@ -1680,10 +1721,11 @@ fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecke
                 "equivalent".to_string(),
                 format!("{n}/{n} generated inputs agree{} ({})", not_judged_note(*not_judged), provenance_note(r)),
             ),
-            ReviewVerdict::Counterexample { input, candidate, reference } => (
+            ReviewVerdict::Counterexample { input, candidate, reference, .. } => (
                 "DIVERGES".to_string(),
                 format!(
-                    "input `{input}`: this PR returns `{candidate}`, base returns `{reference}` ({})",
+                    "input `{input}`: this PR returns `{candidate}`, base returns `{reference}`; {} ({})",
+                    disagreements_note(&r.verdict).replace('`', ""),
                     provenance_note(r)
                 ),
             ),
@@ -1882,7 +1924,12 @@ fn run_python(
         .find_map(|l| l.strip_prefix("__PY__\t"))
         .map(|v| v.trim().to_string())
         .unwrap_or_default();
-    let done = |verdict: ReviewVerdict, exceptions: u32| Evaluated { verdict, python: python.clone(), exceptions };
+    let done = |verdict: ReviewVerdict, exceptions: u32| Evaluated {
+        verdict,
+        python: python.clone(),
+        exceptions,
+        disagreements: Vec::new(),
+    };
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let last = err.lines().last().unwrap_or("python error").to_string();
@@ -1908,27 +1955,57 @@ fn run_python(
     let budget = spec.budget;
     let mut not_judged: u32 = 0;
     let mut exceptions: u32 = 0;
+    let mut judged: u32 = 0;
+    let mut found: Vec<Disagreement> = Vec::new();
+    // Every case is read, not just up to the first disagreement: the first is
+    // the headline, the count goes in the receipt, the list is kept in order.
+    let finish = |found: Vec<Disagreement>, judged: u32, exceptions: u32, stopped: String| {
+        let first = found[0].clone();
+        Evaluated {
+            verdict: ReviewVerdict::Counterexample {
+                input: first.input,
+                candidate: first.candidate,
+                reference: first.reference,
+                judged,
+                disagreeing: found.len() as u32,
+                stopped,
+            },
+            python: python.clone(),
+            exceptions,
+            disagreements: found,
+        }
+    };
     for line in stdout.lines() {
         // Lines arrive in case order and the driver stops at the first budget
-        // exhaustion, so a counterexample printed earlier still stands. The
-        // reason states budget, case, input and side, never the number of
+        // exhaustion. A disagreement found before it still stands as the
+        // verdict, with the stop stated; without one, the stop is the verdict.
+        // The reason states budget, case, input and side, never the number of
         // events consumed (that may differ between Python versions).
         if let Some(rest) = line.strip_prefix("__BUDGET__\t") {
             let (at, side) = rest.split_once('\t').unwrap_or((rest, "candidate"));
-            let reason = if at == "load" {
-                format!(
-                    "loading the {side} module exceeded the step budget of {budget} Python \
-                     line/jump events; a non-terminating or very long run is not judged"
+            let (reason, short) = if at == "load" {
+                (
+                    format!(
+                        "loading the {side} module exceeded the step budget of {budget} Python \
+                         line/jump events; a non-terminating or very long run is not judged"
+                    ),
+                    format!("step budget of {budget} exceeded loading the {side}"),
                 )
             } else {
                 let idx: usize = at.parse().map_err(|_| "bad index".to_string())?;
                 let input: Vec<String> = cases[idx].iter().map(|v| v.display()).collect();
-                format!(
-                    "the {side} exceeded the step budget of {budget} Python line/jump events \
-                     at input ({}); a non-terminating or very long run is not judged",
-                    input.join(", ")
+                (
+                    format!(
+                        "the {side} exceeded the step budget of {budget} Python line/jump events \
+                         at input ({}); a non-terminating or very long run is not judged",
+                        input.join(", ")
+                    ),
+                    format!("the {side} exceeded the step budget of {budget} at input ({})", input.join(", ")),
                 )
             };
+            if !found.is_empty() {
+                return Ok(finish(found, judged, exceptions, short));
+            }
             return Ok(done(ReviewVerdict::Error { reason }, exceptions));
         }
         let parts: Vec<&str> = line.splitn(4, '\t').collect();
@@ -1939,21 +2016,22 @@ fn run_python(
         if parts.len() < 4 {
             continue;
         }
+        judged += 1;
         if parts[1] == "EQX" {
             exceptions += 1;
         }
         if parts[1] == "NE" {
             let idx: usize = parts[0].parse().map_err(|_| "bad index".to_string())?;
             let input: Vec<String> = cases[idx].iter().map(|v| v.display()).collect();
-            return Ok(done(
-                ReviewVerdict::Counterexample {
-                    input: format!("({})", input.join(", ")),
-                    candidate: parts[2].to_string(),
-                    reference: parts[3].to_string(),
-                },
-                exceptions,
-            ));
+            found.push(Disagreement {
+                input: format!("({})", input.join(", ")),
+                candidate: parts[2].to_string(),
+                reference: parts[3].to_string(),
+            });
         }
+    }
+    if !found.is_empty() {
+        return Ok(finish(found, judged, exceptions, String::new()));
     }
     // n is the number of cases actually judged (boundary + literal + random +
     // the large corners that finished, deduplicated), not the requested random
@@ -1968,6 +2046,7 @@ struct Evaluated {
     verdict: ReviewVerdict,
     python: String,
     exceptions: u32,
+    disagreements: Vec<Disagreement>,
 }
 
 // Tests only: these pin properties of the private generators that the
