@@ -1,14 +1,14 @@
 {
-  "equiv_version": "0.11.0",
+  "equiv_version": "0.12.0",
   "python": "3.14.9",
   "summary": {
     "cases": 99,
     "diverges": 64,
     "equivalent": 35,
-    "caught": 55,
+    "caught": 56,
     "missed": 4,
     "false_alarms": 0,
-    "could_not_check": 8
+    "could_not_check": 5
   },
   "cases": {
     "001-int-float-identity-scale": {
@@ -678,31 +678,31 @@
     },
     "096-holdout-loop-sum-closed-form": {
       "expected": "equivalent",
-      "exit": 2,
-      "outcome": "could-not-check",
-      "n": null,
-      "detail": "ERROR: the reference exceeded the step budget of 1000000 Python line/jump events at input (991073); a non-terminating or very long run is not judged"
+      "exit": 0,
+      "outcome": "pass",
+      "n": 113,
+      "detail": "EQUIVALENT: agreed on all 113 generated inputs (seed 1); 9 large-magnitude inputs not judged (step budget)"
     },
     "097-holdout-sum-squares-float-closed-form": {
       "expected": "diverges",
-      "exit": 2,
-      "outcome": "could-not-check",
+      "exit": 1,
+      "outcome": "caught",
       "n": null,
-      "detail": "ERROR: the reference exceeded the step budget of 1000000 Python line/jump events at input (991073); a non-terminating or very long run is not judged"
+      "detail": "COUNTEREXAMPLE at input (991073) | candidate -> 324486278640512832 | reference -> 324486278640512849"
     },
     "098-holdout-while-loop-count-closed-form": {
       "expected": "equivalent",
-      "exit": 2,
-      "outcome": "could-not-check",
-      "n": null,
-      "detail": "ERROR: the reference exceeded the step budget of 1000000 Python line/jump events at input (991073); a non-terminating or very long run is not judged"
+      "exit": 0,
+      "outcome": "pass",
+      "n": 103,
+      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1); 19 large-magnitude inputs not judged (step budget)"
     },
     "099-holdout-four-line-loop-body-scope-edge": {
       "expected": "equivalent",
       "exit": 2,
       "outcome": "could-not-check",
       "n": null,
-      "detail": "ERROR: the candidate and reference exceeded the step budget of 1000000 Python line/jump events at input (1000002); a non-terminating or very long run is not judged"
+      "detail": "ERROR: the reference exceeded the step budget of 4000000 Python line/jump events at input (1000002); a non-terminating or very long run is not judged"
     }
   }
 }
