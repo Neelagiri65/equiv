@@ -52,11 +52,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Neelagiri65/equiv@v0.11.0
+      - uses: Neelagiri65/equiv@v0.14.0
         with: { keyless: "true" }
 ```
 
-Pin to a released tag (`@v0.1.0`) rather than `@main` so runs are reproducible
+Pin to a released tag (`@v0.14.0`) rather than `@main` so runs are reproducible
 and do not change under you.
 
 Each PR receives a comment. Every changed function is tested against its version
