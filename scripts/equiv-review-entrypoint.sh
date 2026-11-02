@@ -5,13 +5,18 @@ set -euo pipefail
 
 BIN="${EQUIV_BIN:-equiv}"
 MANIFEST="${EQUIV_MANIFEST:-.equiv-review}"
-AUTO="${EQUIV_AUTO:-false}"
+AUTO="${EQUIV_AUTO:-}"
 BASE="${EQUIV_BASE_INPUT:-}"
 FAIL="${EQUIV_FAIL:-true}"
 FAIL_NOT_CHECKED="${EQUIV_FAIL_NOT_CHECKED:-false}"
 
-# In manifest mode, a missing manifest means there is nothing to review. In auto
-# mode there is no manifest: changed functions come from the diff.
+# Mode. `auto` unset (the default): use the manifest if it exists, otherwise
+# detect every changed function from the diff, so a repo with no manifest is
+# reviewed instead of skipped. Explicit "true" ignores the manifest; explicit
+# "false" with no manifest means there is nothing to review.
+if [[ -z "$AUTO" ]]; then
+  if [[ -f "$MANIFEST" ]]; then AUTO="false"; else AUTO="true"; fi
+fi
 if [[ "$AUTO" != "true" && ! -f "$MANIFEST" ]]; then
   echo "equiv-review: no manifest at '$MANIFEST' and auto is off; skipping."
   exit 0
