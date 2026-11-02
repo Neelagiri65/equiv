@@ -52,7 +52,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Neelagiri65/equiv@v0.10.0
+      - uses: Neelagiri65/equiv@v0.11.0
         with: { keyless: "true" }
 ```
 
