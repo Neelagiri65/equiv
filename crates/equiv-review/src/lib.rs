@@ -59,6 +59,12 @@ impl ArgType {
 /// budget gives the same verdict on every host (gate P3).
 pub const DEFAULT_BUDGET: u64 = 4_000_000;
 
+/// Random inputs drawn per review when none is given (both `review` and
+/// `review-pr`). Raised from 200/300 in 0.14.0: a shipped bug in a real port
+/// (jellyfish #247) was reached on 0 of 5 seeds at 200 and 5 of 5 at 1,500+.
+/// Cost on the divergence corpus is about 5x (median 0.03 -> 0.25 s/function).
+pub const DEFAULT_N: u32 = 2_000;
+
 /// Default wall-clock safety limit for one function's check, in seconds
 /// (backlog 0.3b). Work inside a single C call (`sum(range(10**18))`) raises
 /// no Python events, so the step budget cannot stop it; past this limit the
