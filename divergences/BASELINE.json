@@ -1,14 +1,14 @@
 {
-  "equiv_version": "0.9.0",
+  "equiv_version": "0.10.0",
   "python": "3.14.9",
   "summary": {
     "cases": 92,
     "diverges": 61,
     "equivalent": 31,
-    "caught": 51,
-    "missed": 3,
+    "caught": 53,
+    "missed": 4,
     "false_alarms": 0,
-    "could_not_check": 8
+    "could_not_check": 4
   },
   "cases": {
     "001-int-float-identity-scale": {
@@ -629,31 +629,31 @@
     },
     "089-holdout-bool-flag-swapped": {
       "expected": "diverges",
-      "exit": 3,
-      "outcome": "could-not-check",
+      "exit": 1,
+      "outcome": "caught",
       "n": null,
-      "detail": "error: bad arg type `bool`"
+      "detail": "COUNTEREXAMPLE at input ([1, 2, 3], False) | candidate -> 1 | reference -> 3"
     },
     "090-holdout-liststr-longest-tiebreak": {
       "expected": "diverges",
-      "exit": 3,
-      "outcome": "could-not-check",
+      "exit": 1,
+      "outcome": "caught",
       "n": null,
-      "detail": "error: bad arg type `list[str]`"
+      "detail": "COUNTEREXAMPLE at input ([]) | candidate -> IndexError | reference -> ValueError"
     },
     "091-holdout-eq-liststr-join-upper": {
       "expected": "equivalent",
-      "exit": 3,
-      "outcome": "could-not-check",
-      "n": null,
-      "detail": "error: bad arg type `list[str]`"
+      "exit": 0,
+      "outcome": "pass",
+      "n": 218,
+      "detail": "EQUIVALENT: agreed on all 218 generated inputs (seed 1)"
     },
     "092-holdout-bool-gated-large-int": {
       "expected": "diverges",
-      "exit": 3,
-      "outcome": "could-not-check",
-      "n": null,
-      "detail": "error: bad arg type `bool`"
+      "exit": 0,
+      "outcome": "missed",
+      "n": 147,
+      "detail": "EQUIVALENT: agreed on all 147 generated inputs (seed 1)"
     }
   }
 }
