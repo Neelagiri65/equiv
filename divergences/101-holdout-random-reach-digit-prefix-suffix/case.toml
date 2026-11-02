@@ -1,0 +1,6 @@
+function = "digit_sum"
+args = "int"
+expected = "diverges"
+class = "holdout"
+pattern = "random-reach: digit sum wrong only when a 5+ digit number starts and ends with the same two digits (about 1 in 280 random draws); no corner or literal hits it"
+witness = '''(123412,)'''

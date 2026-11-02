@@ -1,0 +1,6 @@
+function = "ring_score"
+args = "list[int]"
+expected = "diverges"
+class = "holdout"
+pattern = "random-reach, off the planned str/int list: a ring sum skips the wrap-around term only for 6-element lists whose first and last elements are equal (about 1 in 290 random draws)"
+witness = '''([3, 1, 2, 4, 5, 3],)'''

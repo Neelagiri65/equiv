@@ -1,11 +1,11 @@
 {
-  "equiv_version": "0.12.0",
+  "equiv_version": "0.14.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 99,
-    "diverges": 64,
-    "equivalent": 35,
-    "caught": 56,
+    "cases": 103,
+    "diverges": 67,
+    "equivalent": 36,
+    "caught": 59,
     "missed": 4,
     "false_alarms": 0,
     "could_not_check": 5
@@ -155,8 +155,8 @@
       "expected": "diverges",
       "exit": 0,
       "outcome": "missed",
-      "n": 222,
-      "detail": "EQUIVALENT: agreed on all 222 generated inputs (seed 1)"
+      "n": 1597,
+      "detail": "EQUIVALENT: agreed on all 1597 generated inputs (seed 1)"
     },
     "022-fixedwidth-hash-mask-dropped": {
       "expected": "diverges",
@@ -295,141 +295,141 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 220,
-      "detail": "EQUIVALENT: agreed on all 220 generated inputs (seed 1)"
+      "n": 1595,
+      "detail": "EQUIVALENT: agreed on all 1595 generated inputs (seed 1)"
     },
     "042-eq-int32-two-ways": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 125,
-      "detail": "EQUIVALENT: agreed on all 125 generated inputs (seed 1)"
+      "n": 767,
+      "detail": "EQUIVALENT: agreed on all 767 generated inputs (seed 1)"
     },
     "043-eq-add32-mask-inputs": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 235,
-      "detail": "EQUIVALENT: agreed on all 235 generated inputs (seed 1)"
+      "n": 1600,
+      "detail": "EQUIVALENT: agreed on all 1600 generated inputs (seed 1)"
     },
     "044-eq-max-default": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 161,
-      "detail": "EQUIVALENT: agreed on all 161 generated inputs (seed 1)"
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
     },
     "045-eq-mean-guard": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 161,
-      "detail": "EQUIVALENT: agreed on all 161 generated inputs (seed 1)"
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
     },
     "046-eq-clamp-pct": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 125,
-      "detail": "EQUIVALENT: agreed on all 125 generated inputs (seed 1)"
+      "n": 765,
+      "detail": "EQUIVALENT: agreed on all 765 generated inputs (seed 1)"
     },
     "047-eq-luhn-refactor": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 234,
-      "detail": "EQUIVALENT: agreed on all 234 generated inputs (seed 1)"
+      "n": 1609,
+      "detail": "EQUIVALENT: agreed on all 1609 generated inputs (seed 1)"
     },
     "048-eq-isbn10-refactor": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 225,
-      "detail": "EQUIVALENT: agreed on all 225 generated inputs (seed 1)"
+      "n": 1600,
+      "detail": "EQUIVALENT: agreed on all 1600 generated inputs (seed 1)"
     },
     "049-eq-iban-piecewise": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 248,
-      "detail": "EQUIVALENT: agreed on all 248 generated inputs (seed 1)"
+      "n": 1623,
+      "detail": "EQUIVALENT: agreed on all 1623 generated inputs (seed 1)"
     },
     "050-eq-dict-sort-by-value": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 163,
-      "detail": "EQUIVALENT: agreed on all 163 generated inputs (seed 1)"
+      "n": 1362,
+      "detail": "EQUIVALENT: agreed on all 1362 generated inputs (seed 1)"
     },
     "051-eq-sort-reverse-ints": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 161,
-      "detail": "EQUIVALENT: agreed on all 161 generated inputs (seed 1)"
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
     },
     "052-eq-or-default-truthy": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 215,
-      "detail": "EQUIVALENT: agreed on all 215 generated inputs (seed 1)"
+      "n": 1590,
+      "detail": "EQUIVALENT: agreed on all 1590 generated inputs (seed 1)"
     },
     "053-eq-is-even-bitwise": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 122,
-      "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
+      "n": 764,
+      "detail": "EQUIVALENT: agreed on all 764 generated inputs (seed 1)"
     },
     "054-eq-is-blank": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 214,
-      "detail": "EQUIVALENT: agreed on all 214 generated inputs (seed 1)"
+      "n": 1589,
+      "detail": "EQUIVALENT: agreed on all 1589 generated inputs (seed 1)"
     },
     "055-eq-count-vowels": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 218,
-      "detail": "EQUIVALENT: agreed on all 218 generated inputs (seed 1)"
+      "n": 1593,
+      "detail": "EQUIVALENT: agreed on all 1593 generated inputs (seed 1)"
     },
     "056-eq-float-double": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 67,
-      "detail": "EQUIVALENT: agreed on all 67 generated inputs (seed 1)"
+      "n": 530,
+      "detail": "EQUIVALENT: agreed on all 530 generated inputs (seed 1)"
     },
     "057-eq-float-halve": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 68,
-      "detail": "EQUIVALENT: agreed on all 68 generated inputs (seed 1)"
+      "n": 530,
+      "detail": "EQUIVALENT: agreed on all 530 generated inputs (seed 1)"
     },
     "058-eq-floordiv-via-mod": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 231,
-      "detail": "EQUIVALENT: agreed on all 231 generated inputs (seed 1)"
+      "n": 1596,
+      "detail": "EQUIVALENT: agreed on all 1596 generated inputs (seed 1)"
     },
     "059-eq-strip-space-split": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 214,
-      "detail": "EQUIVALENT: agreed on all 214 generated inputs (seed 1)"
+      "n": 1589,
+      "detail": "EQUIVALENT: agreed on all 1589 generated inputs (seed 1)"
     },
     "060-eq-first-or-none": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 161,
-      "detail": "EQUIVALENT: agreed on all 161 generated inputs (seed 1)"
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
     },
     "061-holdout-remove-spaces-vs-split-join": {
       "expected": "diverges",
@@ -477,29 +477,29 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 125,
-      "detail": "EQUIVALENT: agreed on all 125 generated inputs (seed 1)"
+      "n": 765,
+      "detail": "EQUIVALENT: agreed on all 765 generated inputs (seed 1)"
     },
     "068-holdout-eq-sum-loop": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 161,
-      "detail": "EQUIVALENT: agreed on all 161 generated inputs (seed 1)"
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
     },
     "069-holdout-eq-strip-lower": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 214,
-      "detail": "EQUIVALENT: agreed on all 214 generated inputs (seed 1)"
+      "n": 1589,
+      "detail": "EQUIVALENT: agreed on all 1589 generated inputs (seed 1)"
     },
     "070-holdout-max-subarray-empty": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 161,
-      "detail": "EQUIVALENT: agreed on all 161 generated inputs (seed 1)"
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
     },
     "071-holdout-is-int-lstrip-minus": {
       "expected": "diverges",
@@ -526,36 +526,36 @@
       "expected": "diverges",
       "exit": 0,
       "outcome": "missed",
-      "n": 214,
-      "detail": "EQUIVALENT: agreed on all 214 generated inputs (seed 1)"
+      "n": 1589,
+      "detail": "EQUIVALENT: agreed on all 1589 generated inputs (seed 1)"
     },
     "075-holdout-eq-sign-prefix": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 219,
-      "detail": "EQUIVALENT: agreed on all 219 generated inputs (seed 1)"
+      "n": 1594,
+      "detail": "EQUIVALENT: agreed on all 1594 generated inputs (seed 1)"
     },
     "076-holdout-is-int-double-sign": {
       "expected": "diverges",
       "exit": 0,
       "outcome": "missed",
-      "n": 215,
-      "detail": "EQUIVALENT: agreed on all 215 generated inputs (seed 1)"
+      "n": 1590,
+      "detail": "EQUIVALENT: agreed on all 1590 generated inputs (seed 1)"
     },
     "077-holdout-eq-zero-text": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 214,
-      "detail": "EQUIVALENT: agreed on all 214 generated inputs (seed 1)"
+      "n": 1589,
+      "detail": "EQUIVALENT: agreed on all 1589 generated inputs (seed 1)"
     },
     "078-holdout-eq-drop-sign": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 220,
-      "detail": "EQUIVALENT: agreed on all 220 generated inputs (seed 1)"
+      "n": 1595,
+      "detail": "EQUIVALENT: agreed on all 1595 generated inputs (seed 1)"
     },
     "079-holdout-float-sum-reorder": {
       "expected": "diverges",
@@ -582,8 +582,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 232,
-      "detail": "EQUIVALENT: agreed on all 232 generated inputs (seed 1)"
+      "n": 1596,
+      "detail": "EQUIVALENT: agreed on all 1596 generated inputs (seed 1)"
     },
     "083-holdout-int-abs-via-fabs": {
       "expected": "diverges",
@@ -596,8 +596,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 122,
-      "detail": "EQUIVALENT: agreed on all 122 generated inputs (seed 1)"
+      "n": 764,
+      "detail": "EQUIVALENT: agreed on all 764 generated inputs (seed 1)"
     },
     "085-holdout-digit-count-via-log10": {
       "expected": "diverges",
@@ -617,8 +617,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 231,
-      "detail": "EQUIVALENT: agreed on all 231 generated inputs (seed 1)"
+      "n": 1596,
+      "detail": "EQUIVALENT: agreed on all 1596 generated inputs (seed 1)"
     },
     "088-holdout-list-bit-length-via-log2": {
       "expected": "diverges",
@@ -645,8 +645,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 218,
-      "detail": "EQUIVALENT: agreed on all 218 generated inputs (seed 1)"
+      "n": 1723,
+      "detail": "EQUIVALENT: agreed on all 1723 generated inputs (seed 1)"
     },
     "092-holdout-bool-gated-large-int": {
       "expected": "diverges",
@@ -666,22 +666,22 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 166,
-      "detail": "EQUIVALENT: agreed on all 166 generated inputs (seed 1)"
+      "n": 865,
+      "detail": "EQUIVALENT: agreed on all 865 generated inputs (seed 1)"
     },
     "095-holdout-two-bools-gated-large-int": {
       "expected": "diverges",
       "exit": 0,
       "outcome": "missed",
-      "n": 200,
-      "detail": "EQUIVALENT: agreed on all 200 generated inputs (seed 1)"
+      "n": 892,
+      "detail": "EQUIVALENT: agreed on all 892 generated inputs (seed 1)"
     },
     "096-holdout-loop-sum-closed-form": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 113,
-      "detail": "EQUIVALENT: agreed on all 113 generated inputs (seed 1); 9 large-magnitude inputs not judged (step budget)"
+      "n": 755,
+      "detail": "EQUIVALENT: agreed on all 755 generated inputs (seed 1); 9 large-magnitude inputs not judged (step budget)"
     },
     "097-holdout-sum-squares-float-closed-form": {
       "expected": "diverges",
@@ -694,8 +694,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 103,
-      "detail": "EQUIVALENT: agreed on all 103 generated inputs (seed 1); 19 large-magnitude inputs not judged (step budget)"
+      "n": 745,
+      "detail": "EQUIVALENT: agreed on all 745 generated inputs (seed 1); 19 large-magnitude inputs not judged (step budget)"
     },
     "099-holdout-four-line-loop-body-scope-edge": {
       "expected": "equivalent",
@@ -703,6 +703,34 @@
       "outcome": "could-not-check",
       "n": null,
       "detail": "ERROR: the reference exceeded the step budget of 4000000 Python line/jump events at input (1000002); a non-terminating or very long run is not judged"
+    },
+    "100-holdout-random-reach-doubled-final-letter": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ('aaaaaaaa') | candidate -> '' | reference -> 'A'"
+    },
+    "101-holdout-random-reach-digit-prefix-suffix": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (100510) | candidate -> 6 | reference -> 7"
+    },
+    "102-holdout-random-reach-rle-groupby": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 1592,
+      "detail": "EQUIVALENT: agreed on all 1592 generated inputs (seed 1)"
+    },
+    "103-holdout-random-reach-list-first-last": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ([-16, -11, -6, -7, 12, -16]) | candidate -> 8 | reference -> 264"
     }
   }
 }

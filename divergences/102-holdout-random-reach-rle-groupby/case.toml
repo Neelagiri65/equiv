@@ -1,0 +1,5 @@
+function = "rle"
+args = "str"
+expected = "equivalent"
+class = "holdout"
+pattern = "random-reach control: run-length encoding rewritten with itertools.groupby is correct on every string; more random draws must not raise a false alarm"

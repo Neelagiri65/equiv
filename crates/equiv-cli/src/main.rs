@@ -191,7 +191,7 @@ fn run() -> Result<u8, String> {
                                     name: d.name.clone(),
                                     head_path: std::path::PathBuf::from(file),
                                     base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: 300, seed: 1, budget: equiv_review::DEFAULT_BUDGET },
+                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget: equiv_review::DEFAULT_BUDGET },
                                 });
                             }
                             DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
@@ -212,7 +212,7 @@ fn run() -> Result<u8, String> {
                         return Err(format!("{manifest}:{}: expected `file : fn : sig`", lineno + 1));
                     }
                     let (file, func, sig) = (parts[0], parts[1], parts[2]);
-                    let n: u32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(300);
+                    let n: u32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(equiv_review::DEFAULT_N);
                     let seed: u64 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(1);
                     let arg_types = sig
                         .split(',')
@@ -340,7 +340,7 @@ fn run() -> Result<u8, String> {
             let refr = pos.get(1).ok_or("review: missing reference .py")?;
             let func = pos.get(2).ok_or("review: missing function name")?;
             let sig = pos.get(3).ok_or("review: missing signature (e.g. int,int)")?;
-            let n: u32 = pos.get(4).map(|s| s.parse().unwrap_or(200)).unwrap_or(200);
+            let n: u32 = pos.get(4).map(|s| s.parse().unwrap_or(equiv_review::DEFAULT_N)).unwrap_or(equiv_review::DEFAULT_N);
             let seed: u64 = pos.get(5).map(|s| s.parse().unwrap_or(1)).unwrap_or(1);
             let arg_types = sig
                 .split(',')
