@@ -347,7 +347,7 @@ fn literal_scan_reads_string_literals_for_str_and_dict_inputs() {
     let refr = tmp("gen_dictlit_ref.py", "def f(d):\n    return d.get(\"port\", 8080)\n");
     let r = review(&cand, &refr, &spec("f", vec![ArgType::Dict])).expect("no safety stop");
     match &r.verdict {
-        ReviewVerdict::Counterexample { input, candidate, reference } => {
+        ReviewVerdict::Counterexample { input, candidate, reference, .. } => {
             assert!(input.contains("port"), "got {input}");
             assert_eq!(candidate, "8080");
             assert_eq!(reference, "0");

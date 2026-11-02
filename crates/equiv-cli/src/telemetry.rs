@@ -204,6 +204,7 @@ mod tests {
                 inputs: equiv_review::InputCounts::default(),
                 exceptions: 0,
                 tier: "tested".to_string(),
+                disagreements: Vec::new(),
             }),
         }
     }
@@ -229,6 +230,9 @@ mod tests {
                 input: "(1)".into(),
                 candidate: "1".into(),
                 reference: "2".into(),
+                judged: 1,
+                disagreeing: 1,
+                stopped: String::new(),
             }),
             item("c", ReviewVerdict::Error { reason: "boom".into() }),
         ];

@@ -71,7 +71,7 @@ fn exception_on_one_side_reports_other_sides_real_value() {
     let refr = tmp("rev_exc_ref.py", "def average(xs):\n    return sum(xs)//len(xs) if xs else 0\n");
     let r = review(&cand, &refr, &spec("average", vec![ArgType::ListInt])).expect("no safety stop");
     match &r.verdict {
-        ReviewVerdict::Counterexample { input, candidate, reference } => {
+        ReviewVerdict::Counterexample { input, candidate, reference, .. } => {
             assert_eq!(input, "([])", "empty list is the diverging input");
             assert_eq!(candidate, "ZeroDivisionError", "the raising side shows its exception");
             assert_eq!(reference, "0", "the non-raising side shows its real value, not None");
