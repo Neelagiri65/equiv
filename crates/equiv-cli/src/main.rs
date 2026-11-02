@@ -116,9 +116,15 @@ fn run() -> Result<u8, String> {
             // comment so a green result never hides them (closes issue #1).
             let mut unchecked: Vec<(String, String)> = Vec::new();
 
+            // The base version of each function goes to a temp file owned by
+            // this process. It used to be named after the function and file
+            // only, so two reviews on one machine overwrote each other's base
+            // and one could judge against the other's code. The process id
+            // makes the path unique per run; (name, file) is unique within it.
+            let pid = std::process::id();
             let tmp_base = |name: &str, file: &str, src: &[u8]| -> Result<std::path::PathBuf, String> {
                 let slug: String = file.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
-                let p = std::env::temp_dir().join(format!("equiv_base_{name}_{slug}.py"));
+                let p = std::env::temp_dir().join(format!("equiv_base_{pid}_{name}_{slug}.py"));
                 std::fs::write(&p, src).map_err(|e| e.to_string())?;
                 Ok(p)
             };
