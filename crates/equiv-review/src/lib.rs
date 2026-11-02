@@ -57,7 +57,7 @@ impl ArgType {
 /// of the candidate or the reference may raise before the review stops and
 /// reports could-not-check. Counted events, never wall-clock time, so the same
 /// budget gives the same verdict on every host (gate P3).
-pub const DEFAULT_BUDGET: u64 = 1_000_000;
+pub const DEFAULT_BUDGET: u64 = 4_000_000;
 
 /// Default wall-clock safety limit for one function's check, in seconds
 /// (backlog 0.3b). Work inside a single C call (`sum(range(10**18))`) raises

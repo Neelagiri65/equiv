@@ -114,7 +114,7 @@ function that reaches a transcendental (sin, exp, log, pow) is refused by name
 rather than judged. Its last bit is not reproducible across maths libraries.
 
 Each call of either version, and each module load, runs under a step budget:
-1,000,000 Python line and jump events by default, counted through
+4,000,000 Python line and jump events by default (enough for a loop with a one-line body over any int in the random range), counted through
 `sys.monitoring`. No clock is read, so the same budget gives the same result on
 every host running the same Python minor; the receipt records which one ran. A version that exceeds it (an infinite loop, or a loop over a huge
 literal-derived input) ends the review as could not check (exit `2`), naming the
