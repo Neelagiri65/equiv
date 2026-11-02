@@ -94,3 +94,41 @@ fn list_str_exact_rewrite_passes() {
     let v = review(&c, &r, &spec("shout", vec![ArgType::ListStr])).expect("no safety stop").verdict;
     assert!(matches!(v, ReviewVerdict::Equivalent { .. }), "{v:?}");
 }
+
+// Bool fan-out (DECISIONS #21): every corner block also runs with each bool
+// argument set to True. A string corner behind a flag (holdout 093's shape)
+// and a large-int corner behind a flag (holdout 092's shape) are reached.
+#[test]
+fn string_corner_behind_a_flag_is_caught() {
+    let c = tmp("fs_c", "def tidy(s, trim):\n    return s.strip() if trim else s\n");
+    let r = tmp("fs_r", "def tidy(s, trim):\n    return s.strip(' ') if trim else s\n");
+    let v = review(&c, &r, &spec("tidy", vec![ArgType::Str, ArgType::Bool])).expect("no safety stop").verdict;
+    match v {
+        ReviewVerdict::Counterexample { input, .. } => assert!(input.ends_with(", True)"), "{input}"),
+        v => panic!("expected a counterexample with the flag set, got {v:?}"),
+    }
+}
+
+#[test]
+fn large_int_corner_behind_a_flag_is_caught() {
+    let c = tmp("fl2_c", "def scale(n, double):\n    return int(n * 2.0) if double else n\n");
+    let r = tmp("fl2_r", "def scale(n, double):\n    return n * 2 if double else n\n");
+    let v = review(&c, &r, &spec("scale", vec![ArgType::Int, ArgType::Bool])).expect("no safety stop").verdict;
+    match v {
+        ReviewVerdict::Counterexample { input, .. } => assert!(input.contains("9007199254740993, True"), "{input}"),
+        v => panic!("expected the 2^53 + 1 corner with the flag set, got {v:?}"),
+    }
+}
+
+// The fan-out adds cases only for signatures that hold a bool: an int-only
+// signature generates exactly the same case list as before.
+#[test]
+fn fanout_leaves_signatures_without_a_bool_unchanged() {
+    let c = tmp("nb_c", "def f(a, b):\n    return a + b\n");
+    let r = tmp("nb_r", "def f(a, b):\n    return b + a\n");
+    let rc = review(&c, &r, &spec("f", vec![ArgType::Int, ArgType::Int])).expect("no safety stop");
+    let rc2 = review(&c, &r, &spec("f", vec![ArgType::Int, ArgType::Int])).expect("no safety stop");
+    assert_eq!(rc.inputs, rc2.inputs);
+    let with_bool = review(&c, &r, &spec("f", vec![ArgType::Int, ArgType::Bool])).expect("no safety stop");
+    assert!(with_bool.inputs.corner > rc.inputs.corner / 2, "{:?} vs {:?}", with_bool.inputs, rc.inputs);
+}
