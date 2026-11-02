@@ -726,6 +726,36 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
                 }
             }
         }
+        // Bool fan-out (DECISIONS #21): the corner and literal inputs above
+        // ran with every bool at its default (False), so a divergence behind
+        // a flag was out of reach. Run them again once per bool argument with
+        // that flag set to True. One flag at a time keeps the cost linear in
+        // the number of bools; a divergence that needs two flags set at once
+        // is still out of reach. Signatures without a bool add nothing.
+        for fb in flag_bases(spec).into_iter().skip(1) {
+            for (i, ty) in spec.args.iter().enumerate() {
+                if *ty == ArgType::Bool {
+                    continue;
+                }
+                let n_corner = boundary_cases(*ty).len();
+                let mut vals = boundary_cases(*ty);
+                for s in sources {
+                    vals.extend(literal_inputs(s, *ty));
+                }
+                for (k, v) in vals.into_iter().enumerate() {
+                    let mut c = fb.clone();
+                    c[i] = v;
+                    if seen.insert(key(&c)) {
+                        cases.push(c);
+                        if k < n_corner {
+                            counts.corner += 1;
+                        } else {
+                            counts.literal += 1;
+                        }
+                    }
+                }
+            }
+        }
         // Paired string corners: a function comparing two strings only
         // diverges when both sides are related (same text, or one is the
         // other's case mapping, e.g. "Straße" vs "STRASSE"). One-at-a-time
@@ -820,22 +850,40 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
     // find still comes first. Fixed and seed-free, so the same on every host.
     let large_from = cases.len();
     if !spec.args.is_empty() {
-        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
-        for (i, ty) in spec.args.iter().enumerate() {
-            if *ty != ArgType::Int {
-                continue;
-            }
-            for &n in LARGE_INT_CORNERS {
-                let mut c = base.clone();
-                c[i] = PyVal::Int(n);
-                if seen.insert(key(&c)) {
-                    cases.push(c);
-                    counts.corner += 1;
+        // Default base first (unchanged order), then once per bool set True.
+        for base in flag_bases(spec) {
+            for (i, ty) in spec.args.iter().enumerate() {
+                if *ty != ArgType::Int {
+                    continue;
+                }
+                for &n in LARGE_INT_CORNERS {
+                    let mut c = base.clone();
+                    c[i] = PyVal::Int(n);
+                    if seen.insert(key(&c)) {
+                        cases.push(c);
+                        counts.corner += 1;
+                    }
                 }
             }
         }
     }
     (cases, large_from, counts)
+}
+
+// The default base (every argument at its default) followed by one base per
+// bool argument with that flag set to True. Just the default base when the
+// signature holds no bool, so other signatures generate exactly as before.
+fn flag_bases(spec: &ReviewSpec) -> Vec<Vec<PyVal>> {
+    let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+    let mut out = vec![base.clone()];
+    for (i, ty) in spec.args.iter().enumerate() {
+        if *ty == ArgType::Bool {
+            let mut b = base.clone();
+            b[i] = PyVal::Bool(true);
+            out.push(b);
+        }
+    }
+    out
 }
 
 // ---------- verdict + receipt ----------

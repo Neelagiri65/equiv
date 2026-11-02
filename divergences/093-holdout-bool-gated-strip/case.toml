@@ -1,0 +1,6 @@
+function = "tidy"
+args = "str,bool"
+expected = "diverges"
+class = "holdout"
+pattern = "s.strip(' ') rewritten as s.strip() behind a bool flag: the two differ on tabs and newlines, but only when the flag is set; the string corners hold those characters, and run with the flag at its default (False)"
+witness = '''("\t", True)'''
