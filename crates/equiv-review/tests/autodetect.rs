@@ -136,3 +136,51 @@ fn unparseable_head_is_an_error_not_an_empty_list() {
     let err = detect_changed_functions("", "def f(:\n").expect_err("no base, broken head");
     assert!(err.contains("could not be parsed"), "{err}");
 }
+
+// Backlog 1.2, gap 4: positional defaults no longer hide a function. Every
+// parameter, defaulted or not, must carry a supported hint, and every
+// argument is generated (the omitted-argument path is then the same default
+// on both sides). A changed default is a behaviour change the generated
+// inputs cannot see, so it is reported, not checked.
+#[test]
+fn hinted_function_with_a_default_is_checkable_on_its_full_signature() {
+    let base = "def f(n: int, flag: bool = False):\n    return n\n";
+    let head = "def f(n: int, flag: bool = False):\n    return n + 0\n";
+    let v = detect_changed_functions(base, head).unwrap();
+    match &find(&v, "f").expect("f detected").status {
+        DetectedStatus::Checkable { args } => assert_eq!(args, &vec![ArgType::Int, ArgType::Bool]),
+        s => panic!("{s:?}"),
+    }
+}
+
+#[test]
+fn changed_default_value_is_reported_not_checked() {
+    let base = "def f(n: int, k: int = 3):\n    return n * k\n";
+    let head = "def f(n: int, k: int = 4):\n    return n * k\n";
+    let v = detect_changed_functions(base, head).unwrap();
+    match &find(&v, "f").expect("f detected").status {
+        DetectedStatus::NotChecked { reason } => assert!(reason.contains("default"), "{reason}"),
+        s => panic!("{s:?}"),
+    }
+}
+
+#[test]
+fn keyword_only_and_star_args_are_still_not_checked() {
+    let base = "def f(n: int, *, k: int = 3):\n    return n * k\n\ndef g(*xs: int):\n    return 0\n";
+    let head = "def f(n: int, *, k: int = 3):\n    return n + n * k\n\ndef g(*xs: int):\n    return 1\n";
+    let v = detect_changed_functions(base, head).unwrap();
+    for name in ["f", "g"] {
+        assert!(matches!(find(&v, name).unwrap().status, DetectedStatus::NotChecked { .. }), "{name}");
+    }
+}
+
+#[test]
+fn bool_and_list_str_hints_are_detected() {
+    let base = "def f(xs: list[str], b: bool) -> int:\n    return len(xs)\n";
+    let head = "def f(xs: list[str], b: bool) -> int:\n    return len(xs) + 0\n";
+    let v = detect_changed_functions(base, head).unwrap();
+    match &find(&v, "f").unwrap().status {
+        DetectedStatus::Checkable { args } => assert_eq!(args, &vec![ArgType::ListStr, ArgType::Bool]),
+        s => panic!("{s:?}"),
+    }
+}
