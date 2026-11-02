@@ -29,8 +29,11 @@ listed (`scripts/run-divergences.sh`).
 
 ## Quickstart: the PR gate
 
-List the functions whose behaviour must be preserved across a PR in a manifest
-at the repository root. The format of each line is
+The manifest is optional. Without one, every function changed in the PR is
+detected from the diff and checked if each parameter has a supported type hint;
+the rest are listed as not checked, with the parameters that need a hint. To pin
+an exact list instead, write the functions whose behaviour must be preserved
+across a PR in a manifest at the repository root. The format of each line is
 `<file> : <function> : <arg types>`, where arg types are `int`, `str`,
 `list[int]`, `list[str]`, `float`, `dict` or `bool`, comma separated:
 
@@ -98,7 +101,7 @@ corners (the 32-bit wrap points, the float64 exactness cliff at 2^53 and the
 64-bit limits, each with its negative) are tried after every other input, and
 a version that cannot finish one of them inside the step budget has that input
 recorded in the receipt as not judged rather than failing the review. Arguments are varied one at a time, which
-means a divergence that needs two specific arguments at once may be missed. It does not check intent, architecture, security. It
+means a divergence that needs two specific arguments at once may be missed. Methods, async and nested functions are listed as not checked, never judged. A function that did not change is not re-checked when something it calls did. It does not check intent, architecture, security. It
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,

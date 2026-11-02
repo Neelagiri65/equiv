@@ -184,3 +184,20 @@ fn bool_and_list_str_hints_are_detected() {
         s => panic!("{s:?}"),
     }
 }
+
+// The reason for an unhinted function names the parameters that need a hint,
+// so the gap reads as an instruction rather than a dead end (DECISIONS #20:
+// types are never inferred).
+#[test]
+fn missing_hint_reason_names_the_parameters() {
+    let base = "def f(n, s: str, xs):\n    return n\n";
+    let head = "def f(n, s: str, xs):\n    return n + 0\n";
+    let v = detect_changed_functions(base, head).unwrap();
+    match &find(&v, "f").unwrap().status {
+        DetectedStatus::NotChecked { reason } => {
+            assert!(reason.contains("`n`") && reason.contains("`xs`"), "{reason}");
+            assert!(!reason.contains("`s`"), "s is hinted: {reason}");
+        }
+        s => panic!("{s:?}"),
+    }
+}

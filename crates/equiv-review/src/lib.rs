@@ -1431,15 +1431,17 @@ for name in sorted(set(b) | set(h)):
         print('NOTCHECKED\t' + name + '\tsignature is not a simple positional match'); continue
     if [ast.dump(d) for d in bnode.args.defaults] != [ast.dump(d) for d in hnode.args.defaults]:
         print('NOTCHECKED\t' + name + '\tdefault value changed; generated inputs pass every argument, so a default is never exercised'); continue
-    sig, ok = [], True
+    sig, missing = [], []
     for a in hnode.args.args:
         t = ann(a.annotation)
-        if t is None: ok = False; break
-        sig.append(t)
-    if ok:
+        if t is None: missing.append(a.arg)
+        else: sig.append(t)
+    if not missing:
         print('CHECKABLE\t' + name + '\t' + ','.join(sig))
     else:
-        print('NOTCHECKED\t' + name + '\tno supported type hint on every parameter')
+        # Types are never guessed (DECISIONS #20): name what needs a hint.
+        print('NOTCHECKED\t' + name + '\tno supported type hint on ' + ', '.join('`' + m + '`' for m in missing)
+              + ' (int, str, float, bool, dict, list[int] or list[str]); add one to check it')
 "#;
 
 /// Detect which module-level functions changed between `base_src` and

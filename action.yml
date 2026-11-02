@@ -6,13 +6,16 @@ branding:
 inputs:
   auto:
     description: >
-      Auto-detect changed functions from the PR diff instead of a manifest.
-      Recommended: nothing changed can be silently left unchecked. Functions
-      without supported type hints are reported as "changed, not checked".
+      How to choose the functions to review. Unset (the default): use the
+      manifest if it exists, otherwise detect every changed function from the
+      PR diff, so no configuration is needed. "true": always detect from the
+      diff and ignore any manifest. "false": use the manifest only (skip when
+      there is none). Functions without supported type hints are reported as
+      "changed, not checked", with the parameters that need a hint.
     required: false
-    default: "false"
+    default: ""
   manifest:
-    description: "Path to the equiv review manifest (lines: `file : fn : sig`). Ignored when auto is true."
+    description: "Path to the equiv review manifest (lines: `file : fn : sig`). Optional; see `auto`."
     required: false
     default: ".equiv-review"
   base:
