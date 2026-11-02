@@ -146,3 +146,42 @@ fn auto_diffs_against_the_merge_base_not_the_base_tip() {
     assert!(stdout.contains("| `f` | equivalent |"), "{stdout}");
     assert!(!stdout.contains("`g`"), "g changed on main, not in this PR:\n{stdout}");
 }
+
+/// Concurrent reviews on one machine must not share the temp file that holds
+/// a function's base version. It used to be named after the function and
+/// file only, so two runs reviewing `f` in `m.py` overwrote each other's base
+/// and one could judge against the other's code (main went red on an ARM
+/// runner this way, 2026-11-02). Each run here has a different base; every
+/// verdict must match its own repo.
+#[test]
+fn concurrent_reviews_do_not_share_a_base_file() {
+    let handles: Vec<_> = (0..8)
+        .map(|i| {
+            std::thread::spawn(move || {
+                let d = dir(&format!("concurrent{i}"));
+                let base = format!("def f(x: int):\n    return x * 2 + {i}\n");
+                std::fs::write(d.join("m.py"), &base).unwrap();
+                git(&d, &["init", "-q"]);
+                git(&d, &["add", "."]);
+                git(&d, &["commit", "-q", "-m", "base"]);
+                // Even i: an exact rewrite (exit 0). Odd i: diverges (exit 1).
+                let head = if i % 2 == 0 {
+                    format!("def f(x: int):\n    return x + x + {i}\n")
+                } else {
+                    format!("def f(x: int):\n    return x + x + {}\n", i + 1)
+                };
+                std::fs::write(d.join("m.py"), head).unwrap();
+                let mut codes = Vec::new();
+                for _ in 0..3 {
+                    codes.push(run_auto(&d).0);
+                }
+                (i, codes)
+            })
+        })
+        .collect();
+    for h in handles {
+        let (i, codes) = h.join().unwrap();
+        let want = if i % 2 == 0 { Some(0) } else { Some(1) };
+        assert!(codes.iter().all(|c| *c == want), "run {i}: expected {want:?} every time, got {codes:?}");
+    }
+}
