@@ -13,7 +13,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # need base history to diff against
-      - uses: Neelagiri65/equiv@v0.10.0
+      # This repo runs its own action from the checkout, so a change to
+      # action.yml or the entrypoint is exercised by the PR that makes it.
+      # Users copy the pinned form from the README (`Neelagiri65/equiv@vX.Y.Z`).
+      - uses: ./
         with:
           manifest: .equiv-review
           fail-on-divergence: "true"
