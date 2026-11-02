@@ -2,13 +2,13 @@
   "equiv_version": "0.11.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 95,
-    "diverges": 63,
-    "equivalent": 32,
+    "cases": 99,
+    "diverges": 64,
+    "equivalent": 35,
     "caught": 55,
     "missed": 4,
     "false_alarms": 0,
-    "could_not_check": 4
+    "could_not_check": 8
   },
   "cases": {
     "001-int-float-identity-scale": {
@@ -675,6 +675,34 @@
       "outcome": "missed",
       "n": 200,
       "detail": "EQUIVALENT: agreed on all 200 generated inputs (seed 1)"
+    },
+    "096-holdout-loop-sum-closed-form": {
+      "expected": "equivalent",
+      "exit": 2,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "ERROR: the reference exceeded the step budget of 1000000 Python line/jump events at input (991073); a non-terminating or very long run is not judged"
+    },
+    "097-holdout-sum-squares-float-closed-form": {
+      "expected": "diverges",
+      "exit": 2,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "ERROR: the reference exceeded the step budget of 1000000 Python line/jump events at input (991073); a non-terminating or very long run is not judged"
+    },
+    "098-holdout-while-loop-count-closed-form": {
+      "expected": "equivalent",
+      "exit": 2,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "ERROR: the reference exceeded the step budget of 1000000 Python line/jump events at input (991073); a non-terminating or very long run is not judged"
+    },
+    "099-holdout-four-line-loop-body-scope-edge": {
+      "expected": "equivalent",
+      "exit": 2,
+      "outcome": "could-not-check",
+      "n": null,
+      "detail": "ERROR: the candidate and reference exceeded the step budget of 1000000 Python line/jump events at input (1000002); a non-terminating or very long run is not judged"
     }
   }
 }

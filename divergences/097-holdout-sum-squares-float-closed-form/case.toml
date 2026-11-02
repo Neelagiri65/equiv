@@ -1,0 +1,6 @@
+function = "sum_squares"
+args = "int"
+expected = "diverges"
+class = "holdout"
+pattern = "sum of squares loop rewritten with true division: exact while n(n+1)(2n+1)/6 stays under 2**53, first wrong at n = 300,081, where the reference loop is long"
+witness = '''(1000000,)'''
