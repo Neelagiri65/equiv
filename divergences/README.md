@@ -87,13 +87,13 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.10.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.11.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 92 (61 diverges, 31 equivalent) |
-| Catch rate | 53 / 61 = 86.9% |
-| False-alarm rate | 0 / 31 = 0% |
+| Cases | 95 (63 diverges, 32 equivalent) |
+| Catch rate | 55 / 63 = 87.3% |
+| False-alarm rate | 0 / 32 = 0% |
 | Could not check | 4 |
 
 History: equiv 0.2.1 caught 25 / 40 of the original 60 cases. The 0.3.0
@@ -156,6 +156,14 @@ others at their default (`False`), so it is missed. That is a finding about
 enumeration, recorded in the misses table, not a reason to add a corner family
 in the same change.
 
+Cases 093-095 (also `holdout`) were written *before* the 0.11.0 bool fan-out
+(every corner block also runs once per bool argument with that flag set to
+`True`) and recorded against 0.10.0 first: 0.10.0 catches 0 / 2 of their
+diverging pairs, 0.11.0 catches 1 / 2, with 0 / 1 false alarms. 092 is caught
+by the same change, at `(2^53 + 1, True)`. 095 (a large-int divergence that
+needs two flags set at once) was written off the planned list on purpose: the
+fan-out sets one flag at a time, so it is still missed.
+
 By class (diverges caught / total, equivalent passed / total):
 
 | class | diverges | equivalent |
@@ -172,7 +180,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 15/21 | 11/11 |
+| holdout | 17/23 | 12/12 |
 
 ### Misses and why
 
@@ -184,7 +192,7 @@ reported as equivalent. The reason is the generator's reach, read from
 |------|-------------------------------------|
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
 | 074-holdout-int-strip-separators | needs digits wrapped in U+001C-U+001F, which `str.strip()` removes and `int()` rejects; no string corner contains those characters |
-| 092-holdout-bool-gated-large-int | needs 2^53 + 1 together with the flag `True`; the large-magnitude corners run one argument at a time with every other argument at its default, and a bool's default is `False` |
+| 095-holdout-two-bools-gated-large-int | needs 2^53 + 1 with both flags `True`; the bool fan-out sets one flag at a time, keeping the cost linear in the number of bools |
 | 076-holdout-is-int-double-sign | needs a repeated sign such as `--1`; the sign corners carry a single sign, and the source only spells `+-`, on which both sides agree |
 
 Could not check: `011-float-round-half-even-floor` is refused because
