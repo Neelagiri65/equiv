@@ -34,10 +34,9 @@ fn bool_flag_divergence_is_caught() {
     let c = tmp("fl_c", "def pick(xs, first):\n    return xs[-1] if first else xs[0]\n");
     let r = tmp("fl_r", "def pick(xs, first):\n    return xs[0] if first else xs[-1]\n");
     let v = review(&c, &r, &spec("pick", vec![ArgType::ListInt, ArgType::Bool])).expect("no safety stop").verdict;
-    match v {
-        ReviewVerdict::Counterexample { input, .. } => assert!(input.contains("True"), "{input}"),
-        v => panic!("expected a counterexample, got {v:?}"),
-    }
+    // Any input where the two branches pick different elements; the list
+    // corner [1, 2, 3] with the flag at its default already does.
+    assert!(matches!(v, ReviewVerdict::Counterexample { .. }), "{v:?}");
 }
 
 #[test]
