@@ -69,7 +69,7 @@ fn usage() -> &'static str {
 USAGE:
   equiv review <cand.py> <ref.py> <fn> <sig> [n] [seed] [--sign]
         Check a function against a reference on generated inputs. <sig> is the
-        argument types (int|str|list[int]|float|dict), comma separated. Emits a
+        argument types (int|str|list[int]|list[str]|float|dict|bool), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
         $EQUIV_SIGNING_KEY (64 hex chars).
   equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]

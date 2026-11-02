@@ -87,13 +87,13 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.9.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.10.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 88 (58 diverges, 30 equivalent) |
-| Catch rate | 51 / 58 = 87.9% |
-| False-alarm rate | 0 / 30 = 0% |
+| Cases | 92 (61 diverges, 31 equivalent) |
+| Catch rate | 53 / 61 = 86.9% |
+| False-alarm rate | 0 / 31 = 0% |
 | Could not check | 4 |
 
 History: equiv 0.2.1 caught 25 / 40 of the original 60 cases. The 0.3.0
@@ -145,6 +145,17 @@ exact pair 087 passes on both (0 / 1 false alarms). 085 is refused by the same
 change. A refusal is not a miss and not a catch: the receipt says the function
 was not judged, and why.
 
+Cases 089-092 (also `holdout`) were written *before* the 0.10.0 `bool` and
+`list[str]` signatures and recorded against 0.9.0 first, where the CLI rejects
+both signatures (exit 3, could-not-check on all four). 0.10.0 catches 2 / 3 of
+their diverging pairs, with 0 / 1 false alarms. 092 (`n * 2` vs `int(n * 2.0)`
+behind a bool flag, witness `(2^53 + 1, True)`) was written off the planned
+list on purpose: its divergence needs the large-int corner AND the flag at its
+non-default value, and corners are enumerated one argument at a time with the
+others at their default (`False`), so it is missed. That is a finding about
+enumeration, recorded in the misses table, not a reason to add a corner family
+in the same change.
+
 By class (diverges caught / total, equivalent passed / total):
 
 | class | diverges | equivalent |
@@ -161,7 +172,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 13/18 | 10/10 |
+| holdout | 15/21 | 11/11 |
 
 ### Misses and why
 
@@ -173,6 +184,7 @@ reported as equivalent. The reason is the generator's reach, read from
 |------|-------------------------------------|
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
 | 074-holdout-int-strip-separators | needs digits wrapped in U+001C-U+001F, which `str.strip()` removes and `int()` rejects; no string corner contains those characters |
+| 092-holdout-bool-gated-large-int | needs 2^53 + 1 together with the flag `True`; the large-magnitude corners run one argument at a time with every other argument at its default, and a bool's default is `False` |
 | 076-holdout-is-int-double-sign | needs a repeated sign such as `--1`; the sign corners carry a single sign, and the source only spells `+-`, on which both sides agree |
 
 Could not check: `011-float-round-half-even-floor` is refused because

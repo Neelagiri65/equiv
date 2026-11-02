@@ -170,6 +170,11 @@ def rand_val(rng, ty):
     if ty in ("dict", "dict[str,int]"):
         keys = list("abcdefgh") + ["port", "x"]
         return {rng.choice(keys): rng.randint(-30, 30) for _ in range(rng.randint(0, 6))}
+    if ty == "bool":
+        return rng.random() < 0.5
+    if ty == "list[str]":
+        n = rng.choice([0, 1, 2, 3, 4, 6, 10])
+        return ["".join(rng.choice(STR_POOL) for _ in range(rng.choice([0, 1, 2, 3, 5]))) for _ in range(n)]
     raise ValueError(f"unknown arg type {ty}")
 
 
@@ -186,6 +191,9 @@ def exhaustive_inputs(types):
     elif types == ["float"]:
         for b in FLOAT_BITS:
             yield (bits_to_float(b),)
+    elif types == ["bool"]:
+        yield (False,)
+        yield (True,)
 
 
 def integrity(case, n):

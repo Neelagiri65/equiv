@@ -31,8 +31,8 @@ listed (`scripts/run-divergences.sh`).
 
 List the functions whose behaviour must be preserved across a PR in a manifest
 at the repository root. The format of each line is
-`<file> : <function> : <arg types>`, where arg types are `int`, `str`, or
-`list[int]`, comma separated:
+`<file> : <function> : <arg types>`, where arg types are `int`, `str`,
+`list[int]`, `list[str]`, `float`, `dict` or `bool`, comma separated:
 
 ```
 src/math.py : total : int
@@ -102,7 +102,7 @@ means a divergence that needs two specific arguments at once may be missed. It d
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,
-`str`, `list[int]`, `float`, `dict`. Dict and list results are compared
+`str`, `list[int]`, `list[str]`, `float`, `dict`, `bool`. Dict and list results are compared
 structurally: a dict is a map (key order ignored); a value that is not
 JSON-structural (a set, a custom object, non-string keys) is refused. Float
 reviews are admitted only inside the IEEE-754

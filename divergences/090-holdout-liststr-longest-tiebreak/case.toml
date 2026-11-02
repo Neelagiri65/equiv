@@ -1,0 +1,6 @@
+function = "longest"
+args = "list[str]"
+expected = "diverges"
+class = "holdout"
+pattern = "max(xs, key=len) rewritten as sorted(xs, key=len)[-1]: max keeps the first of equal-length strings, a stable sort puts the last one at the end; diverges on a tie, and on the empty list by exception type (ValueError vs IndexError)"
+witness = '''(["ab", "cd"],)'''

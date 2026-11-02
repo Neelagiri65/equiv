@@ -1,0 +1,6 @@
+function = "scale"
+args = "int,bool"
+expected = "diverges"
+class = "holdout"
+pattern = "n * 2 rewritten as int(n * 2.0) behind a bool flag: diverges only above 2**53 AND with the flag set; written off the planned list on purpose, to test whether one-at-a-time enumeration (large corners with the other argument at its default) reaches a divergence that needs the flag at its non-default value"
+witness = '''(9007199254740993, True)'''

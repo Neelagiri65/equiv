@@ -1,0 +1,6 @@
+function = "pick"
+args = "list[int],bool"
+expected = "diverges"
+class = "holdout"
+pattern = "a bool flag selecting first or last element, rewritten with the two branches swapped; identical on empty and singleton lists and on every input where the flag's two branches agree"
+witness = '''([1, 2], True)'''

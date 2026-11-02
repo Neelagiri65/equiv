@@ -31,6 +31,11 @@ pub enum ArgType {
     Float,
     /// A JSON-structural map with string keys and admissible scalar values.
     Dict,
+    /// Two values; both are fixed corners on every review.
+    Bool,
+    /// A list of strings: the string corners lifted into lists, plus the
+    /// orderings that sorts and tie-breaks care about.
+    ListStr,
 }
 
 impl ArgType {
@@ -41,6 +46,8 @@ impl ArgType {
             "list[int]" | "list" => ArgType::ListInt,
             "float" => ArgType::Float,
             "dict" | "dict[str,int]" => ArgType::Dict,
+            "bool" => ArgType::Bool,
+            "list[str]" | "List[str]" => ArgType::ListStr,
             _ => return None,
         })
     }
@@ -110,6 +117,8 @@ impl ReviewSpec {
                 ArgType::ListInt => 3,
                 ArgType::Float => 4,
                 ArgType::Dict => 5,
+                ArgType::Bool => 6,
+                ArgType::ListStr => 7,
             });
         }
         v.extend_from_slice(&self.n.to_le_bytes());
@@ -147,6 +156,8 @@ pub enum PyVal {
     Float(u64),
     /// A string-keyed map of ints (the first JSON-structural object type).
     Dict(Vec<(String, i64)>),
+    Bool(bool),
+    ListStr(Vec<String>),
 }
 
 impl PyVal {
@@ -163,6 +174,11 @@ impl PyVal {
             }
             PyVal::Float(bits) => {
                 format!("struct.unpack('>d', bytes.fromhex('{bits:016x}'))[0]")
+            }
+            PyVal::Bool(b) => if *b { "True".to_string() } else { "False".to_string() },
+            PyVal::ListStr(xs) => {
+                let inner: Vec<String> = xs.iter().map(|x| py_str_literal(x)).collect();
+                format!("[{}]", inner.join(", "))
             }
             PyVal::Dict(pairs) => {
                 let inner: Vec<String> =
@@ -281,6 +297,19 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
             }
             PyVal::Dict(pairs)
         }
+        ArgType::Bool => PyVal::Bool(rng.next() % 2 == 1),
+        // Up to six strings, each drawn by the Str arm (a-z, len <= 8).
+        ArgType::ListStr => {
+            let len = (rng.next() % 7) as usize;
+            PyVal::ListStr(
+                (0..len)
+                    .map(|_| match gen_arg(rng, ArgType::Str) {
+                        PyVal::Str(s) => s,
+                        _ => unreachable!(),
+                    })
+                    .collect(),
+            )
+        }
     }
 }
 
@@ -331,6 +360,8 @@ fn default_val(ty: ArgType) -> PyVal {
         ArgType::ListInt => PyVal::ListInt(Vec::new()),
         ArgType::Float => PyVal::Float(0x3FF0_0000_0000_0000), // 1.0
         ArgType::Dict => PyVal::Dict(Vec::new()),
+        ArgType::Bool => PyVal::Bool(false),
+        ArgType::ListStr => PyVal::ListStr(Vec::new()),
     }
 }
 
@@ -407,6 +438,28 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
             PyVal::Dict(vec![("a".into(), 0)]),
             PyVal::Dict(vec![("a".into(), 1), ("b".into(), 2)]),
         ],
+        // Both values, always.
+        ArgType::Bool => vec![PyVal::Bool(false), PyVal::Bool(true)],
+        // Structural corners (empty, one empty string, a tie, an ordered pair
+        // and its reverse, a case pair, longer than the random cap) and every
+        // string corner as a singleton list, so lower()/casefold()/strip()
+        // style divergences are reachable inside a list too.
+        ArgType::ListStr => {
+            let s = |xs: &[&str]| PyVal::ListStr(xs.iter().map(|x| x.to_string()).collect());
+            let mut v = vec![
+                s(&[]),
+                s(&[""]),
+                s(&["a"]),
+                s(&["a", "a"]),
+                s(&["ab", "cd"]),
+                s(&["a", "b"]),
+                s(&["b", "a"]),
+                s(&["A", "a"]),
+                s(&["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]),
+            ];
+            v.extend(STR_CORNERS.iter().map(|c| s(&[c])));
+            v
+        }
     }
 }
 
@@ -612,6 +665,9 @@ fn literal_inputs(src: &str, ty: ArgType) -> Vec<PyVal> {
             .flat_map(|k| [PyVal::Dict(vec![(k.clone(), 0)]), PyVal::Dict(vec![(k, 1)])])
             .collect(),
         ArgType::ListInt => Vec::new(),
+        ArgType::Bool => Vec::new(),
+        // Each string literal as a singleton list.
+        ArgType::ListStr => scan_str_literals(src).into_iter().map(|k| PyVal::ListStr(vec![k])).collect(),
     }
 }
 
@@ -1314,17 +1370,22 @@ const DETECTOR_PY: &str = r#"import ast, sys
 def ann(a):
     if a is None: return None
     if isinstance(a, ast.Name):
-        return {'int':'int','str':'str','float':'float','dict':'dict','Dict':'dict'}.get(a.id)
+        return {'int':'int','str':'str','float':'float','dict':'dict','Dict':'dict','bool':'bool'}.get(a.id)
     if isinstance(a, ast.Subscript):
         base = a.value.id if isinstance(a.value, ast.Name) else None
         if base in ('list','List') and isinstance(a.slice, ast.Name) and a.slice.id == 'int':
             return 'list[int]'
+        if base in ('list','List') and isinstance(a.slice, ast.Name) and a.slice.id == 'str':
+            return 'list[str]'
         if base in ('dict','Dict'):
             return 'dict'
     return None
 def simple(fn):
+    # Positional defaults are allowed: every parameter still needs a supported
+    # hint and every argument is generated, so the omitted-argument path is the
+    # same default on both sides (a changed default is reported separately).
     a = fn.args
-    return not (a.vararg or a.kwarg or a.kwonlyargs or a.posonlyargs or a.defaults or a.kw_defaults)
+    return not (a.vararg or a.kwarg or a.kwonlyargs or a.posonlyargs or a.kw_defaults)
 def collect(body, prefix, in_class, in_func, out):
     # Every function at every nesting level, keyed by qualified name. Nothing
     # (async, methods, nested) is invisible to detection.
@@ -1368,6 +1429,8 @@ for name in sorted(set(b) | set(h)):
         print('NOTCHECKED\t' + name + '\tnested function, not checked'); continue
     if len(bnode.args.args) != len(hnode.args.args) or not simple(hnode) or not simple(bnode):
         print('NOTCHECKED\t' + name + '\tsignature is not a simple positional match'); continue
+    if [ast.dump(d) for d in bnode.args.defaults] != [ast.dump(d) for d in hnode.args.defaults]:
+        print('NOTCHECKED\t' + name + '\tdefault value changed; generated inputs pass every argument, so a default is never exercised'); continue
     sig, ok = [], True
     for a in hnode.args.args:
         t = ann(a.annotation)
@@ -1875,6 +1938,8 @@ mod generator_tests {
                 | (PyVal::ListInt(_), ArgType::ListInt)
                 | (PyVal::Float(_), ArgType::Float)
                 | (PyVal::Dict(_), ArgType::Dict)
+                | (PyVal::Bool(_), ArgType::Bool)
+                | (PyVal::ListStr(_), ArgType::ListStr)
         )
     }
 
@@ -1889,6 +1954,7 @@ mod generator_tests {
             vec![ArgType::Str, ArgType::Int],
             vec![ArgType::Int, ArgType::Str, ArgType::Float, ArgType::Dict, ArgType::ListInt],
             vec![ArgType::Str, ArgType::Str, ArgType::Float, ArgType::Float],
+            vec![ArgType::Bool, ArgType::ListStr, ArgType::Int],
         ] {
             let cases = gen_cases(&spec(args.clone(), 1), &[src, src]);
             assert!(cases.len() > args.len() * 5, "too few cases for {args:?}: {}", cases.len());
