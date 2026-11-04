@@ -10,8 +10,8 @@ case "$(uname -m)" in
   *)             T=x86_64-unknown-linux-gnu;  P=manylinux2014_x86_64 ;;
 esac
 W="$PWD/.work"; mkdir -p "$W"   # reused across runs; docker must be able to mount it
-gh release download "$EQUIV_VERSION" -R Neelagiri65/equiv -p "equiv-cli-$T.tar.xz" -D "$W"
-( cd "$W" && gh release download "$EQUIV_VERSION" -R Neelagiri65/equiv -p "equiv-cli-$T.tar.xz.sha256" && shasum -a 256 -c "equiv-cli-$T.tar.xz.sha256" 2>/dev/null )
+gh release download "$EQUIV_VERSION" -R Neelagiri65/equiv -p "equiv-cli-$T.tar.xz" -D "$W" --clobber
+( cd "$W" && gh release download "$EQUIV_VERSION" -R Neelagiri65/equiv -p "equiv-cli-$T.tar.xz.sha256" --clobber && shasum -a 256 -c "equiv-cli-$T.tar.xz.sha256" 2>/dev/null )
 tar xf "$W/equiv-cli-$T.tar.xz" -C "$W"
 for v in 1.2.1 1.3.0; do
   python3 -m pip download "jellyfish==$v" --only-binary :all: --no-deps \
