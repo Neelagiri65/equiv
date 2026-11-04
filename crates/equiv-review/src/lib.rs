@@ -802,7 +802,22 @@ fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
 // (== cases.len() when the signature has no int argument). Inside that
 // index a budget exhaustion is an Error; from it on, a per-input "not
 // judged" (see run_python).
+#[cfg(test)]
 fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str], harvested: &[Slots]) -> (Vec<Vec<PyVal>>, usize, InputCounts) {
+    let (cases, large_from, counts, _) = gen_cases_soft(spec, sources, harvested);
+    (cases, large_from, counts)
+}
+
+// As gen_cases_tail, plus the indices of harvested inputs placed before the
+// tail. A project's own test value may be expensive (a brute-force search
+// over a long input): running out of budget on one is "not judged at this
+// input", like a large corner, and never ends the review.
+fn gen_cases_soft(
+    spec: &ReviewSpec,
+    sources: &[&str],
+    harvested: &[Slots],
+) -> (Vec<Vec<PyVal>>, usize, InputCounts, Vec<usize>) {
+    let mut soft: Vec<usize> = Vec::new();
     let mut cases: Vec<Vec<PyVal>> = Vec::new();
     let mut counts = InputCounts::default();
     let mut seen: std::collections::BTreeSet<Vec<String>> = std::collections::BTreeSet::new();
@@ -825,6 +840,7 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str], harvested: &[Slots]) -> (
             if h.iter().all(Option::is_some) && h.iter().flatten().all(harvest::inside_envelope) {
                 let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
                 if seen.insert(key(&c)) {
+                    soft.push(cases.len());
                     cases.push(c);
                     counts.harvested += 1;
                 }
@@ -836,6 +852,7 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str], harvested: &[Slots]) -> (
                     let mut c = base.clone();
                     c[i] = v.clone();
                     if seen.insert(key(&c)) {
+                        soft.push(cases.len());
                         cases.push(c);
                         counts.harvested += 1;
                     }
@@ -1026,7 +1043,7 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str], harvested: &[Slots]) -> (
             }
         }
     }
-    (cases, large_from, counts)
+    (cases, large_from, counts, soft)
 }
 
 // The default base (every argument at its default) followed by one base per
@@ -1142,7 +1159,9 @@ pub fn not_judged_note(k: u32) -> String {
     if k == 0 {
         String::new()
     } else {
-        format!("; {k} large-magnitude input{} not judged (step budget)", if k == 1 { "" } else { "s" })
+        // Large-magnitude corners, or the project's own (harvested) values,
+        // on which a side ran out of the step budget.
+        format!("; {k} large or costly input{} not judged (step budget)", if k == 1 { "" } else { "s" })
     }
 }
 
@@ -1245,7 +1264,7 @@ impl ReviewReceipt {
 
 // ---------- the oracle ----------
 
-fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize) -> String {
+fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize, soft: &[usize]) -> String {
     let cases_py: Vec<String> = cases
         .iter()
         .map(|c| {
@@ -1380,6 +1399,8 @@ _BUDGET = {budget}
 # the envelope). Exhausting the budget there is 'not judged at this input',
 # printed as SKIP and counted; before it, exhaustion ends the review.
 _LARGE = {large_from}
+# Harvested inputs before the tail: also 'not judged' on budget exhaustion.
+_SOFT = {{{soft}}}
 _left = [0]
 class _Budget(BaseException): pass
 def _tick(code, *_a):
@@ -1452,7 +1473,7 @@ for i, args in enumerate(cases):
     _cv, _ce, _oc = _metered(cf, *args)
     _rv, _re, _or = _metered(rf, *args)
     if _oc or _or:
-        if i >= _LARGE:
+        if i >= _LARGE or i in _SOFT:
             print(f"{{i}}\tSKIP"); continue
         _side = 'candidate and reference' if (_oc and _or) else ('candidate' if _oc else 'reference')
         print(f"__BUDGET__\t{{i}}\t{{_side}}"); _sys.exit(0)
@@ -1482,6 +1503,7 @@ for i, args in enumerate(cases):
         cases = cases_py.join(", "),
         budget = spec.budget,
         large_from = large_from,
+        soft = if soft.is_empty() { "-1".to_string() } else { soft.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ") },
     )
 }
 
@@ -1524,9 +1546,9 @@ pub fn review_with_inputs(
     let ref_text = String::from_utf8_lossy(&ref_src);
     let harvested: Vec<Slots> =
         harvested.iter().filter(|h| h.len() == spec.args.len()).cloned().collect();
-    let (cases, large_from, inputs) = gen_cases_tail(spec, &[&cand_text, &ref_text], &harvested);
+    let (cases, large_from, inputs, soft) = gen_cases_soft(spec, &[&cand_text, &ref_text], &harvested);
 
-    let ev = match run_python(candidate_path, reference_path, spec, &cases, large_from, safety_secs) {
+    let ev = match run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs) {
         Ok(v) => v,
         Err(PyFail::Msg(reason)) => Evaluated { verdict: ReviewVerdict::Error { reason }, python: String::new(), exceptions: 0, disagreements: Vec::new() },
         Err(PyFail::Stopped) => {
@@ -2121,9 +2143,10 @@ fn run_python(
     spec: &ReviewSpec,
     cases: &[Vec<PyVal>],
     large_from: usize,
+    soft: &[usize],
     safety_secs: u64,
 ) -> Result<Evaluated, PyFail> {
-    let src = driver_source(cand, refr, spec, cases, large_from);
+    let src = driver_source(cand, refr, spec, cases, large_from, soft);
     // Content-addressed driver path: unique per distinct review (no clobber
     // between concurrent runs), stable for the same review.
     let tag = hex(&sha256(src.as_bytes()))[..16].to_string();
