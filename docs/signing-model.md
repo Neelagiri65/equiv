@@ -68,6 +68,19 @@ checkable.
 2. The secret never hits a log. It is read by the binary from the environment,
    never passed on a command line, never echoed by the entrypoint. Actions also
    masks registered secrets.
+2a. Code under review cannot read the key. equiv runs the candidate and
+   reference functions in a Python process whose environment is an allowlist
+   (`PATH`, `HOME`, temp dirs, locale, `PYTHON*`, virtualenv/conda and the
+   Windows system variables; see `EVALUATOR_ENV_ALLOW` in
+   `crates/equiv-review/src/lib.rs`). `EQUIV_SIGNING_KEY`, `GH_TOKEN`, the
+   Actions OIDC request token and anything else are dropped. Before v0.16.0
+   this did not hold: the evaluator inherited the full environment, so a
+   candidate could read the key and even return it, which would print it in
+   the counterexample line of the PR comment. This is not a sandbox: evaluated
+   code still has the runner's filesystem and network. It protects against
+   code that never meant to touch the key (AI-written functions, compromised
+   imports). Someone with write access to the repo could already change the
+   workflow itself; fork PRs get no secrets at all.
 3. Replay is neutralised by content addressing. The receipt binds
    `candidate_sha256 + reference_sha256 + spec`, the actual source hashes. A
    replayed signature only validates on identical sources, where the verdict

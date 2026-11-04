@@ -81,6 +81,11 @@ METRICS:
   (no code, names, paths or values) to ./equiv-metrics.jsonl. Nothing is sent
   anywhere. $DO_NOT_TRACK=1 overrides.
 
+EVALUATOR ENVIRONMENT:
+  The Python process that runs the functions gets only PATH, HOME, temp dirs,
+  locale, PYTHON*, virtualenv/conda and Windows system variables. Credentials
+  such as $EQUIV_SIGNING_KEY or $GH_TOKEN are not passed. Not a sandbox.
+
 SAFETY LIMIT:
   $EQUIV_SAFETY_SECONDS (default 120) caps the wall-clock time of one
   function's check, for long runs inside C code the step budget cannot count.

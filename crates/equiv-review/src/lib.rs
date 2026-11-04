@@ -1539,6 +1539,34 @@ for name in sorted(set(b) | set(h)):
               + ' (int, str, float, bool, dict, list[int] or list[str]); add one to check it')
 "#;
 
+/// Environment variables the Python evaluator may inherit. Everything else is
+/// dropped, so code under review cannot read credentials equiv was handed
+/// (`EQUIV_SIGNING_KEY`, `GH_TOKEN`, the Actions OIDC request token, cloud
+/// keys). An allowlist, because a list of secret names is never complete.
+/// Exact names, then prefixes (`PYTHON*`, `LC_*`). This removes credentials
+/// from the evaluator's environment; it is not a sandbox: the evaluated code
+/// still has the filesystem and network of the machine it runs on.
+pub const EVALUATOR_ENV_ALLOW: &[&str] = &[
+    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TEMP", "TMP", "LANG", "LANGUAGE", "TZ",
+    "VIRTUAL_ENV", "CONDA_PREFIX", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH",
+    // Windows: Python does not start without some of these.
+    "SYSTEMROOT", "SystemRoot", "WINDIR", "windir", "PATHEXT", "COMSPEC", "ComSpec", "USERPROFILE",
+    "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMDRIVE", "HOMEDRIVE", "HOMEPATH",
+];
+pub const EVALUATOR_ENV_ALLOW_PREFIX: &[&str] = &["PYTHON", "LC_"];
+
+fn evaluator_command() -> Command {
+    let mut cmd = Command::new("python3");
+    cmd.env_clear();
+    for (k, v) in std::env::vars_os() {
+        let Some(name) = k.to_str() else { continue };
+        if EVALUATOR_ENV_ALLOW.contains(&name) || EVALUATOR_ENV_ALLOW_PREFIX.iter().any(|p| name.starts_with(p)) {
+            cmd.env(&k, &v);
+        }
+    }
+    cmd
+}
+
 /// Detect which module-level functions changed between `base_src` and
 /// `head_src` and classify each (close the manifest bypass, issue #1). The
 /// invariant: a changed function is never silently dropped. Unchanged functions
@@ -1552,7 +1580,7 @@ pub fn detect_changed_functions(base_src: &str, head_src: &str) -> Result<Vec<De
     std::fs::write(&bpath, base_src).map_err(|e| e.to_string())?;
     std::fs::write(&hpath, head_src).map_err(|e| e.to_string())?;
     std::fs::write(&spath, DETECTOR_PY).map_err(|e| e.to_string())?;
-    let out = Command::new("python3")
+    let out = evaluator_command()
         .arg(&spath)
         .arg(&bpath)
         .arg(&hpath)
@@ -1913,7 +1941,7 @@ fn run_python(
     f.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
     drop(f);
 
-    let mut cmd = Command::new("python3");
+    let mut cmd = evaluator_command();
     cmd.arg(&driver)
         // Harden for determinism: stable hashing, no user site packages.
         .env("PYTHONHASHSEED", "0")
