@@ -23,6 +23,10 @@ live. Five it catches with the exact diverging input. One it honestly cannot
 
 Runnable files and the full write-up: [`examples/scenarios/`](examples/scenarios/).
 
+On a real library: [jellyfish](docs/case-studies/jellyfish.md) ships every function
+twice, in Rust and in Python. `equiv` finds the two disagreeing in 8 of 10 functions,
+and at its default of 2,000 inputs it catches a Metaphone bug that shipped in 1.2.1.
+
 For a wider, scored measurement, see the [divergence corpus](divergences/):
 60 labelled pairs, with the current catch rate, false-alarm rate and every miss
 listed (`scripts/run-divergences.sh`).
