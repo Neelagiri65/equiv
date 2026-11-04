@@ -244,11 +244,47 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
             3 => rng.range(-1000, 1000),
             _ => rng.range(-1_000_000, 1_000_000),
         }),
+        // Three shapes (0.17.0). Half the draws stay lowercase a-z, len <= 8,
+        // as before. A quarter mix case, digits, punctuation, whitespace and
+        // control characters from a small alphabet (small, so two strings that
+        // differ only by case or one character turn up together). A quarter
+        // are numeric text: optional leading whitespace (including \t \r \n
+        // and U+00A0), optional sign, 1-4 digits, optional letter suffix.
+        // Before 0.17 no random string held a capital, and digits or control
+        // characters never sat in a multi-element list: the uutils sort
+        // replay (2026-11-05) found nothing for exactly that reason.
         ArgType::Str => {
-            let len = (rng.next() % 9) as usize;
-            let s: String = (0..len)
-                .map(|_| (b'a' + (rng.next() % 26) as u8) as char)
-                .collect();
+            let s: String = match rng.next() % 4 {
+                0 | 1 => {
+                    let len = (rng.next() % 9) as usize;
+                    (0..len).map(|_| (b'a' + (rng.next() % 26) as u8) as char).collect()
+                }
+                2 => {
+                    let len = (rng.next() % 9) as usize;
+                    (0..len).map(|_| MIXED_CHARS[(rng.next() % MIXED_CHARS.len() as u64) as usize]).collect()
+                }
+                _ => {
+                    let mut s = String::new();
+                    if rng.next() % 3 == 0 {
+                        s.push(NUM_PAD[(rng.next() % NUM_PAD.len() as u64) as usize]);
+                    }
+                    match rng.next() % 6 {
+                        0 => s.push('-'),
+                        1 => s.push('+'),
+                        _ => {}
+                    }
+                    let digits = 1 + (rng.next() % 4) as usize;
+                    for _ in 0..digits {
+                        s.push((b'0' + (rng.next() % 10) as u8) as char);
+                    }
+                    if rng.next() % 3 == 0 {
+                        for _ in 0..1 + rng.next() % 2 {
+                            s.push(MIXED_CHARS[(rng.next() % 6) as usize]);
+                        }
+                    }
+                    s
+                }
+            };
             PyVal::Str(s)
         }
         ArgType::ListInt => {
@@ -304,20 +340,49 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
             PyVal::Dict(pairs)
         }
         ArgType::Bool => PyVal::Bool(rng.next() % 2 == 1),
-        // Up to six strings, each drawn by the Str arm (a-z, len <= 8).
+        // Up to six strings, each drawn by the Str arm (len <= 8, three shapes).
+        // In a quarter of non-empty lists, one more element is a near
+        // duplicate of an earlier one: the same text, its upper- or lowercase
+        // form, or the text with a leading space. Ties and case-only
+        // differences are where sorting, grouping and de-duplication change;
+        // independent draws almost never produce them (0.17.0).
         ArgType::ListStr => {
             let len = (rng.next() % 7) as usize;
-            PyVal::ListStr(
-                (0..len)
-                    .map(|_| match gen_arg(rng, ArgType::Str) {
-                        PyVal::Str(s) => s,
-                        _ => unreachable!(),
-                    })
-                    .collect(),
-            )
+            let mut v: Vec<String> = (0..len)
+                .map(|_| match gen_arg(rng, ArgType::Str) {
+                    PyVal::Str(s) => s,
+                    _ => unreachable!(),
+                })
+                .collect();
+            if len > 0 && rng.next() % 4 == 0 {
+                let src = v[(rng.next() % len as u64) as usize].clone();
+                let twin = match rng.next() % 4 {
+                    0 => src.clone(),
+                    1 => src.to_uppercase(),
+                    2 => src.to_lowercase(),
+                    _ => format!(" {src}"),
+                };
+                let at = (rng.next() % (len as u64 + 1)) as usize;
+                v.insert(at, twin);
+            }
+            PyVal::ListStr(v)
         }
     }
 }
+
+// The mixed alphabet for random strings. The first six are letters (used
+// alone for numeric-text suffixes): a, b, c and their capitals. Then digits,
+// separators, whitespace, control characters and a few non-ASCII letters
+// whose case mapping or width is unusual. Fixed and ordered: same draws on
+// every host.
+const MIXED_CHARS: &[char] = &[
+    'a', 'b', 'c', 'A', 'B', 'C', '0', '1', '2', '9', ' ', '-', '_', '.', ',', '/', '\t', '\r', '\n', '\u{0b}',
+    '\u{0c}', '\u{a0}', 'é', 'ß', 'İ',
+];
+
+// Leading padding for numeric text: where int(), float(), strip() and
+// lstrip(' ') disagree.
+const NUM_PAD: &[char] = &[' ', '\t', '\r', '\n', '\u{a0}', '0'];
 
 // Magnitude envelope for synthesised integer inputs. A reference may be O(n),
 // so inputs must not be astronomically large (would hang or OOM). The same
@@ -371,7 +436,7 @@ fn default_val(ty: ArgType) -> PyVal {
     }
 }
 
-// String corners the random generator (a-z, len<=8) cannot reach. Grouped by
+// String corners the random generator (len<=8, small alphabet) rarely or never reaches. Grouped by
 // the semantics they stress; each is a well-known place where string
 // refactors change behaviour. Fixed and ordered, so the case list is the same
 // on every host. (A lone surrogate cannot be held in a Rust String, so that
@@ -402,7 +467,7 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
     match ty {
         // Off-by-one and sign corners (0, +/-1, +/-2) within the envelope.
         ArgType::Int => [0, 1, -1, 2, -2].into_iter().map(PyVal::Int).collect(),
-        // Shapes the random generator (a-z, len<=8) cannot reach: empty,
+        // Shapes the random generator (len<=8) rarely reaches: empty,
         // uppercase, digit, whitespace, and a string longer than 8.
         ArgType::Str => STR_CORNERS.iter().map(|s| PyVal::Str(s.to_string())).collect(),
         // Structural corners the random generator (len<=6, vals -20..20) misses:
@@ -464,6 +529,10 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
                 s(&["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]),
             ];
             v.extend(STR_CORNERS.iter().map(|c| s(&[c])));
+            // Each corner again between two ordinary strings, out of order:
+            // a singleton list cannot show an ordering, grouping or
+            // neighbour difference (0.17.0).
+            v.extend(STR_CORNERS.iter().filter(|c| !c.is_empty()).map(|c| s(&["b", c, "a"])));
             v
         }
     }
@@ -2202,5 +2271,43 @@ mod generator_tests {
         let c = gen_cases(&spec(vec![ArgType::Int], 2), &[src]);
         assert_eq!(a, b, "same seed, same cases");
         assert_ne!(a, c, "a different seed must change the random cases");
+    }
+
+    // 0.17.0: random strings mix case, digits and control characters, and
+    // multi-element lists carry them together (the uutils sort replay found
+    // nothing because they never did). Length stays <= 8 characters.
+    #[test]
+    fn random_strings_mix_case_digits_and_control_characters() {
+        let src = "def f(xs):\n    return xs\n";
+        let mut sp = spec(vec![ArgType::ListStr], 1);
+        sp.n = 2000; // the default
+        let cases = gen_cases(&sp, &[src]);
+        let lists: Vec<&Vec<String>> = cases
+            .iter()
+            .filter_map(|c| match &c[0] {
+                PyVal::ListStr(v) => Some(v),
+                _ => None,
+            })
+            .collect();
+        let all: Vec<&String> = lists.iter().flat_map(|v| v.iter()).collect();
+        let upper = all.iter().filter(|s| s.chars().any(|c| c.is_ascii_uppercase())).count();
+        let ctrl = all.iter().filter(|s| s.chars().any(|c| matches!(c, '\t' | '\r' | '\n'))).count();
+        let numeric = |s: &&String| !s.is_empty() && s.trim().trim_start_matches(['-', '+']).chars().all(|c| c.is_ascii_digit());
+        let lists_with_two_numbers = lists.iter().filter(|v| v.iter().filter(numeric).count() >= 2).count();
+        let lists_mixing_case = lists
+            .iter()
+            .filter(|v| v.iter().any(|s| s.chars().any(|c| c.is_ascii_uppercase())) && v.len() >= 2)
+            .count();
+        assert!(upper > 100, "only {upper} strings with a capital");
+        assert!(ctrl > 50, "only {ctrl} strings with \\t, \\r or \\n");
+        assert!(lists_with_two_numbers > 50, "only {lists_with_two_numbers} lists with two numeric strings");
+        assert!(lists_mixing_case > 100, "only {lists_mixing_case} multi-element lists with a capital");
+        let mut rng = Rng(3);
+        for _ in 0..5000 {
+            match gen_arg(&mut rng, ArgType::Str) {
+                PyVal::Str(s) => assert!(s.chars().count() <= 8, "{s:?} longer than 8"),
+                _ => unreachable!(),
+            }
+        }
     }
 }
