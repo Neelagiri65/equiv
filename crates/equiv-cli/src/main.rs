@@ -76,6 +76,11 @@ USAGE:
   equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]
         Check every listed (or auto-detected) changed function against base.
 
+METRICS:
+  Off by default. With $EQUIV_METRICS=on, review-pr appends one line of counts
+  (no code, names, paths or values) to ./equiv-metrics.jsonl. Nothing is sent
+  anywhere. $DO_NOT_TRACK=1 overrides.
+
 SAFETY LIMIT:
   $EQUIV_SAFETY_SECONDS (default 120) caps the wall-clock time of one
   function's check, for long runs inside C code the step budget cannot count.
