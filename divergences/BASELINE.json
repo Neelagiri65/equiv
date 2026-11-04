@@ -1,12 +1,12 @@
 {
-  "equiv_version": "0.14.0",
+  "equiv_version": "0.16.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 103,
-    "diverges": 67,
+    "cases": 107,
+    "diverges": 71,
     "equivalent": 36,
     "caught": 59,
-    "missed": 4,
+    "missed": 8,
     "false_alarms": 0,
     "could_not_check": 5
   },
@@ -731,6 +731,34 @@
       "outcome": "caught",
       "n": null,
       "detail": "COUNTEREXAMPLE at input ([-16, -11, -6, -7, 12, -16]) | candidate -> 8 | reference -> 264"
+    },
+    "104-holdout-mixed-list-case-tiebreak": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1723,
+      "detail": "EQUIVALENT: agreed on all 1723 generated inputs (seed 1)"
+    },
+    "105-holdout-mixed-list-numeric-key-control-char": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1723,
+      "detail": "EQUIVALENT: agreed on all 1723 generated inputs (seed 1)"
+    },
+    "106-holdout-mixed-str-acronym-snake-case": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1598,
+      "detail": "EQUIVALENT: agreed on all 1598 generated inputs (seed 1)"
+    },
+    "107-holdout-mixed-list-digit-strings-sort": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1722,
+      "detail": "EQUIVALENT: agreed on all 1722 generated inputs (seed 1)"
     }
   }
 }

@@ -87,14 +87,19 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.11.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.16.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 95 (63 diverges, 32 equivalent) |
-| Catch rate | 55 / 63 = 87.3% |
-| False-alarm rate | 0 / 32 = 0% |
-| Could not check | 4 |
+| Cases | 107 (71 diverges, 36 equivalent) |
+| Catch rate | 59 / 71 = 83.1% |
+| False-alarm rate | 0 / 36 = 0% |
+| Could not check | 5 |
+
+Cases 104-107 (class `holdout`, "mixed") were written on 2026-11-05, before
+any generator change, from a run against uutils `sort` where equiv found
+nothing: they need uppercase, digits or control characters inside a string,
+or two such strings in one list. All four are missed by 0.16.0.
 
 History: equiv 0.2.1 caught 25 / 40 of the original 60 cases. The 0.3.0
 generator catches 36 / 40 of them. Cases 061-070 (class `holdout`) were

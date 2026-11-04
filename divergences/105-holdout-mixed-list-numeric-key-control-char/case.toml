@@ -1,0 +1,6 @@
+function = "sort_numeric"
+args = "list[str]"
+expected = "diverges"
+class = "holdout"
+pattern = "numeric sort key strips only spaces, so a number after a tab or carriage return reads as 0; diverges only when such an element sits in a list with another element (written before the 0.17 generator change, from the uutils sort -n finding)"
+witness = '''(['\r1', 'a'],)'''

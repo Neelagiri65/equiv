@@ -1,0 +1,6 @@
+function = "sort_ids"
+args = "list[str]"
+expected = "diverges"
+class = "holdout"
+pattern = "numeric ids compared as text: '10' sorts before '9'; needs two digit strings of different length in one list (written before the 0.17 generator change, from the uutils sort -n finding)"
+witness = '''(['10', '9'],)'''

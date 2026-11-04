@@ -1,0 +1,6 @@
+function = "sort_names"
+args = "list[str]"
+expected = "diverges"
+class = "holdout"
+pattern = "mixed-case list: dropping the tie-break changes the order only when two elements differ by case alone and the lowercase one comes first (needs uppercase inside a multi-element list; written before the 0.17 generator change, from the uutils sort -f finding)"
+witness = '''(['a', 'A'],)'''
