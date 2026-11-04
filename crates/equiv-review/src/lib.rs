@@ -134,6 +134,9 @@ impl ReviewSpec {
     }
 }
 
+pub mod harvest;
+pub use harvest::Slots;
+
 // ---------- deterministic input generation (Rust-side, seeded) ----------
 
 struct Rng(u64);
@@ -244,11 +247,47 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
             3 => rng.range(-1000, 1000),
             _ => rng.range(-1_000_000, 1_000_000),
         }),
+        // Three shapes (0.17.0). Half the draws stay lowercase a-z, len <= 8,
+        // as before. A quarter mix case, digits, punctuation, whitespace and
+        // control characters from a small alphabet (small, so two strings that
+        // differ only by case or one character turn up together). A quarter
+        // are numeric text: optional leading whitespace (including \t \r \n
+        // and U+00A0), optional sign, 1-4 digits, optional letter suffix.
+        // Before 0.17 no random string held a capital, and digits or control
+        // characters never sat in a multi-element list: the uutils sort
+        // replay (2026-11-05) found nothing for exactly that reason.
         ArgType::Str => {
-            let len = (rng.next() % 9) as usize;
-            let s: String = (0..len)
-                .map(|_| (b'a' + (rng.next() % 26) as u8) as char)
-                .collect();
+            let s: String = match rng.next() % 4 {
+                0 | 1 => {
+                    let len = (rng.next() % 9) as usize;
+                    (0..len).map(|_| (b'a' + (rng.next() % 26) as u8) as char).collect()
+                }
+                2 => {
+                    let len = (rng.next() % 9) as usize;
+                    (0..len).map(|_| MIXED_CHARS[(rng.next() % MIXED_CHARS.len() as u64) as usize]).collect()
+                }
+                _ => {
+                    let mut s = String::new();
+                    if rng.next() % 3 == 0 {
+                        s.push(NUM_PAD[(rng.next() % NUM_PAD.len() as u64) as usize]);
+                    }
+                    match rng.next() % 6 {
+                        0 => s.push('-'),
+                        1 => s.push('+'),
+                        _ => {}
+                    }
+                    let digits = 1 + (rng.next() % 4) as usize;
+                    for _ in 0..digits {
+                        s.push((b'0' + (rng.next() % 10) as u8) as char);
+                    }
+                    if rng.next() % 3 == 0 {
+                        for _ in 0..1 + rng.next() % 2 {
+                            s.push(MIXED_CHARS[(rng.next() % 6) as usize]);
+                        }
+                    }
+                    s
+                }
+            };
             PyVal::Str(s)
         }
         ArgType::ListInt => {
@@ -304,20 +343,49 @@ fn gen_arg(rng: &mut Rng, ty: ArgType) -> PyVal {
             PyVal::Dict(pairs)
         }
         ArgType::Bool => PyVal::Bool(rng.next() % 2 == 1),
-        // Up to six strings, each drawn by the Str arm (a-z, len <= 8).
+        // Up to six strings, each drawn by the Str arm (len <= 8, three shapes).
+        // In a quarter of non-empty lists, one more element is a near
+        // duplicate of an earlier one: the same text, its upper- or lowercase
+        // form, or the text with a leading space. Ties and case-only
+        // differences are where sorting, grouping and de-duplication change;
+        // independent draws almost never produce them (0.17.0).
         ArgType::ListStr => {
             let len = (rng.next() % 7) as usize;
-            PyVal::ListStr(
-                (0..len)
-                    .map(|_| match gen_arg(rng, ArgType::Str) {
-                        PyVal::Str(s) => s,
-                        _ => unreachable!(),
-                    })
-                    .collect(),
-            )
+            let mut v: Vec<String> = (0..len)
+                .map(|_| match gen_arg(rng, ArgType::Str) {
+                    PyVal::Str(s) => s,
+                    _ => unreachable!(),
+                })
+                .collect();
+            if len > 0 && rng.next() % 4 == 0 {
+                let src = v[(rng.next() % len as u64) as usize].clone();
+                let twin = match rng.next() % 4 {
+                    0 => src.clone(),
+                    1 => src.to_uppercase(),
+                    2 => src.to_lowercase(),
+                    _ => format!(" {src}"),
+                };
+                let at = (rng.next() % (len as u64 + 1)) as usize;
+                v.insert(at, twin);
+            }
+            PyVal::ListStr(v)
         }
     }
 }
+
+// The mixed alphabet for random strings. The first six are letters (used
+// alone for numeric-text suffixes): a, b, c and their capitals. Then digits,
+// separators, whitespace, control characters and a few non-ASCII letters
+// whose case mapping or width is unusual. Fixed and ordered: same draws on
+// every host.
+const MIXED_CHARS: &[char] = &[
+    'a', 'b', 'c', 'A', 'B', 'C', '0', '1', '2', '9', ' ', '-', '_', '.', ',', '/', '\t', '\r', '\n', '\u{0b}',
+    '\u{0c}', '\u{a0}', 'é', 'ß', 'İ',
+];
+
+// Leading padding for numeric text: where int(), float(), strip() and
+// lstrip(' ') disagree.
+const NUM_PAD: &[char] = &[' ', '\t', '\r', '\n', '\u{a0}', '0'];
 
 // Magnitude envelope for synthesised integer inputs. A reference may be O(n),
 // so inputs must not be astronomically large (would hang or OOM). The same
@@ -371,7 +439,7 @@ fn default_val(ty: ArgType) -> PyVal {
     }
 }
 
-// String corners the random generator (a-z, len<=8) cannot reach. Grouped by
+// String corners the random generator (len<=8, small alphabet) rarely or never reaches. Grouped by
 // the semantics they stress; each is a well-known place where string
 // refactors change behaviour. Fixed and ordered, so the case list is the same
 // on every host. (A lone surrogate cannot be held in a Rust String, so that
@@ -402,7 +470,7 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
     match ty {
         // Off-by-one and sign corners (0, +/-1, +/-2) within the envelope.
         ArgType::Int => [0, 1, -1, 2, -2].into_iter().map(PyVal::Int).collect(),
-        // Shapes the random generator (a-z, len<=8) cannot reach: empty,
+        // Shapes the random generator (len<=8) rarely reaches: empty,
         // uppercase, digit, whitespace, and a string longer than 8.
         ArgType::Str => STR_CORNERS.iter().map(|s| PyVal::Str(s.to_string())).collect(),
         // Structural corners the random generator (len<=6, vals -20..20) misses:
@@ -464,6 +532,10 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
                 s(&["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]),
             ];
             v.extend(STR_CORNERS.iter().map(|c| s(&[c])));
+            // Each corner again between two ordinary strings, out of order:
+            // a singleton list cannot show an ordering, grouping or
+            // neighbour difference (0.17.0).
+            v.extend(STR_CORNERS.iter().filter(|c| !c.is_empty()).map(|c| s(&["b", c, "a"])));
             v
         }
     }
@@ -588,33 +660,66 @@ fn scan_float_literals(src: &str) -> Vec<f64> {
     out
 }
 
+// String literals in the source, decoded. Escapes are resolved (\n, \t, \r,
+// \\, quotes, \xHH, \uXXXX, \UXXXXXXXX, \0) and non-ASCII characters are
+// kept, so a branch on "\t" or "é" is tested with that exact text. Before
+// 0.17.0 escapes lost their backslash ("\n" became "n") and non-ASCII bytes
+// were dropped. A raw-string prefix (r"..") keeps its backslashes. Still a
+// token scan, not a parser: a superset, which only ever adds inputs.
 fn scan_str_literals(src: &str) -> Vec<String> {
-    let b = src.as_bytes();
+    let cs: Vec<char> = src.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
-    while i < b.len() {
-        let q = b[i];
-        if q == b'\'' || q == b'"' {
+    while i < cs.len() {
+        let q = cs[i];
+        if q == '\'' || q == '"' {
+            let raw = i > 0 && matches!(cs[i - 1], 'r' | 'R');
             let mut j = i + 1;
             let mut s = String::new();
             let mut closed = false;
-            while j < b.len() {
-                if b[j] == b'\\' && j + 1 < b.len() {
-                    s.push(b[j + 1] as char);
-                    j += 2;
+            while j < cs.len() {
+                let c = cs[j];
+                if c == '\\' && j + 1 < cs.len() {
+                    let e = cs[j + 1];
+                    if raw {
+                        s.push(c);
+                        s.push(e);
+                        j += 2;
+                        continue;
+                    }
+                    let hex_at = |from: usize, len: usize| -> Option<char> {
+                        let t: String = cs.get(from..from + len)?.iter().collect();
+                        char::from_u32(u32::from_str_radix(&t, 16).ok()?)
+                    };
+                    let (ch, used) = match e {
+                        'n' => (Some('\n'), 2),
+                        't' => (Some('\t'), 2),
+                        'r' => (Some('\r'), 2),
+                        '0' => (Some('\0'), 2),
+                        'x' => (hex_at(j + 2, 2), 4),
+                        'u' => (hex_at(j + 2, 4), 6),
+                        'U' => (hex_at(j + 2, 8), 10),
+                        '\n' => (None, 2), // line continuation
+                        other => (Some(other), 2),
+                    };
+                    if let Some(ch) = ch {
+                        s.push(ch);
+                    }
+                    j += used;
                     continue;
                 }
-                if b[j] == q {
+                if c == q {
                     closed = true;
                     j += 1;
                     break;
                 }
-                if b[j].is_ascii() {
-                    s.push(b[j] as char);
+                if c == '\n' {
+                    break; // not a one-line literal (or a triple-quoted one)
                 }
+                s.push(c);
                 j += 1;
             }
-            if closed && s.len() <= 64 {
+            if closed && s.chars().count() <= 64 {
                 out.push(s);
             }
             i = j;
@@ -690,14 +795,14 @@ const STR_LEN_CAP: i64 = 4096;
 // receipt carries checker_version).
 #[cfg(test)]
 fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
-    gen_cases_tail(spec, sources).0
+    gen_cases_tail(spec, sources, &[]).0
 }
 
 // The case list plus the index where the large-magnitude int corners begin
 // (== cases.len() when the signature has no int argument). Inside that
 // index a budget exhaustion is an Error; from it on, a per-input "not
 // judged" (see run_python).
-fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usize, InputCounts) {
+fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str], harvested: &[Slots]) -> (Vec<Vec<PyVal>>, usize, InputCounts) {
     let mut cases: Vec<Vec<PyVal>> = Vec::new();
     let mut counts = InputCounts::default();
     let mut seen: std::collections::BTreeSet<Vec<String>> = std::collections::BTreeSet::new();
@@ -710,6 +815,32 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
         if seen.insert(key(&base)) {
             cases.push(base.clone());
             counts.corner += 1;
+        }
+        // Harvested inputs (0.17.0) next: the values the project's own calls
+        // and tests use, so a counterexample on a familiar input is reported
+        // first. Complete calls as they are, then every harvested value one
+        // argument at a time with the others at their defaults. Values
+        // outside the envelope wait for the tail (see below).
+        for h in harvested {
+            if h.iter().all(Option::is_some) && h.iter().flatten().all(harvest::inside_envelope) {
+                let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
+                if seen.insert(key(&c)) {
+                    cases.push(c);
+                    counts.harvested += 1;
+                }
+            }
+        }
+        for h in harvested {
+            for (i, v) in h.iter().enumerate() {
+                if let Some(v) = v.as_ref().filter(|v| harvest::inside_envelope(v)) {
+                    let mut c = base.clone();
+                    c[i] = v.clone();
+                    if seen.insert(key(&c)) {
+                        cases.push(c);
+                        counts.harvested += 1;
+                    }
+                }
+            }
         }
         for (i, ty) in spec.args.iter().enumerate() {
             // Order is unchanged from before counting existed (corners, then
@@ -868,6 +999,28 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
                     if seen.insert(key(&c)) {
                         cases.push(c);
                         counts.corner += 1;
+                    }
+                }
+            }
+        }
+        // Harvested values outside the envelope (a test's f(10**12)): here,
+        // where a side running out of budget is "not judged at this input".
+        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+        for h in harvested {
+            if h.iter().all(Option::is_some) && !h.iter().flatten().all(harvest::inside_envelope) {
+                let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
+                if seen.insert(key(&c)) {
+                    cases.push(c);
+                    counts.harvested += 1;
+                }
+            }
+            for (i, v) in h.iter().enumerate() {
+                if let Some(v) = v.as_ref().filter(|v| !harvest::inside_envelope(v)) {
+                    let mut c = base.clone();
+                    c[i] = v.clone();
+                    if seen.insert(key(&c)) {
+                        cases.push(c);
+                        counts.harvested += 1;
                     }
                 }
             }
@@ -1049,6 +1202,8 @@ pub struct InputCounts {
     pub corner: u32,
     pub literal: u32,
     pub random: u32,
+    /// Inputs harvested from the project's own calls and tests (0.17.0).
+    pub harvested: u32,
 }
 
 impl ReviewReceipt {
@@ -1075,6 +1230,7 @@ impl ReviewReceipt {
                     Value::Uint(self.inputs.corner as u64),
                     Value::Uint(self.inputs.literal as u64),
                     Value::Uint(self.inputs.random as u64),
+                    Value::Uint(self.inputs.harvested as u64),
                 ]),
             ),
             (10, Value::Uint(self.exceptions as u64)),
@@ -1094,7 +1250,13 @@ fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal
         .iter()
         .map(|c| {
             let args: Vec<String> = c.iter().map(|v| v.to_py()).collect();
-            format!("({},)", args.join(", "))
+            // `()` for a function that takes no arguments: `(,)` is not
+            // Python, and every such review used to end in a SyntaxError.
+            if args.is_empty() {
+                "()".to_string()
+            } else {
+                format!("({},)", args.join(", "))
+            }
         })
         .collect();
     // The evaluator decides nothing that reaches the receipt: it emits a
@@ -1343,11 +1505,26 @@ pub fn review_limited(
     spec: &ReviewSpec,
     safety_secs: u64,
 ) -> Result<ReviewReceipt, SafetyStop> {
+    review_with_inputs(candidate_path, reference_path, spec, &[], safety_secs)
+}
+
+/// `review_limited` plus inputs harvested from the project's own code (see
+/// `harvest`). They are bound into `spec_sha256` and counted in the receipt;
+/// with none, the receipt is byte-identical to `review_limited`'s.
+pub fn review_with_inputs(
+    candidate_path: &Path,
+    reference_path: &Path,
+    spec: &ReviewSpec,
+    harvested: &[Slots],
+    safety_secs: u64,
+) -> Result<ReviewReceipt, SafetyStop> {
     let cand_src = std::fs::read(candidate_path).unwrap_or_default();
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
     let cand_text = String::from_utf8_lossy(&cand_src);
     let ref_text = String::from_utf8_lossy(&ref_src);
-    let (cases, large_from, inputs) = gen_cases_tail(spec, &[&cand_text, &ref_text]);
+    let harvested: Vec<Slots> =
+        harvested.iter().filter(|h| h.len() == spec.args.len()).cloned().collect();
+    let (cases, large_from, inputs) = gen_cases_tail(spec, &[&cand_text, &ref_text], &harvested);
 
     let ev = match run_python(candidate_path, reference_path, spec, &cases, large_from, safety_secs) {
         Ok(v) => v,
@@ -1360,7 +1537,13 @@ pub fn review_limited(
     Ok(ReviewReceipt {
         candidate_sha256: sha256(&cand_src),
         reference_sha256: sha256(&ref_src),
-        spec_sha256: sha256(&spec.canonical()),
+        spec_sha256: sha256(&{
+            let mut b = spec.canonical();
+            if !harvested.is_empty() {
+                b.extend(harvest::canonical(&harvested));
+            }
+            b
+        }),
         verdict: ev.verdict,
         checker_version: env!("CARGO_PKG_VERSION").into(),
         budget: spec.budget,
@@ -1377,12 +1560,13 @@ pub fn review_limited(
 pub fn provenance_note(r: &ReviewReceipt) -> String {
     let i = &r.inputs;
     format!(
-        "python {}, seed {}; inputs {} corner + {} literal + {} random; {} raised on both sides; tier {}",
+        "python {}, seed {}; inputs {} corner + {} literal + {} random{}; {} raised on both sides; tier {}",
         if r.python.is_empty() { "unknown" } else { &r.python },
         r.seed,
         i.corner,
         i.literal,
         i.random,
+        if i.harvested > 0 { format!(" + {} from the project's code", i.harvested) } else { String::new() },
         r.exceptions,
         r.tier
     )
@@ -1416,12 +1600,19 @@ pub fn run_pr(checks: &[PrCheck]) -> (Vec<ReviewItem>, i32) {
 /// `run_pr` with an explicit per-function wall-clock safety limit. A function
 /// that hits it is reported as could-not-check; the others still run.
 pub fn run_pr_limited(checks: &[PrCheck], safety_secs: u64) -> (Vec<ReviewItem>, i32) {
+    run_pr_with_inputs(checks, &[], safety_secs)
+}
+
+/// `run_pr_limited` with harvested inputs per check (`harvested[i]` belongs to
+/// `checks[i]`; missing entries mean none).
+pub fn run_pr_with_inputs(checks: &[PrCheck], harvested: &[Vec<Slots>], safety_secs: u64) -> (Vec<ReviewItem>, i32) {
     let mut items = Vec::new();
     let mut any_cex = false;
     let mut any_err = false;
-    for c in checks {
+    for (k, c) in checks.iter().enumerate() {
         // head is the candidate (the PR's new code), base is the reference.
-        let outcome = review_limited(&c.head_path, &c.base_path, &c.spec, safety_secs);
+        let h: &[Slots] = harvested.get(k).map(Vec::as_slice).unwrap_or(&[]);
+        let outcome = review_with_inputs(&c.head_path, &c.base_path, &c.spec, h, safety_secs);
         match &outcome {
             Ok(r) => match &r.verdict {
                 ReviewVerdict::Counterexample { .. } => any_cex = true,
@@ -2202,5 +2393,55 @@ mod generator_tests {
         let c = gen_cases(&spec(vec![ArgType::Int], 2), &[src]);
         assert_eq!(a, b, "same seed, same cases");
         assert_ne!(a, c, "a different seed must change the random cases");
+    }
+
+    // 0.17.0: random strings mix case, digits and control characters, and
+    // multi-element lists carry them together (the uutils sort replay found
+    // nothing because they never did). Length stays <= 8 characters.
+    #[test]
+    fn random_strings_mix_case_digits_and_control_characters() {
+        let src = "def f(xs):\n    return xs\n";
+        let mut sp = spec(vec![ArgType::ListStr], 1);
+        sp.n = 2000; // the default
+        let cases = gen_cases(&sp, &[src]);
+        let lists: Vec<&Vec<String>> = cases
+            .iter()
+            .filter_map(|c| match &c[0] {
+                PyVal::ListStr(v) => Some(v),
+                _ => None,
+            })
+            .collect();
+        let all: Vec<&String> = lists.iter().flat_map(|v| v.iter()).collect();
+        let upper = all.iter().filter(|s| s.chars().any(|c| c.is_ascii_uppercase())).count();
+        let ctrl = all.iter().filter(|s| s.chars().any(|c| matches!(c, '\t' | '\r' | '\n'))).count();
+        let numeric = |s: &&String| !s.is_empty() && s.trim().trim_start_matches(['-', '+']).chars().all(|c| c.is_ascii_digit());
+        let lists_with_two_numbers = lists.iter().filter(|v| v.iter().filter(numeric).count() >= 2).count();
+        let lists_mixing_case = lists
+            .iter()
+            .filter(|v| v.iter().any(|s| s.chars().any(|c| c.is_ascii_uppercase())) && v.len() >= 2)
+            .count();
+        assert!(upper > 100, "only {upper} strings with a capital");
+        assert!(ctrl > 50, "only {ctrl} strings with \\t, \\r or \\n");
+        assert!(lists_with_two_numbers > 50, "only {lists_with_two_numbers} lists with two numeric strings");
+        assert!(lists_mixing_case > 100, "only {lists_mixing_case} multi-element lists with a capital");
+        let mut rng = Rng(3);
+        for _ in 0..5000 {
+            match gen_arg(&mut rng, ArgType::Str) {
+                PyVal::Str(s) => assert!(s.chars().count() <= 8, "{s:?} longer than 8"),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    // 0.17.0: string literals are decoded, not mangled. "\t" stays a tab,
+    // "é" is kept, \x/\u escapes resolve, a raw string keeps its backslash.
+    #[test]
+    fn string_literals_keep_escapes_and_non_ascii() {
+        let src = r#"if s == '\t' or s == "é" or s == '\x41\u00e9' or re.match(r'\d+', s) or s == 'it\'s': pass"#;
+        let got = scan_str_literals(src);
+        for want in ["\t", "é", "Aé", "\\d+", "it's"] {
+            assert!(got.iter().any(|g| g == want), "missing {want:?} in {got:?}");
+        }
+        assert!(!got.iter().any(|g| g == "t"), "an escape lost its backslash: {got:?}");
     }
 }
