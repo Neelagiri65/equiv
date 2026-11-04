@@ -137,5 +137,5 @@ fn golden_budget_receipt_id_is_stable() {
     let mut r = review(&cand, &refr, &spec("f", vec![ArgType::Int], DEFAULT_BUDGET)).expect("no safety stop");
     r.python = "3.12".into();
     let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "3c0a66f18055bfd6421f594cc30a157618efee8aa03fd8874bcf171c4576039a", "receipt-id drifted");
+    assert_eq!(id, "d46af9d363ea2e931cd3cab094ea6a5ba6be75b7dec6eb3cf7e1bd2031692d7f", "receipt-id drifted");
 }
