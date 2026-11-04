@@ -1250,7 +1250,13 @@ fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal
         .iter()
         .map(|c| {
             let args: Vec<String> = c.iter().map(|v| v.to_py()).collect();
-            format!("({},)", args.join(", "))
+            // `()` for a function that takes no arguments: `(,)` is not
+            // Python, and every such review used to end in a SyntaxError.
+            if args.is_empty() {
+                "()".to_string()
+            } else {
+                format!("({},)", args.join(", "))
+            }
         })
         .collect();
     // The evaluator decides nothing that reaches the receipt: it emits a

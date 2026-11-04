@@ -86,3 +86,18 @@ fn harvested_inputs_are_bound_into_the_receipt_and_reported_first() {
     let again = review_with_inputs(&d.join("cand.py"), &d.join("ref.py"), &spec(), &h, 60).unwrap();
     assert_eq!(with.to_bytes(), again.to_bytes(), "same harvested inputs, same receipt");
 }
+
+/// A function with no arguments is called once and compared, not reported
+/// as could-not-check (it used to end in a driver SyntaxError).
+#[test]
+fn zero_argument_functions_are_checked() {
+    let d = dir("zeroarg");
+    std::fs::write(d.join("a.py"), "def f():\n    return 1\n").unwrap();
+    std::fs::write(d.join("b.py"), "def f():\n    return 2\n").unwrap();
+    std::fs::write(d.join("c.py"), "def f():\n    return 1\n").unwrap();
+    let spec = ReviewSpec { func: "f".into(), args: vec![], n: 200, seed: 1, budget: DEFAULT_BUDGET };
+    let diff = review_limited(&d.join("a.py"), &d.join("b.py"), &spec, 60).unwrap();
+    assert!(matches!(diff.verdict, ReviewVerdict::Counterexample { .. }), "{:?}", diff.verdict);
+    let same = review_limited(&d.join("a.py"), &d.join("c.py"), &spec, 60).unwrap();
+    assert!(matches!(same.verdict, ReviewVerdict::Equivalent { .. }), "{:?}", same.verdict);
+}
