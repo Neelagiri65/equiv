@@ -94,7 +94,7 @@ not check.
 
 ## Good to know
 
-- **Credentials are withheld from the code being checked.** Since v0.17.0 it
+- **Credentials are withheld from the code being checked.** Since v0.16.0 it
   runs with a short allowlist of environment variables, so the signing key,
   `GH_TOKEN` and the Actions login token are not passed to it. It still runs
   with normal file and network access, so only review code you would be
