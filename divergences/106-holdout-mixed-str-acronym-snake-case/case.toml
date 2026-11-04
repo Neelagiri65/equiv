@@ -1,0 +1,6 @@
+function = "to_snake"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "camel-to-snake drops the acronym rule: HTTPServer gives httpserver, not http_server; needs two capitals followed by a lowercase letter in one string (written before the 0.17 generator change)"
+witness = '''('ABc',)'''
