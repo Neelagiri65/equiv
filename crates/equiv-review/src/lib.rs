@@ -134,6 +134,9 @@ impl ReviewSpec {
     }
 }
 
+pub mod harvest;
+pub use harvest::Slots;
+
 // ---------- deterministic input generation (Rust-side, seeded) ----------
 
 struct Rng(u64);
@@ -657,33 +660,66 @@ fn scan_float_literals(src: &str) -> Vec<f64> {
     out
 }
 
+// String literals in the source, decoded. Escapes are resolved (\n, \t, \r,
+// \\, quotes, \xHH, \uXXXX, \UXXXXXXXX, \0) and non-ASCII characters are
+// kept, so a branch on "\t" or "é" is tested with that exact text. Before
+// 0.17.0 escapes lost their backslash ("\n" became "n") and non-ASCII bytes
+// were dropped. A raw-string prefix (r"..") keeps its backslashes. Still a
+// token scan, not a parser: a superset, which only ever adds inputs.
 fn scan_str_literals(src: &str) -> Vec<String> {
-    let b = src.as_bytes();
+    let cs: Vec<char> = src.chars().collect();
     let mut out = Vec::new();
     let mut i = 0;
-    while i < b.len() {
-        let q = b[i];
-        if q == b'\'' || q == b'"' {
+    while i < cs.len() {
+        let q = cs[i];
+        if q == '\'' || q == '"' {
+            let raw = i > 0 && matches!(cs[i - 1], 'r' | 'R');
             let mut j = i + 1;
             let mut s = String::new();
             let mut closed = false;
-            while j < b.len() {
-                if b[j] == b'\\' && j + 1 < b.len() {
-                    s.push(b[j + 1] as char);
-                    j += 2;
+            while j < cs.len() {
+                let c = cs[j];
+                if c == '\\' && j + 1 < cs.len() {
+                    let e = cs[j + 1];
+                    if raw {
+                        s.push(c);
+                        s.push(e);
+                        j += 2;
+                        continue;
+                    }
+                    let hex_at = |from: usize, len: usize| -> Option<char> {
+                        let t: String = cs.get(from..from + len)?.iter().collect();
+                        char::from_u32(u32::from_str_radix(&t, 16).ok()?)
+                    };
+                    let (ch, used) = match e {
+                        'n' => (Some('\n'), 2),
+                        't' => (Some('\t'), 2),
+                        'r' => (Some('\r'), 2),
+                        '0' => (Some('\0'), 2),
+                        'x' => (hex_at(j + 2, 2), 4),
+                        'u' => (hex_at(j + 2, 4), 6),
+                        'U' => (hex_at(j + 2, 8), 10),
+                        '\n' => (None, 2), // line continuation
+                        other => (Some(other), 2),
+                    };
+                    if let Some(ch) = ch {
+                        s.push(ch);
+                    }
+                    j += used;
                     continue;
                 }
-                if b[j] == q {
+                if c == q {
                     closed = true;
                     j += 1;
                     break;
                 }
-                if b[j].is_ascii() {
-                    s.push(b[j] as char);
+                if c == '\n' {
+                    break; // not a one-line literal (or a triple-quoted one)
                 }
+                s.push(c);
                 j += 1;
             }
-            if closed && s.len() <= 64 {
+            if closed && s.chars().count() <= 64 {
                 out.push(s);
             }
             i = j;
@@ -759,14 +795,14 @@ const STR_LEN_CAP: i64 = 4096;
 // receipt carries checker_version).
 #[cfg(test)]
 fn gen_cases(spec: &ReviewSpec, sources: &[&str]) -> Vec<Vec<PyVal>> {
-    gen_cases_tail(spec, sources).0
+    gen_cases_tail(spec, sources, &[]).0
 }
 
 // The case list plus the index where the large-magnitude int corners begin
 // (== cases.len() when the signature has no int argument). Inside that
 // index a budget exhaustion is an Error; from it on, a per-input "not
 // judged" (see run_python).
-fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usize, InputCounts) {
+fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str], harvested: &[Slots]) -> (Vec<Vec<PyVal>>, usize, InputCounts) {
     let mut cases: Vec<Vec<PyVal>> = Vec::new();
     let mut counts = InputCounts::default();
     let mut seen: std::collections::BTreeSet<Vec<String>> = std::collections::BTreeSet::new();
@@ -779,6 +815,32 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
         if seen.insert(key(&base)) {
             cases.push(base.clone());
             counts.corner += 1;
+        }
+        // Harvested inputs (0.17.0) next: the values the project's own calls
+        // and tests use, so a counterexample on a familiar input is reported
+        // first. Complete calls as they are, then every harvested value one
+        // argument at a time with the others at their defaults. Values
+        // outside the envelope wait for the tail (see below).
+        for h in harvested {
+            if h.iter().all(Option::is_some) && h.iter().flatten().all(harvest::inside_envelope) {
+                let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
+                if seen.insert(key(&c)) {
+                    cases.push(c);
+                    counts.harvested += 1;
+                }
+            }
+        }
+        for h in harvested {
+            for (i, v) in h.iter().enumerate() {
+                if let Some(v) = v.as_ref().filter(|v| harvest::inside_envelope(v)) {
+                    let mut c = base.clone();
+                    c[i] = v.clone();
+                    if seen.insert(key(&c)) {
+                        cases.push(c);
+                        counts.harvested += 1;
+                    }
+                }
+            }
         }
         for (i, ty) in spec.args.iter().enumerate() {
             // Order is unchanged from before counting existed (corners, then
@@ -937,6 +999,28 @@ fn gen_cases_tail(spec: &ReviewSpec, sources: &[&str]) -> (Vec<Vec<PyVal>>, usiz
                     if seen.insert(key(&c)) {
                         cases.push(c);
                         counts.corner += 1;
+                    }
+                }
+            }
+        }
+        // Harvested values outside the envelope (a test's f(10**12)): here,
+        // where a side running out of budget is "not judged at this input".
+        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+        for h in harvested {
+            if h.iter().all(Option::is_some) && !h.iter().flatten().all(harvest::inside_envelope) {
+                let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
+                if seen.insert(key(&c)) {
+                    cases.push(c);
+                    counts.harvested += 1;
+                }
+            }
+            for (i, v) in h.iter().enumerate() {
+                if let Some(v) = v.as_ref().filter(|v| !harvest::inside_envelope(v)) {
+                    let mut c = base.clone();
+                    c[i] = v.clone();
+                    if seen.insert(key(&c)) {
+                        cases.push(c);
+                        counts.harvested += 1;
                     }
                 }
             }
@@ -1118,6 +1202,8 @@ pub struct InputCounts {
     pub corner: u32,
     pub literal: u32,
     pub random: u32,
+    /// Inputs harvested from the project's own calls and tests (0.17.0).
+    pub harvested: u32,
 }
 
 impl ReviewReceipt {
@@ -1144,6 +1230,7 @@ impl ReviewReceipt {
                     Value::Uint(self.inputs.corner as u64),
                     Value::Uint(self.inputs.literal as u64),
                     Value::Uint(self.inputs.random as u64),
+                    Value::Uint(self.inputs.harvested as u64),
                 ]),
             ),
             (10, Value::Uint(self.exceptions as u64)),
@@ -1412,11 +1499,26 @@ pub fn review_limited(
     spec: &ReviewSpec,
     safety_secs: u64,
 ) -> Result<ReviewReceipt, SafetyStop> {
+    review_with_inputs(candidate_path, reference_path, spec, &[], safety_secs)
+}
+
+/// `review_limited` plus inputs harvested from the project's own code (see
+/// `harvest`). They are bound into `spec_sha256` and counted in the receipt;
+/// with none, the receipt is byte-identical to `review_limited`'s.
+pub fn review_with_inputs(
+    candidate_path: &Path,
+    reference_path: &Path,
+    spec: &ReviewSpec,
+    harvested: &[Slots],
+    safety_secs: u64,
+) -> Result<ReviewReceipt, SafetyStop> {
     let cand_src = std::fs::read(candidate_path).unwrap_or_default();
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
     let cand_text = String::from_utf8_lossy(&cand_src);
     let ref_text = String::from_utf8_lossy(&ref_src);
-    let (cases, large_from, inputs) = gen_cases_tail(spec, &[&cand_text, &ref_text]);
+    let harvested: Vec<Slots> =
+        harvested.iter().filter(|h| h.len() == spec.args.len()).cloned().collect();
+    let (cases, large_from, inputs) = gen_cases_tail(spec, &[&cand_text, &ref_text], &harvested);
 
     let ev = match run_python(candidate_path, reference_path, spec, &cases, large_from, safety_secs) {
         Ok(v) => v,
@@ -1429,7 +1531,13 @@ pub fn review_limited(
     Ok(ReviewReceipt {
         candidate_sha256: sha256(&cand_src),
         reference_sha256: sha256(&ref_src),
-        spec_sha256: sha256(&spec.canonical()),
+        spec_sha256: sha256(&{
+            let mut b = spec.canonical();
+            if !harvested.is_empty() {
+                b.extend(harvest::canonical(&harvested));
+            }
+            b
+        }),
         verdict: ev.verdict,
         checker_version: env!("CARGO_PKG_VERSION").into(),
         budget: spec.budget,
@@ -1446,12 +1554,13 @@ pub fn review_limited(
 pub fn provenance_note(r: &ReviewReceipt) -> String {
     let i = &r.inputs;
     format!(
-        "python {}, seed {}; inputs {} corner + {} literal + {} random; {} raised on both sides; tier {}",
+        "python {}, seed {}; inputs {} corner + {} literal + {} random{}; {} raised on both sides; tier {}",
         if r.python.is_empty() { "unknown" } else { &r.python },
         r.seed,
         i.corner,
         i.literal,
         i.random,
+        if i.harvested > 0 { format!(" + {} from the project's code", i.harvested) } else { String::new() },
         r.exceptions,
         r.tier
     )
@@ -1485,12 +1594,19 @@ pub fn run_pr(checks: &[PrCheck]) -> (Vec<ReviewItem>, i32) {
 /// `run_pr` with an explicit per-function wall-clock safety limit. A function
 /// that hits it is reported as could-not-check; the others still run.
 pub fn run_pr_limited(checks: &[PrCheck], safety_secs: u64) -> (Vec<ReviewItem>, i32) {
+    run_pr_with_inputs(checks, &[], safety_secs)
+}
+
+/// `run_pr_limited` with harvested inputs per check (`harvested[i]` belongs to
+/// `checks[i]`; missing entries mean none).
+pub fn run_pr_with_inputs(checks: &[PrCheck], harvested: &[Vec<Slots>], safety_secs: u64) -> (Vec<ReviewItem>, i32) {
     let mut items = Vec::new();
     let mut any_cex = false;
     let mut any_err = false;
-    for c in checks {
+    for (k, c) in checks.iter().enumerate() {
         // head is the candidate (the PR's new code), base is the reference.
-        let outcome = review_limited(&c.head_path, &c.base_path, &c.spec, safety_secs);
+        let h: &[Slots] = harvested.get(k).map(Vec::as_slice).unwrap_or(&[]);
+        let outcome = review_with_inputs(&c.head_path, &c.base_path, &c.spec, h, safety_secs);
         match &outcome {
             Ok(r) => match &r.verdict {
                 ReviewVerdict::Counterexample { .. } => any_cex = true,
@@ -2309,5 +2425,17 @@ mod generator_tests {
                 _ => unreachable!(),
             }
         }
+    }
+
+    // 0.17.0: string literals are decoded, not mangled. "\t" stays a tab,
+    // "é" is kept, \x/\u escapes resolve, a raw string keeps its backslash.
+    #[test]
+    fn string_literals_keep_escapes_and_non_ascii() {
+        let src = r#"if s == '\t' or s == "é" or s == '\x41\u00e9' or re.match(r'\d+', s) or s == 'it\'s': pass"#;
+        let got = scan_str_literals(src);
+        for want in ["\t", "é", "Aé", "\\d+", "it's"] {
+            assert!(got.iter().any(|g| g == want), "missing {want:?} in {got:?}");
+        }
+        assert!(!got.iter().any(|g| g == "t"), "an escape lost its backslash: {got:?}");
     }
 }

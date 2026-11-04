@@ -68,13 +68,21 @@ fn usage() -> &'static str {
 
 USAGE:
   equiv review <cand.py> <ref.py> <fn> <sig> [n] [seed] [--sign] [--all]
+               [--inputs-from <file|dir>]...
         Check a function against a reference on generated inputs. <sig> is the
         argument types (int|str|list[int]|list[str]|float|dict|bool), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
         $EQUIV_SIGNING_KEY (64 hex chars). A counterexample is followed by how
         many judged inputs disagreed; --all lists every one, in case order.
+        --inputs-from also tries the literal arguments of every call to <fn>
+        (and pytest parametrize rows) in those Python files; they are parsed,
+        never run, and bound into the receipt.
   equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]
+               [--no-harvest]
         Check every listed (or auto-detected) changed function against base.
+        Literal arguments of calls to each function anywhere in the repo's
+        tracked Python files (tests included) are tried as extra inputs,
+        unless --no-harvest.
 
 METRICS:
   Off by default. With $EQUIV_METRICS=on, review-pr appends one line of counts
@@ -110,7 +118,7 @@ fn run() -> Result<u8, String> {
         Some("review-pr") => {
             let safety = safety_seconds()?;
             use equiv_review::{
-                detect_changed_functions, render_markdown_with_unchecked, run_pr_limited, ArgType,
+                detect_changed_functions, render_markdown_with_unchecked, run_pr_with_inputs, ArgType,
                 DetectedStatus, PrCheck, ReviewSpec,
             };
             let base = args
@@ -250,7 +258,18 @@ fn run() -> Result<u8, String> {
                 eprintln!("review-pr: nothing changed to review");
                 return Ok(0);
             }
-            let (items, code) = run_pr_limited(&checks, safety);
+            // Inputs harvested from the repository's own calls and tests
+            // (0.17.0): one pass over every tracked Python file, at head.
+            // `--no-harvest` turns it off.
+            let harvested: Vec<Vec<equiv_review::Slots>> = if args.iter().any(|a| a == "--no-harvest") {
+                Vec::new()
+            } else {
+                let wanted: Vec<(String, std::path::PathBuf, Vec<ArgType>)> =
+                    checks.iter().map(|c| (c.spec.func.clone(), c.head_path.clone(), c.spec.args.clone())).collect();
+                let files = equiv_review::harvest::python_files(std::path::Path::new("."));
+                equiv_review::harvest::harvest(&wanted, &files)
+            };
+            let (items, code) = run_pr_with_inputs(&checks, &harvested, safety);
             // A changed function that auto-detection could not check is "not
             // checked" like a safety stop or a refusal: nothing diverged, but
             // the run is not a clean pass (0). Exit 2 says so; whether that
@@ -341,11 +360,24 @@ fn run() -> Result<u8, String> {
             }
         }
         Some("review") => {
-            use equiv_review::{review_limited, ArgType, ReviewSpec, ReviewVerdict};
+            use equiv_review::{review_with_inputs, ArgType, ReviewSpec, ReviewVerdict};
             let safety = safety_seconds()?;
             let want_sign = args.iter().any(|a| a == "--sign");
             let want_all = args.iter().any(|a| a == "--all");
-            let pos: Vec<&String> = args.iter().skip(1).filter(|a| *a != "--sign" && *a != "--all").collect();
+            // --inputs-from <file|dir>, repeatable: harvest literal call
+            // inputs from those Python files (0.17.0).
+            let mut inputs_from: Vec<std::path::PathBuf> = Vec::new();
+            let mut rest: Vec<&String> = Vec::new();
+            let mut it = args.iter().skip(1);
+            while let Some(a) = it.next() {
+                if a == "--inputs-from" {
+                    let p = it.next().ok_or("--inputs-from needs a file or directory")?;
+                    inputs_from.push(std::path::PathBuf::from(p));
+                } else {
+                    rest.push(a);
+                }
+            }
+            let pos: Vec<&String> = rest.into_iter().filter(|a| *a != "--sign" && *a != "--all").collect();
             let cand = pos.first().ok_or("review: missing candidate .py")?;
             let refr = pos.get(1).ok_or("review: missing reference .py")?;
             let func = pos.get(2).ok_or("review: missing function name")?;
@@ -358,10 +390,18 @@ fn run() -> Result<u8, String> {
                 .map(|s| ArgType::parse(s).ok_or_else(|| format!("bad arg type `{s}`")))
                 .collect::<Result<Vec<_>, _>>()?;
             let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET };
-            let r = match review_limited(
+            let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
+                Vec::new()
+            } else {
+                let files = equiv_review::harvest::expand_paths(&inputs_from);
+                let wanted = vec![(spec.func.clone(), std::path::PathBuf::from(cand), spec.args.clone())];
+                equiv_review::harvest::harvest(&wanted, &files).pop().unwrap_or_default()
+            };
+            let r = match review_with_inputs(
                 std::path::Path::new(cand),
                 std::path::Path::new(refr),
                 &spec,
+                &harvested,
                 safety,
             ) {
                 Ok(r) => r,

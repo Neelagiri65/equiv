@@ -5,11 +5,31 @@ Moved from the README. The README has the short version.
 ## What is checked
 
 `equiv` checks behavioural equivalence of a function against a reference, on
-deterministically generated inputs. Generation has three deterministic layers:
-boundary corners per type (empty, sign and off-by-one values, uppercase, strings
-longer than 8, lists longer than 6, the float special values), inputs read from
-the source's own branch literals (a constant `== 777` in the code is tested
-directly, with its neighbours), then seeded random cases. This is still bounded
+deterministically generated inputs. Generation has four deterministic layers:
+
+1. **Inputs from the project's own code** (`review-pr`, or `review
+   --inputs-from`): the literal arguments of every call to the function in the
+   repository's tracked Python files, tests included, and pytest `parametrize`
+   rows. Files are parsed with Python's `ast`, never run. Only values of exactly
+   the declared types are kept, at most 500 calls per function. They are bound
+   into the receipt: the provenance line counts them, and the spec hash covers
+   them, so a receipt made with them is reproduced only by a run over the same
+   files. `review-pr --no-harvest` turns this off.
+2. **Boundary corners per type**: empty, sign and off-by-one values, uppercase,
+   whitespace and control characters, strings longer than 8, lists longer than
+   6, the float special values, and each string corner placed between two
+   ordinary strings in a list.
+3. **The source's own literals**: a constant `== 777` in the code is tested
+   directly, with its neighbours; a string literal is tested by value, with its
+   escapes resolved.
+4. **Seeded random cases.** Random strings come in three shapes: lowercase
+   a-z (half), a small mixed alphabet with capitals, digits, punctuation,
+   whitespace and control characters (a quarter), and numeric text with
+   optional padding, sign and suffix (a quarter). A quarter of random string
+   lists also hold a near duplicate of one element (the same text, its upper-
+   or lowercase form, or with a leading space).
+
+This is still bounded
 testing, not exhaustive verification: a pass means no divergence was found on the
 generated inputs. Two limits are deliberate. Random integers stay inside a magnitude envelope
 (|n| up to 1,000,000) so a linear reference cannot hang; fixed large-magnitude
@@ -74,8 +94,9 @@ src/math.py : total : int
 ## How it works
 
 Input generation and the verdict are computed in Rust from a fixed seed. The
-language runtime is used only as an evaluator and never decides anything that
-reaches the receipt. Receipts are identical across hosts. Receipts can be
+language runtime runs the two versions, and parses (never runs) the project's
+files when inputs are harvested from them; it never decides a verdict, which
+Rust computes from the values both versions returned. Receipts are identical across hosts. Receipts can be
 signed with a local ed25519 key or with keyless Sigstore (OIDC). The keyless
 path binds the signature to a verifiable CI identity rather than a stored
 secret. The tool is a single static binary with no runtime dependencies,
