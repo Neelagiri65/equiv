@@ -1,53 +1,56 @@
 # equiv
 
-**An LLM should not be the only thing reviewing LLM-written code.**
+**Did this rewrite change what the function does? equiv runs both versions and shows you.**
 
-`equiv` runs a changed function against its previous version on the same
-deterministically generated inputs and reports whether the behaviour changed. If
-it did, you get the exact input where they differ. Either way you get a
-reproducible, signed receipt: re-run the check on any machine and you get the same
-answer, byte for byte, without trusting any model's opinion.
+You rewrite a function, or an AI does it for you. `equiv` runs the old version and
+the new version on the same few thousand inputs. If they ever give different
+answers, it prints the exact input where they differ. If they never do, it says
+so, along with how many inputs it tried.
+
+Every result comes with a receipt. Anyone can re-run the receipt on any machine
+and get the same answer, byte for byte. There is no model's opinion involved.
 
 ![equiv catches an AI refactor diverging at n = -5, then emits a signed receipt that re-runs to an identical id](assets/equiv-aha.gif)
 
-Most code is now written by AI and reviewed by AI. A model saying "this looks
-fine" is not verification. A deterministic check you can re-run yourself is.
+## What it is good at, and what it skips
 
-## Does it actually catch the bug?
+`equiv` checks **plain Python functions**: ones that take simple values
+(`int`, `str`, `float`, `bool`, `dict`, `list[int]`, `list[str]`) and return a result.
 
-Six real-world refactors that looked behaviour-preserving, run through `equiv`
-live. Five it catches with the exact diverging input. One it honestly cannot
-(fixed-width integer overflow does not exist in Python). Every result is reproducible.
+On those, it aims never to raise a false alarm. Across the 36 rewrites in our
+test corpus that do keep behaviour, it has raised none.
+
+Anything it cannot judge fairly is listed as **not checked**, never shown as a
+pass. That includes:
+
+- methods on classes, async functions and nested functions
+- functions whose answer depends on maths-library rounding (`sin`, `exp`, `log`, `pow`)
+- return values it cannot compare reliably (sets, custom objects)
+
+A pass means "no difference found on the inputs tried". It does not mean the
+code is correct or does what you intended.
+
+## Does it actually catch bugs?
+
+- **Test corpus.** 103 labelled pairs of functions where we already know the
+  answer. Of the 67 that really change behaviour, `equiv` catches 59, misses 4,
+  and cannot check 4. Of the 36 that keep behaviour, it raises 0 false alarms
+  (35 pass, 1 cannot check). Every miss is listed. [`divergences/`](divergences/)
+- **[jellyfish](docs/case-studies/jellyfish.md).** This library ships every
+  function twice, once in Rust and once in Python. `equiv` finds the two
+  disagreeing in 8 of 10 functions. It also catches a bug that shipped in
+  version 1.2.1 and was later fixed.
+- **[rapidfuzz](docs/case-studies/rapidfuzz.md)** (about 116M downloads a month).
+  Its C++ and Python versions score text differently when it contains a
+  non-breaking space.
+- **Six common refactor mistakes**, run live. Five caught with the exact input,
+  one honestly missed. [`examples/scenarios/`](examples/scenarios/)
 
 ![equiv across six real-world bug patterns: five caught, one honest miss](assets/equiv-scenarios.gif)
 
-Runnable files and the full write-up: [`examples/scenarios/`](examples/scenarios/).
+## Use it on pull requests
 
-On a real library: [jellyfish](docs/case-studies/jellyfish.md) ships every function
-twice, in Rust and in Python. `equiv` finds the two disagreeing in 8 of 10 functions,
-and at its default of 2,000 inputs it catches a Metaphone bug that shipped in 1.2.1.
-[rapidfuzz](docs/case-studies/rapidfuzz.md) (about 116M downloads a month) does the same in C++
-and Python; `equiv` finds the two scoring text with a non-breaking space differently.
-
-For a wider, scored measurement, see the [divergence corpus](divergences/):
-60 labelled pairs, with the current catch rate, false-alarm rate and every miss
-listed (`scripts/run-divergences.sh`).
-
-## Quickstart: the PR gate
-
-The manifest is optional. Without one, every function changed in the PR is
-detected from the diff and checked if each parameter has a supported type hint;
-the rest are listed as not checked, with the parameters that need a hint. To pin
-an exact list instead, write the functions whose behaviour must be preserved
-across a PR in a manifest at the repository root. The format of each line is
-`<file> : <function> : <arg types>`, where arg types are `int`, `str`,
-`list[int]`, `list[str]`, `float`, `dict` or `bool`, comma separated:
-
-```
-src/math.py : total : int
-```
-
-Add the workflow at `.github/workflows/equiv-review.yml`:
+Add `.github/workflows/equiv-review.yml`:
 
 ```yaml
 on: pull_request
@@ -62,113 +65,48 @@ jobs:
         with: { keyless: "true" }
 ```
 
-Pin to a released tag (`@v0.16.0`) rather than `@main` so runs are reproducible
-and do not change under you.
+That is all. On every PR, `equiv` finds the changed functions, checks each one
+against its version on the base branch, and posts one comment:
 
-Each PR receives a comment. Every changed function is tested against its version
-on the base branch. A change that preserves behaviour passes. A change that does
-not is reported with the input that distinguishes the two versions. That
-fails the check. Receipts are signed with Sigstore keyless signing, which stores
-no key. They can be verified with `cosign`.
+- **behaviour preserved**: the check passes
+- **behaviour changed**: the check fails, and the comment shows the input that tells the two apart
+- **not checked**: listed with the reason (for example, a parameter needs a type hint)
 
-## CLI
+To check only specific functions, list them in `.equiv-review` at the repo root,
+one per line: `src/math.py : total : int`.
+
+Pin a released tag (`@v0.16.0`), not `@main`, so results do not change under you.
+
+## Use it from the command line
 
 ```
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/Neelagiri65/equiv/releases/latest/download/equiv-cli-installer.sh | sh
-```
 
-```
-equiv review candidate.py reference.py <function> <arg types>
+equiv review new.py old.py <function> <arg types>
 equiv verify-receipt <signed-receipt-hex>
 ```
 
-Exit codes: `0` equivalent, `1` diverges with a printed counterexample, `2`
-could not check. For `review-pr` the code is a report over the whole run: `0`
-every changed function was checked and preserved behaviour, `1` at least one
-changed behaviour, `2` nothing diverged but at least one changed function was
-not checked (safety stop, refused type, error, or no supported type hints; each
-is listed in the comment, never shown as green). The Action fails the PR check
-on `1` by default and on `2` only with `fail-on-not-checked: "true"`; a review
-that did not run at all (`3`) always fails it.
+Exit codes: `0` same behaviour, `1` different (the input is printed), `2` could
+not check.
 
-## Scope
+## Good to know
 
-`equiv` checks behavioural equivalence of a function against a reference, on
-deterministically generated inputs. Generation has three deterministic layers:
-boundary corners per type (empty, sign and off-by-one values, uppercase, strings
-longer than 8, lists longer than 6, the float special values), inputs read from
-the source's own branch literals (a constant `== 777` in the code is tested
-directly, with its neighbours), then seeded random cases. This is still bounded
-testing, not exhaustive verification: a pass means no divergence was found on the
-generated inputs. Two limits are deliberate. Random integers stay inside a magnitude envelope
-(|n| up to 1,000,000) so a linear reference cannot hang; fixed large-magnitude
-corners (the 32-bit wrap points, the float64 exactness cliff at 2^53 and the
-64-bit limits, each with its negative) are tried after every other input, and
-a version that cannot finish one of them inside the step budget has that input
-recorded in the receipt as not judged rather than failing the review. Arguments are varied one at a time, which
-means a divergence that needs two specific arguments at once may be missed. Methods, async and nested functions are listed as not checked, never judged. A function that did not change is not re-checked when something it calls did. It does not check intent, architecture, security. It
-cannot judge new functionality that has no reference to compare against. A
-passing result means behaviour was preserved on the tested inputs. It does not
-mean the change is correct. Supported input types in this version are `int`,
-`str`, `list[int]`, `list[str]`, `float`, `dict`, `bool`. Dict and list results are compared
-structurally: a dict is a map (key order ignored); a value that is not
-JSON-structural (a set, a custom object, non-string keys) is refused. Float
-reviews are admitted only inside the IEEE-754
-correctly rounded operations, where the result is identical on every machine. A
-function that reaches a transcendental (sin, exp, log, pow) is refused by name
-rather than judged. Its last bit is not reproducible across maths libraries.
+- **Credentials are withheld from the code being checked.** Since v0.16.0 it
+  runs with a short allowlist of environment variables, so the signing key,
+  `GH_TOKEN` and the Actions login token are not passed to it. It still runs
+  with normal file and network access, so only review code you would be
+  willing to run. [Details](docs/signing-model.md)
+- **No tracking.** `equiv` sends nothing anywhere. Optional local counts can be
+  switched on with `EQUIV_METRICS=on`. [Details](docs/metrics.md)
+- **Same answer everywhere.** Inputs and verdicts are worked out in Rust from a
+  fixed seed. Python only runs the functions. Receipts can be signed with your
+  own key or with Sigstore, which needs no stored key.
 
-Each call of either version, and each module load, runs under a step budget:
-4,000,000 Python line and jump events by default (enough for a loop with a one-line body over any int in the random range), counted through
-`sys.monitoring`. No clock is read, so the same budget gives the same result on
-every host running the same Python minor; the receipt records which one ran. A version that exceeds it (an infinite loop, or a loop over a huge
-literal-derived input) ends the review as could not check (exit `2`), naming the
-budget, the input and the side; a counterexample found on an earlier input still
-stands. The budget is written into the receipt. Work done inside C code (for
-example `sum(range(10**18))`) raises no Python events and is not counted. For
-that case a separate safety limit applies: if one function's check runs longer
-than `EQUIV_SAFETY_SECONDS` (default 120) of wall-clock time, its evaluator
-processes are stopped and the function is reported as could not check (exit
-`2`). This limit is not part of the deterministic budget, so it never decides a
-verdict and no receipt (signed or unsigned) is issued for a stopped function;
-other functions in the same run still report. The budget needs Python 3.12 or
-newer; on an older Python the review reports could not check instead of running
-without a limit.
+## More detail
 
-## Credentials and the code under review
-
-`equiv` runs the functions under review in a Python process that gets only an
-allowlisted environment (`PATH`, `HOME`, temp dirs, locale, `PYTHON*`,
-virtualenv/conda, Windows system variables). The signing key, `GH_TOKEN` and
-the Actions OIDC token are not passed to it. This is not a sandbox: the code
-still runs with the runner's filesystem and network. Before v0.16.0 the full
-environment was passed through. See `docs/signing-model.md`.
-
-## Metrics
-
-Off by default. equiv sends nothing anywhere and writes no metrics file unless
-you set `EQUIV_METRICS=on`. When on, `review-pr` appends one line of counts to
-`./equiv-metrics.jsonl`: how many functions changed, how many were checked, the
-verdicts and why the rest were not checked, plus the language, equiv version,
-day and a hash of the git remote URL. The hash is unsalted, so anyone who knows
-the URL can match it. Never code, function names, paths, values, receipt ids or
-the repo's name in clear. `DO_NOT_TRACK=1` overrides.
-
-## How it works
-
-Input generation and the verdict are computed in Rust from a fixed seed. The
-language runtime is used only as an evaluator and never decides anything that
-reaches the receipt. Receipts are identical across hosts. Receipts can be
-signed with a local ed25519 key or with keyless Sigstore (OIDC). The keyless
-path binds the signature to a verifiable CI identity rather than a stored
-secret. The tool is a single static binary with no runtime dependencies,
-prebuilt for macOS, Linux and Windows.
-
-## Documentation
-
-- `docs/signing-model.md`: receipt signing with ed25519 and keyless Sigstore.
-- `docs/RELEASING.md`: building prebuilt binaries with cargo-dist.
-- `crates/`: the Rust workspace (`equiv-core`, `equiv-engine`, `equiv-review`, `equiv-cli`).
+- [How inputs are chosen, limits and budgets](docs/scope.md)
+- [How receipts are signed](docs/signing-model.md)
+- [Releasing](docs/RELEASING.md)
 
 License: Apache-2.0.
