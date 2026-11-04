@@ -2,6 +2,9 @@
 //! A trust tool must not leave files in someone's repo that they did not ask
 //! for (decision 2026-11-04, backlog 1.3). `DO_NOT_TRACK` overrides an opt-in.
 use std::path::{Path, PathBuf};
+// The edit after the commit changes the file size on purpose: a same-size
+// edit within the same second can look unchanged to git (racy git), and
+// review-pr then finds nothing to review (seen once in CI).
 use std::process::Command;
 
 const BIN: &str = env!("CARGO_BIN_EXE_equiv");
@@ -14,7 +17,7 @@ fn repo(name: &str) -> PathBuf {
     git(&d, &["init", "-q"]);
     git(&d, &["add", "."]);
     git(&d, &["commit", "-q", "-m", "base"]);
-    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x\n").unwrap();
+    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x  # refactor\n").unwrap();
     d
 }
 
