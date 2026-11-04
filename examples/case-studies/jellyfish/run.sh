@@ -9,7 +9,7 @@ case "$(uname -m)" in
   arm64|aarch64) T=aarch64-unknown-linux-gnu; P=manylinux2014_aarch64 ;;
   *)             T=x86_64-unknown-linux-gnu;  P=manylinux2014_x86_64 ;;
 esac
-W=$(mktemp -d "$PWD/.work.XXXX")
+W=$(mktemp -d)
 gh release download "$EQUIV_VERSION" -R Neelagiri65/equiv -p "equiv-cli-$T.tar.xz" -D "$W"
 ( cd "$W" && gh release download "$EQUIV_VERSION" -R Neelagiri65/equiv -p "equiv-cli-$T.tar.xz.sha256" && shasum -a 256 -c "equiv-cli-$T.tar.xz.sha256" 2>/dev/null )
 tar xf "$W/equiv-cli-$T.tar.xz" -C "$W"

@@ -4,7 +4,8 @@
 library for fuzzy string matching (Soundex, Metaphone, Levenshtein distance and
 others). Each function ships twice in the same package: a fast Rust version
 (`jellyfish._rustyfish`, the one you normally get) and a pure-Python version
-(`jellyfish._jellyfish`). The two are meant to give the same answers.
+(`jellyfish._jellyfish`). The two are meant to give the same answers: the
+project's own test suite runs the same test data against both.
 
 That makes it a natural test for `equiv`: treat the Python version as the
 reference and the Rust version as the change, and ask whether they behave the
@@ -42,9 +43,10 @@ cases plus random strings. Receipt ids for every row are in
 [`out-1.2.1.txt`](../../examples/case-studies/jellyfish/out-1.2.1.txt) and
 [`out-1.3.0.txt`](../../examples/case-studies/jellyfish/out-1.3.0.txt).
 
-Many of these disagreements look deliberate rather than wrong. The Rust
-distance functions count user-perceived characters (`\r\n` is one), the Python
-ones count code points. Rust accepts empty strings where Python raises. `equiv`
+Many of these disagreements look deliberate rather than wrong. The distance
+results are consistent with Rust counting user-perceived characters (`\r\n` as
+one) and Python counting code points; we inferred this from the inputs, not
+from the source. Rust accepts empty strings where Python raises. `equiv`
 reports that the behaviour differs. It does not say which side is right; only
 the maintainer can.
 
@@ -84,7 +86,7 @@ with inputs such as `'gh'` (Rust `KH`, Python empty) and `'rczgh'` (Rust `RKSKH`
 Python `RKS`). On 1.3.0, after the fix, none did. At 200 inputs, the default
 before v0.14.0, no seed found it.
 
-Two changes made this possible, and both shipped in `equiv` this month:
+Two changes made this possible:
 v0.13.0 counts every disagreeing input and lists them with `--all` (before, it
 stopped at the first, which for Metaphone is `'Straße'`), and v0.14.0 raised the
 default from 200 to 2,000 inputs.
