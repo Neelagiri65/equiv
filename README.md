@@ -32,8 +32,8 @@ code is correct or does what you intended.
 
 ## Does it actually catch bugs?
 
-- **Test corpus.** 103 labelled pairs of functions where we already know the
-  answer. Of the 67 that really change behaviour, `equiv` catches 59, misses 4,
+- **Test corpus.** 107 labelled pairs of functions where we already know the
+  answer. Of the 71 that really change behaviour, `equiv` catches 63, misses 4,
   and cannot check 4. Of the 36 that keep behaviour, it raises 0 false alarms
   (35 pass, 1 cannot check). Every miss is listed. [`divergences/`](divergences/)
 - **[jellyfish](docs/case-studies/jellyfish.md).** This library ships every
@@ -61,12 +61,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Neelagiri65/equiv@v0.16.0
+      - uses: Neelagiri65/equiv@v0.17.0
         with: { keyless: "true" }
 ```
 
 That is all. On every PR, `equiv` finds the changed functions, checks each one
-against its version on the base branch, and posts one comment:
+against its version on the base branch, and posts one comment. Besides its own
+generated inputs, it tries the literal values your tests and other code already
+call each function with (read, never run):
 
 - **behaviour preserved**: the check passes
 - **behaviour changed**: the check fails, and the comment shows the input that tells the two apart
@@ -75,7 +77,7 @@ against its version on the base branch, and posts one comment:
 To check only specific functions, list them in `.equiv-review` at the repo root,
 one per line: `src/math.py : total : int`.
 
-Pin a released tag (`@v0.16.0`), not `@main`, so results do not change under you.
+Pin a released tag (`@v0.17.0`), not `@main`, so results do not change under you.
 
 ## Use it from the command line
 
@@ -92,7 +94,7 @@ not check.
 
 ## Good to know
 
-- **Credentials are withheld from the code being checked.** Since v0.16.0 it
+- **Credentials are withheld from the code being checked.** Since v0.17.0 it
   runs with a short allowlist of environment variables, so the signing key,
   `GH_TOKEN` and the Actions login token are not passed to it. It still runs
   with normal file and network access, so only review code you would be
