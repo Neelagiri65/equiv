@@ -134,6 +134,15 @@ other functions in the same run still report. The budget needs Python 3.12 or
 newer; on an older Python the review reports could not check instead of running
 without a limit.
 
+## Credentials and the code under review
+
+`equiv` runs the functions under review in a Python process that gets only an
+allowlisted environment (`PATH`, `HOME`, temp dirs, locale, `PYTHON*`,
+virtualenv/conda, Windows system variables). The signing key, `GH_TOKEN` and
+the Actions OIDC token are not passed to it. This is not a sandbox: the code
+still runs with the runner's filesystem and network. Before v0.16.0 the full
+environment was passed through. See `docs/signing-model.md`.
+
 ## Metrics
 
 Off by default. equiv sends nothing anywhere and writes no metrics file unless
