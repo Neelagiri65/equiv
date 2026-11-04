@@ -101,3 +101,21 @@ fn zero_argument_functions_are_checked() {
     let same = review_limited(&d.join("a.py"), &d.join("c.py"), &spec, 60).unwrap();
     assert!(matches!(same.verdict, ReviewVerdict::Equivalent { .. }), "{:?}", same.verdict);
 }
+
+/// A harvested value that runs past the step budget (a project's own test of
+/// a brute-force function) is "not judged at this input"; the review still
+/// judges every other input instead of ending as could not check.
+#[test]
+fn a_costly_harvested_value_is_not_judged_rather_than_fatal() {
+    let d = dir("costly");
+    let src = "def f(s):\n    n = 0\n    if s == 'slow':\n        while True:\n            n += 1\n    return len(s)\n";
+    std::fs::write(d.join("a.py"), src).unwrap();
+    std::fs::write(d.join("b.py"), src).unwrap();
+    let spec = ReviewSpec { func: "f".into(), args: vec![ArgType::Str], n: 200, seed: 1, budget: DEFAULT_BUDGET };
+    let slow: Vec<equiv_review::Slots> = vec![vec![Some(PyVal::Str("slow".into()))]];
+    let r = review_with_inputs(&d.join("a.py"), &d.join("b.py"), &spec, &slow, 60).unwrap();
+    match r.verdict {
+        ReviewVerdict::Equivalent { not_judged, .. } => assert_eq!(not_judged, 1),
+        v => panic!("expected EQUIVALENT with one input not judged, got {v:?}"),
+    }
+}

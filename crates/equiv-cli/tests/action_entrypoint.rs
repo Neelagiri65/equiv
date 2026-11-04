@@ -35,7 +35,7 @@ fn repo(name: &str, manifest: bool) -> PathBuf {
     git(&d, &["init", "-q"]);
     git(&d, &["add", "."]);
     git(&d, &["commit", "-q", "-m", "base"]);
-    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x\n\ndef g(x: int):\n    return x + 0\n").unwrap();
+    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x  # refactor\n\ndef g(x: int):\n    return x + 0\n").unwrap();
     d
 }
 

@@ -58,7 +58,7 @@ fn auto_checks_the_function_changed_in_the_diff() {
     git(&d, &["init", "-q"]);
     git(&d, &["add", "."]);
     git(&d, &["commit", "-q", "-m", "base"]);
-    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x\n\ndef h(x: int):\n    return x\n").unwrap();
+    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x  # refactor\n\ndef h(x: int):\n    return x\n").unwrap();
     let (code, stdout, stderr) = run_auto(&d);
     assert_eq!(code, Some(0), "{stdout}\n{stderr}");
     let h = headline(&stdout);
@@ -135,7 +135,7 @@ fn auto_diffs_against_the_merge_base_not_the_base_tip() {
     git(&d, &["add", "."]);
     git(&d, &["commit", "-q", "-m", "base"]);
     git(&d, &["checkout", "-q", "-b", "pr"]);
-    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x\n\ndef g(x: int):\n    return x\n").unwrap();
+    std::fs::write(d.join("m.py"), "def f(x: int):\n    return x + x  # refactor\n\ndef g(x: int):\n    return x\n").unwrap();
     git(&d, &["commit", "-q", "-am", "pr: f rewritten"]);
     git(&d, &["checkout", "-q", "main"]);
     std::fs::write(d.join("m.py"), "def f(x: int):\n    return x * 2\n\ndef g(x: int):\n    return x + 1\n").unwrap();
