@@ -1,0 +1,683 @@
+### jellyfish 1.2.1 / equiv 0.14.0
+metaphone(high): rust HKH python H
+## A. all inputs, default size, seed 1
+== soundex
+EQUIVALENT: agreed on all 1589 generated inputs (seed 1)
+provenance: python 3.12, seed 1; inputs 40 corner + 0 literal + 1549 random; 0 raised on both sides; tier tested
+receipt-id: ee1103e99c8366e0b0b3df4aa0729f714bd366e31e051c51e641f8461aaba20a
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f035820103cfaa22aac92f36991b9fdf85ec2058aaab7ad0a3210f3681cd088a14c7a0d0483001906350005826c65717569762d72657669657766302e31342e30061a003d09000764332e31320801098318280019060d0a000b66746573746564
+exit=0
+== metaphone
+COUNTEREXAMPLE at input ('Stra\xdfe')
+  candidate -> 'STRS'
+  reference -> 'STR'
+disagreements: 12 of 1589 judged inputs
+  at ('Stra\xdfe'): candidate -> 'STRS', reference -> 'STR'
+  at ('\xdf'): candidate -> 'S', reference -> ''
+  at ('mb'): candidate -> 'M', reference -> 'MB'
+  at ('bmegn'): candidate -> 'BM', reference -> 'BMKN'
+  at ('jslludgh'): candidate -> 'JSLTKH', reference -> 'JSLT'
+  at ('cmxibgh'): candidate -> 'KMKSBKH', reference -> 'KMKSB'
+  at ('gh'): candidate -> 'KH', reference -> ''
+  at ('vwenmb'): candidate -> 'FWNM', reference -> 'FWNMB'
+  at ('odyfmb'): candidate -> 'OTFM', reference -> 'OTFMB'
+  at ('zkdvgh'): candidate -> 'SKTFKH', reference -> 'SKTF'
+  at ('rczgh'): candidate -> 'RKSKH', reference -> 'RKS'
+  at ('oujgh'): candidate -> 'OJKH', reference -> 'OJ'
+provenance: python 3.12, seed 1; inputs 40 corner + 0 literal + 1549 random; 0 raised on both sides; tier tested
+receipt-id: f710c6af6ee4c718015908243ef4279ef65daff67835ef1bbdd049d69d125788
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f03582089b042a2aa22e5006e54140a8fff1488563911d97cdf150f3ab746024a23d35a0487016d2827537472615c786466652729662753545253276527535452271906350c6005826c65717569762d72657669657766302e31342e30061a003d09000764332e31320801098318280019060d0a000b66746573746564
+exit=1
+== nysiis
+EQUIVALENT: agreed on all 1589 generated inputs (seed 1)
+provenance: python 3.12, seed 1; inputs 40 corner + 0 literal + 1549 random; 0 raised on both sides; tier tested
+receipt-id: 0d4fde6ed874847a1339bef941332702bc8809d8b841300ec24ef0ecdda592aa
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f035820eb065cfbbbdfaf1fab9567939c4c453b1691a6de70a426eb48d14bbe2152016c0483001906350005826c65717569762d72657669657766302e31342e30061a003d09000764332e31320801098318280019060d0a000b66746573746564
+exit=0
+== match_rating_codex
+COUNTEREXAMPLE at input ('')
+  candidate -> ''
+  reference -> ValueError
+disagreements: 3 of 1589 judged inputs
+  at (''): candidate -> '', reference -> ValueError
+  at (' '): candidate -> ' ', reference -> ValueError
+  at (' x '): candidate -> ' X ', reference -> 'X'
+provenance: python 3.12, seed 1; inputs 40 corner + 0 literal + 1549 random; 28 raised on both sides; tier tested
+receipt-id: fa69926296e4b6f8ee41ec526dacca0834526994935e07876396cceb82475c0c
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f0358200135062125c0f12d7258d0d44e5a6cf90b7ff55b1ed2bf903cdc05eb5cccd38804870164282727296227276a56616c75654572726f72190635036005826c65717569762d72657669657766302e31342e30061a003d09000764332e31320801098318280019060d0a181c0b66746573746564
+exit=1
+== jaro_similarity
+COUNTEREXAMPLE at input ('e\u0301', 'E\u0301')
+  candidate -> 0x0.0p+0
+  reference -> 0x1.5555555555555p-1
+disagreements: 1 of 2086 judged inputs
+  at ('e\u0301', 'E\u0301'): candidate -> 0x0.0p+0, reference -> 0x1.5555555555555p-1
+provenance: python 3.12, seed 1; inputs 133 corner + 0 literal + 1953 random; 0 raised on both sides; tier tested
+receipt-id: 4d8e3ab9711d270ef53465ddea527a9de52063d56e3adecd211293f71e5d03b8
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f035820513ad5ac0cbc0fd1e0f4024b528485c22bb5f6feb0428fe5cfccd068c56b8c98048701762827655c7530333031272c2027455c75303330312729683078302e30702b30743078312e35353535353535353535353535702d31190826016005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080109831885001907a10a000b66746573746564
+exit=1
+== jaro_winkler_similarity
+COUNTEREXAMPLE at input ('e\u0301', 'E\u0301')
+  candidate -> 0x0.0p+0
+  reference -> 0x1.5555555555555p-1
+disagreements: 1 of 2086 judged inputs
+  at ('e\u0301', 'E\u0301'): candidate -> 0x0.0p+0, reference -> 0x1.5555555555555p-1
+provenance: python 3.12, seed 1; inputs 133 corner + 0 literal + 1953 random; 0 raised on both sides; tier tested
+receipt-id: 573f52a494bcbc28a4fce0eb3af614d360d42763123c267b6a40c1dd16e32e3e
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f0358205fb021675a9c73302f401dbcbb6a79f77665aeef3468859e0f2b091272400b6d048701762827655c7530333031272c2027455c75303330312729683078302e30702b30743078312e35353535353535353535353535702d31190826016005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080109831885001907a10a000b66746573746564
+exit=1
+== levenshtein_distance
+COUNTEREXAMPLE at input ('\x0d\x0a', '')
+  candidate -> 1
+  reference -> 2
+disagreements: 5 of 2086 judged inputs
+  at ('\x0d\x0a', ''): candidate -> 1, reference -> 2
+  at ('e\u0301', ''): candidate -> 1, reference -> 2
+  at ('', '\x0d\x0a'): candidate -> 1, reference -> 2
+  at ('', 'e\u0301'): candidate -> 1, reference -> 2
+  at ('\u0130', 'i\u0307'): candidate -> 1, reference -> 2
+provenance: python 3.12, seed 1; inputs 133 corner + 0 literal + 1953 random; 0 raised on both sides; tier tested
+receipt-id: 85848932f3eca68cae8d42c21070fe24f1e9ffe899abd9e1562d5b6926699250
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f035820cd16094c171cfeb392d74185e272c252fd0b8ebe710b44e890d0bf1b82414aad0487017028275c7830645c783061272c2027272961316132190826056005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080109831885001907a10a000b66746573746564
+exit=1
+== damerau_levenshtein_distance
+COUNTEREXAMPLE at input ('\x0d\x0a', '')
+  candidate -> 1
+  reference -> 2
+disagreements: 5 of 2086 judged inputs
+  at ('\x0d\x0a', ''): candidate -> 1, reference -> 2
+  at ('e\u0301', ''): candidate -> 1, reference -> 2
+  at ('', '\x0d\x0a'): candidate -> 1, reference -> 2
+  at ('', 'e\u0301'): candidate -> 1, reference -> 2
+  at ('\u0130', 'i\u0307'): candidate -> 1, reference -> 2
+provenance: python 3.12, seed 1; inputs 133 corner + 0 literal + 1953 random; 0 raised on both sides; tier tested
+receipt-id: 611f4eead7bf2c4bb566483b7625f5e1e8533626309faae7578933b5b8b70cfc
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f0358201f686d11b72998b9b5175e2b972722f8318df5f25e163322ebf9386ec70b08060487017028275c7830645c783061272c2027272961316132190826056005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080109831885001907a10a000b66746573746564
+exit=1
+== hamming_distance
+COUNTEREXAMPLE at input ('\x0d\x0a', '')
+  candidate -> 1
+  reference -> 2
+disagreements: 5 of 2086 judged inputs
+  at ('\x0d\x0a', ''): candidate -> 1, reference -> 2
+  at ('e\u0301', ''): candidate -> 1, reference -> 2
+  at ('', '\x0d\x0a'): candidate -> 1, reference -> 2
+  at ('', 'e\u0301'): candidate -> 1, reference -> 2
+  at ('\u0130', 'i\u0307'): candidate -> 1, reference -> 2
+provenance: python 3.12, seed 1; inputs 133 corner + 0 literal + 1953 random; 0 raised on both sides; tier tested
+receipt-id: dc9ea8b27740f2c1c5d95059955ca96f19ce497d6b16049ebcc7c56e6072a101
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f0358208575148541daa995e4c8be95967109ec160b3d5b57c477a56ecb4640cbcbf3640487017028275c7830645c783061272c2027272961316132190826056005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080109831885001907a10a000b66746573746564
+exit=1
+== match_rating_comparison
+COUNTEREXAMPLE at input ('', '')
+  candidate -> True
+  reference -> ValueError
+disagreements: 476 of 2086 judged inputs
+  at ('', ''): candidate -> True, reference -> ValueError
+  at ('a', ''): candidate -> True, reference -> ValueError
+  at ('A', ''): candidate -> True, reference -> ValueError
+  at ('0', ''): candidate -> None, reference -> ValueError
+  at (' ', ''): candidate -> True, reference -> ValueError
+  at ('abcdefghij', ''): candidate -> None, reference -> ValueError
+  at ('\x09', ''): candidate -> None, reference -> ValueError
+  at ('\x0a', ''): candidate -> None, reference -> ValueError
+  at ('\x09x\x0a', ''): candidate -> None, reference -> ValueError
+  at (' x ', ''): candidate -> None, reference -> ValueError
+  at ('\x0d\x0a', ''): candidate -> None, reference -> ValueError
+  at ('\x0b\x0c', ''): candidate -> None, reference -> ValueError
+  at ('\xa0', ''): candidate -> None, reference -> ValueError
+  at ('\u2003', ''): candidate -> None, reference -> ValueError
+  at ('\u3000', ''): candidate -> None, reference -> ValueError
+  at ('Stra\xdfe', ''): candidate -> None, reference -> ValueError
+  at ('\xdf', ''): candidate -> True, reference -> ValueError
+  at ('\u0130', ''): candidate -> True, reference -> ValueError
+  at ('\u03c2', ''): candidate -> True, reference -> ValueError
+  at ('\ufb01', ''): candidate -> True, reference -> ValueError
+  at ('\xb2', ''): candidate -> None, reference -> ValueError
+  at ('\u0663', ''): candidate -> None, reference -> ValueError
+  at ('\uff17', ''): candidate -> None, reference -> ValueError
+  at ('\xe9\xe9\xe9\xe9\xe9\xe9', ''): candidate -> True, reference -> ValueError
+  at ('e\u0301', ''): candidate -> None, reference -> ValueError
+  at ('\U0001f600', ''): candidate -> None, reference -> ValueError
+  at ('91', ''): candidate -> None, reference -> ValueError
+  at ('0123456789', ''): candidate -> None, reference -> ValueError
+  at ('79927398713', ''): candidate -> None, reference -> ValueError
+  at ('4111111111111111', ''): candidate -> None, reference -> ValueError
+  at ('123456789X', ''): candidate -> None, reference -> ValueError
+  at ('0306406152', ''): candidate -> None, reference -> ValueError
+  at ('-1', ''): candidate -> None, reference -> ValueError
+  at ('+1', ''): candidate -> None, reference -> ValueError
+  at ('1.5', ''): candidate -> None, reference -> ValueError
+  at ('1e3', ''): candidate -> None, reference -> ValueError
+  at (' 7 ', ''): candidate -> None, reference -> ValueError
+  at ('-0', ''): candidate -> None, reference -> ValueError
+  at ('+0', ''): candidate -> None, reference -> ValueError
+  at ('0.0', ''): candidate -> None, reference -> ValueError
+  at ('', 'a'): candidate -> True, reference -> ValueError
+  at ('', 'A'): candidate -> True, reference -> ValueError
+  at ('', '0'): candidate -> None, reference -> ValueError
+  at ('', ' '): candidate -> True, reference -> ValueError
+  at ('', 'abcdefghij'): candidate -> None, reference -> ValueError
+  at ('', '\x09'): candidate -> None, reference -> ValueError
+  at ('', '\x0a'): candidate -> None, reference -> ValueError
+  at ('', '\x09x\x0a'): candidate -> None, reference -> ValueError
+  at ('', ' x '): candidate -> None, reference -> ValueError
+  at ('', '\x0d\x0a'): candidate -> None, reference -> ValueError
+  at ('', '\x0b\x0c'): candidate -> None, reference -> ValueError
+  at ('', '\xa0'): candidate -> None, reference -> ValueError
+  at ('', '\u2003'): candidate -> None, reference -> ValueError
+  at ('', '\u3000'): candidate -> None, reference -> ValueError
+  at ('', 'Stra\xdfe'): candidate -> None, reference -> ValueError
+  at ('', '\xdf'): candidate -> True, reference -> ValueError
+  at ('', '\u0130'): candidate -> True, reference -> ValueError
+  at ('', '\u03c2'): candidate -> True, reference -> ValueError
+  at ('', '\ufb01'): candidate -> True, reference -> ValueError
+  at ('', '\xb2'): candidate -> None, reference -> ValueError
+  at ('', '\u0663'): candidate -> None, reference -> ValueError
+  at ('', '\uff17'): candidate -> None, reference -> ValueError
+  at ('', '\xe9\xe9\xe9\xe9\xe9\xe9'): candidate -> True, reference -> ValueError
+  at ('', 'e\u0301'): candidate -> None, reference -> ValueError
+  at ('', '\U0001f600'): candidate -> None, reference -> ValueError
+  at ('', '91'): candidate -> None, reference -> ValueError
+  at ('', '0123456789'): candidate -> None, reference -> ValueError
+  at ('', '79927398713'): candidate -> None, reference -> ValueError
+  at ('', '4111111111111111'): candidate -> None, reference -> ValueError
+  at ('', '123456789X'): candidate -> None, reference -> ValueError
+  at ('', '0306406152'): candidate -> None, reference -> ValueError
+  at ('', '-1'): candidate -> None, reference -> ValueError
+  at ('', '+1'): candidate -> None, reference -> ValueError
+  at ('', '1.5'): candidate -> None, reference -> ValueError
+  at ('', '1e3'): candidate -> None, reference -> ValueError
+  at ('', ' 7 '): candidate -> None, reference -> ValueError
+  at ('', '-0'): candidate -> None, reference -> ValueError
+  at ('', '+0'): candidate -> None, reference -> ValueError
+  at ('', '0.0'): candidate -> None, reference -> ValueError
+  at ('0', '0'): candidate -> None, reference -> ValueError
+  at (' ', ' '): candidate -> True, reference -> ValueError
+  at ('\x09', '\x09'): candidate -> None, reference -> ValueError
+  at ('\x0a', '\x0a'): candidate -> None, reference -> ValueError
+  at ('\x09x\x0a', '\x09x\x0a'): candidate -> None, reference -> ValueError
+  at ('\x09x\x0a', '\x09X\x0a'): candidate -> None, reference -> ValueError
+  at ('\x0d\x0a', '\x0d\x0a'): candidate -> None, reference -> ValueError
+  at ('\x0b\x0c', '\x0b\x0c'): candidate -> None, reference -> ValueError
+  at ('\xa0', '\xa0'): candidate -> None, reference -> ValueError
+  at ('\u2003', '\u2003'): candidate -> None, reference -> ValueError
+  at ('\u3000', '\u3000'): candidate -> None, reference -> ValueError
+  at ('\u0130', 'i\u0307'): candidate -> None, reference -> ValueError
+  at ('\xb2', '\xb2'): candidate -> None, reference -> ValueError
+  at ('\u0663', '\u0663'): candidate -> None, reference -> ValueError
+  at ('\uff17', '\uff17'): candidate -> None, reference -> ValueError
+  at ('e\u0301', 'e\u0301'): candidate -> None, reference -> ValueError
+  at ('e\u0301', 'E\u0301'): candidate -> None, reference -> ValueError
+  at ('\U0001f600', '\U0001f600'): candidate -> None, reference -> ValueError
+  at ('91', '91'): candidate -> None, reference -> ValueError
+  at ('0123456789', '0123456789'): candidate -> None, reference -> ValueError
+  at ('79927398713', '79927398713'): candidate -> None, reference -> ValueError
+  at ('4111111111111111', '4111111111111111'): candidate -> None, reference -> ValueError
+  at ('123456789X', '123456789X'): candidate -> None, reference -> ValueError
+  at ('123456789X', '123456789x'): candidate -> None, reference -> ValueError
+  at ('0306406152', '0306406152'): candidate -> None, reference -> ValueError
+  at ('-1', '-1'): candidate -> None, reference -> ValueError
+  at ('+1', '+1'): candidate -> None, reference -> ValueError
+  at ('1.5', '1.5'): candidate -> None, reference -> ValueError
+  at ('1e3', '1e3'): candidate -> None, reference -> ValueError
+  at ('1e3', '1E3'): candidate -> None, reference -> ValueError
+  at (' 7 ', ' 7 '): candidate -> None, reference -> ValueError
+  at ('-0', '-0'): candidate -> None, reference -> ValueError
+  at ('+0', '+0'): candidate -> None, reference -> ValueError
+  at ('0.0', '0.0'): candidate -> None, reference -> ValueError
+  at ('bxdwx', ''): candidate -> None, reference -> ValueError
+  at ('xcfnby', ''): candidate -> None, reference -> ValueError
+  at ('', 'liunwrt'): candidate -> None, reference -> ValueError
+  at ('', 'cy'): candidate -> False, reference -> ValueError
+  at ('', 'dtlxl'): candidate -> None, reference -> ValueError
+  at ('xwmzppfq', ''): candidate -> None, reference -> ValueError
+  at ('', 'u'): candidate -> True, reference -> ValueError
+  at ('ger', ''): candidate -> False, reference -> ValueError
+  at ('', 'heqq'): candidate -> False, reference -> ValueError
+  at ('', 'z'): candidate -> True, reference -> ValueError
+  at ('', 'fhhxmev'): candidate -> None, reference -> ValueError
+  at ('', 'npw'): candidate -> None, reference -> ValueError
+  at ('ytvsgc', ''): candidate -> None, reference -> ValueError
+  at ('xdfsbes', ''): candidate -> None, reference -> ValueError
+  at ('', 'mhgnhjfm'): candidate -> None, reference -> ValueError
+  at ('d', ''): candidate -> True, reference -> ValueError
+  at ('', 'bnxcbiwf'): candidate -> None, reference -> ValueError
+  at ('mw', ''): candidate -> False, reference -> ValueError
+  at ('etr', ''): candidate -> None, reference -> ValueError
+  at ('hhm', ''): candidate -> False, reference -> ValueError
+  at ('', 'syppjfhh'): candidate -> None, reference -> ValueError
+  at ('', 's'): candidate -> True, reference -> ValueError
+  at ('fxw', ''): candidate -> None, reference -> ValueError
+  at ('tmu', ''): candidate -> False, reference -> ValueError
+  at ('fp', ''): candidate -> False, reference -> ValueError
+  at ('', 'f'): candidate -> True, reference -> ValueError
+  at ('n', ''): candidate -> True, reference -> ValueError
+  at ('', 'hjn'): candidate -> None, reference -> ValueError
+  at ('t', ''): candidate -> True, reference -> ValueError
+  at ('', 'mujbtz'): candidate -> None, reference -> ValueError
+  at ('g', ''): candidate -> True, reference -> ValueError
+  at ('', 'rsgv'): candidate -> None, reference -> ValueError
+  at ('', 'jmmuq'): candidate -> None, reference -> ValueError
+  at ('nhco', ''): candidate -> None, reference -> ValueError
+  at ('', 'psuxrfii'): candidate -> None, reference -> ValueError
+  at ('jyfqa', ''): candidate -> None, reference -> ValueError
+  at ('ucp', ''): candidate -> None, reference -> ValueError
+  at ('ndudauu', ''): candidate -> None, reference -> ValueError
+  at ('', 'qnbp'): candidate -> None, reference -> ValueError
+  at ('mptnwea', ''): candidate -> None, reference -> ValueError
+  at ('jxeum', ''): candidate -> None, reference -> ValueError
+  at ('', 'c'): candidate -> True, reference -> ValueError
+  at ('gnn', ''): candidate -> False, reference -> ValueError
+  at ('xz', ''): candidate -> False, reference -> ValueError
+  at ('', 'wdjqupea'): candidate -> None, reference -> ValueError
+  at ('', 'j'): candidate -> True, reference -> ValueError
+  at ('', 'uwsn'): candidate -> None, reference -> ValueError
+  at ('', 'vdind'): candidate -> None, reference -> ValueError
+  at ('', 'rbxcpjbx'): candidate -> None, reference -> ValueError
+  at ('osrof', ''): candidate -> None, reference -> ValueError
+  at ('qsj', ''): candidate -> None, reference -> ValueError
+  at ('kypcu', ''): candidate -> None, reference -> ValueError
+  at ('', 'yka'): candidate -> False, reference -> ValueError
+  at ('', 'svm'): candidate -> None, reference -> ValueError
+  at ('ddkgpfip', ''): candidate -> None, reference -> ValueError
+  at ('f', ''): candidate -> True, reference -> ValueError
+  at ('', 'h'): candidate -> True, reference -> ValueError
+  at ('', 'of'): candidate -> False, reference -> ValueError
+  at ('lmosng', ''): candidate -> None, reference -> ValueError
+  at ('', 'pcefa'): candidate -> None, reference -> ValueError
+  at ('hrdxyht', ''): candidate -> None, reference -> ValueError
+  at ('', 'tjftec'): candidate -> None, reference -> ValueError
+  at ('ilgybyh', ''): candidate -> None, reference -> ValueError
+  at ('usomhiyi', ''): candidate -> None, reference -> ValueError
+  at ('xqnuwyn', ''): candidate -> None, reference -> ValueError
+  at ('', 'vwenmb'): candidate -> None, reference -> ValueError
+  at ('', 'aljxi'): candidate -> None, reference -> ValueError
+  at ('', 'lv'): candidate -> False, reference -> ValueError
+  at ('', 'mq'): candidate -> False, reference -> ValueError
+  at ('s', ''): candidate -> True, reference -> ValueError
+  at ('foqhjkd', ''): candidate -> None, reference -> ValueError
+  at ('', 'xvbg'): candidate -> None, reference -> ValueError
+  at ('fwifaicw', ''): candidate -> None, reference -> ValueError
+  at ('', 'dycmmek'): candidate -> None, reference -> ValueError
+  at ('bii', ''): candidate -> True, reference -> ValueError
+  at ('', 'ns'): candidate -> False, reference -> ValueError
+  at ('wyrzy', ''): candidate -> None, reference -> ValueError
+  at ('xd', ''): candidate -> False, reference -> ValueError
+  at ('ynlkwwto', ''): candidate -> None, reference -> ValueError
+  at ('jmyn', ''): candidate -> None, reference -> ValueError
+  at ('', 'zxi'): candidate -> False, reference -> ValueError
+  at ('', 'grcl'): candidate -> None, reference -> ValueError
+  at ('', 'wb'): candidate -> False, reference -> ValueError
+  at ('', 'sddo'): candidate -> False, reference -> ValueError
+  at ('j', ''): candidate -> True, reference -> ValueError
+  at ('', 'txjlboze'): candidate -> None, reference -> ValueError
+  at ('', 'rzdl'): candidate -> None, reference -> ValueError
+  at ('', 'iukmdf'): candidate -> None, reference -> ValueError
+  at ('qhdab', ''): candidate -> None, reference -> ValueError
+  at ('ooblodzx', ''): candidate -> None, reference -> ValueError
+  at ('m', ''): candidate -> True, reference -> ValueError
+  at ('fi', ''): candidate -> True, reference -> ValueError
+  at ('', 'vwqr'): candidate -> None, reference -> ValueError
+  at ('', 'b'): candidate -> True, reference -> ValueError
+  at ('', 'vrsy'): candidate -> None, reference -> ValueError
+  at ('wnujdg', ''): candidate -> None, reference -> ValueError
+  at ('ujsbohd', ''): candidate -> None, reference -> ValueError
+  at ('', 'yruqs'): candidate -> None, reference -> ValueError
+  at ('msex', ''): candidate -> None, reference -> ValueError
+  at ('', 'wttnbtx'): candidate -> None, reference -> ValueError
+  at ('mhb', ''): candidate -> None, reference -> ValueError
+  at ('xh', ''): candidate -> False, reference -> ValueError
+  at ('', 'oegerp'): candidate -> None, reference -> ValueError
+  at ('', 'rubd'): candidate -> None, reference -> ValueError
+  at ('x', ''): candidate -> True, reference -> ValueError
+  at ('', 'uwkav'): candidate -> None, reference -> ValueError
+  at ('levgzyc', ''): candidate -> None, reference -> ValueError
+  at ('', 'cxlpfujj'): candidate -> None, reference -> ValueError
+  at ('wfvid', ''): candidate -> None, reference -> ValueError
+  at ('', 'cmqyyjas'): candidate -> None, reference -> ValueError
+  at ('scezsvg', ''): candidate -> None, reference -> ValueError
+  at ('', 'dzvhmy'): candidate -> None, reference -> ValueError
+  at ('smd', ''): candidate -> None, reference -> ValueError
+  at ('', 'pqgv'): candidate -> None, reference -> ValueError
+  at ('cj', ''): candidate -> False, reference -> ValueError
+  at ('ioxonaij', ''): candidate -> None, reference -> ValueError
+  at ('yovqn', ''): candidate -> None, reference -> ValueError
+  at ('jn', ''): candidate -> False, reference -> ValueError
+  at ('anekpc', ''): candidate -> None, reference -> ValueError
+  at ('rswlksjn', ''): candidate -> None, reference -> ValueError
+  at ('', 'eucc'): candidate -> False, reference -> ValueError
+  at ('', 'p'): candidate -> True, reference -> ValueError
+  at ('', 'sr'): candidate -> False, reference -> ValueError
+  at ('kjms', ''): candidate -> None, reference -> ValueError
+  at ('fv', ''): candidate -> False, reference -> ValueError
+  at ('wmcd', ''): candidate -> None, reference -> ValueError
+  at ('', 'tpcko'): candidate -> None, reference -> ValueError
+  at ('', 'byreucpo'): candidate -> None, reference -> ValueError
+  at ('surwqsbj', ''): candidate -> None, reference -> ValueError
+  at ('w', ''): candidate -> True, reference -> ValueError
+  at ('fwznxerb', ''): candidate -> None, reference -> ValueError
+  at ('', 'bb'): candidate -> True, reference -> ValueError
+  at ('', 'lozil'): candidate -> None, reference -> ValueError
+  at ('xjrikndv', ''): candidate -> None, reference -> ValueError
+  at ('', 'lhhzby'): candidate -> None, reference -> ValueError
+  at ('icpes', ''): candidate -> None, reference -> ValueError
+  at ('dq', ''): candidate -> False, reference -> ValueError
+  at ('', 'faorkq'): candidate -> None, reference -> ValueError
+  at ('', 'jspdp'): candidate -> None, reference -> ValueError
+  at ('', 'kytu'): candidate -> None, reference -> ValueError
+  at ('', 'jvsguqv'): candidate -> None, reference -> ValueError
+  at ('dtbdmn', ''): candidate -> None, reference -> ValueError
+  at ('msnravvo', ''): candidate -> None, reference -> ValueError
+  at ('', 'jaz'): candidate -> False, reference -> ValueError
+  at ('', 'batt'): candidate -> False, reference -> ValueError
+  at ('', 'ennnks'): candidate -> None, reference -> ValueError
+  at ('vsnrtrhw', ''): candidate -> None, reference -> ValueError
+  at ('uh', ''): candidate -> False, reference -> ValueError
+  at ('rximudz', ''): candidate -> None, reference -> ValueError
+  at ('', 'bntjix'): candidate -> None, reference -> ValueError
+  at ('edldxh', ''): candidate -> None, reference -> ValueError
+  at ('', 'yc'): candidate -> False, reference -> ValueError
+  at ('ufhxtypz', ''): candidate -> None, reference -> ValueError
+  at ('dkrih', ''): candidate -> None, reference -> ValueError
+  at ('rhxzvo', ''): candidate -> None, reference -> ValueError
+  at ('eok', ''): candidate -> False, reference -> ValueError
+  at ('dqqwyjb', ''): candidate -> None, reference -> ValueError
+  at ('', 'vknau'): candidate -> None, reference -> ValueError
+  at ('', 'ky'): candidate -> False, reference -> ValueError
+  at ('', 'uhgamvjs'): candidate -> None, reference -> ValueError
+  at ('ko', ''): candidate -> True, reference -> ValueError
+  at ('bdqmo', ''): candidate -> None, reference -> ValueError
+  at ('cr', ''): candidate -> False, reference -> ValueError
+  at ('fxgbmket', ''): candidate -> None, reference -> ValueError
+  at ('bf', ''): candidate -> False, reference -> ValueError
+  at ('', 'pfefl'): candidate -> None, reference -> ValueError
+  at ('im', ''): candidate -> False, reference -> ValueError
+  at ('', 'vmyrongr'): candidate -> None, reference -> ValueError
+  at ('', 'xwi'): candidate -> False, reference -> ValueError
+  at ('egpbiq', ''): candidate -> None, reference -> ValueError
+  at ('', 'xqjgtph'): candidate -> None, reference -> ValueError
+  at ('', 'imsqib'): candidate -> None, reference -> ValueError
+  at ('wyts', ''): candidate -> None, reference -> ValueError
+  at ('', 'rubc'): candidate -> None, reference -> ValueError
+  at ('scbmd', ''): candidate -> None, reference -> ValueError
+  at ('witi', ''): candidate -> False, reference -> ValueError
+  at ('moub', ''): candidate -> False, reference -> ValueError
+  at ('wbhwjuhm', ''): candidate -> None, reference -> ValueError
+  at ('', 'jsrhvn'): candidate -> None, reference -> ValueError
+  at ('vuy', ''): candidate -> False, reference -> ValueError
+  at ('twywaa', ''): candidate -> None, reference -> ValueError
+  at ('pit', ''): candidate -> False, reference -> ValueError
+  at ('', 'tgnsow'): candidate -> None, reference -> ValueError
+  at ('cttkqhhd', ''): candidate -> None, reference -> ValueError
+  at ('y', ''): candidate -> True, reference -> ValueError
+  at ('kiwx', ''): candidate -> None, reference -> ValueError
+  at ('', 'ykvd'): candidate -> None, reference -> ValueError
+  at ('bqiuc', ''): candidate -> None, reference -> ValueError
+  at ('', 'xbrsftap'): candidate -> None, reference -> ValueError
+  at ('ex', ''): candidate -> False, reference -> ValueError
+  at ('', 'tmco'): candidate -> None, reference -> ValueError
+  at ('oufihj', ''): candidate -> None, reference -> ValueError
+  at ('snhyhau', ''): candidate -> None, reference -> ValueError
+  at ('iw', ''): candidate -> False, reference -> ValueError
+  at ('wrny', ''): candidate -> None, reference -> ValueError
+  at ('', 'ih'): candidate -> False, reference -> ValueError
+  at ('sdpyjeuw', ''): candidate -> None, reference -> ValueError
+  at ('hko', ''): candidate -> False, reference -> ValueError
+  at ('', 'ifkhyvd'): candidate -> None, reference -> ValueError
+  at ('', 'cpfchje'): candidate -> None, reference -> ValueError
+  at ('q', ''): candidate -> True, reference -> ValueError
+  at ('', 'q'): candidate -> True, reference -> ValueError
+  at ('tvjwr', ''): candidate -> None, reference -> ValueError
+  at ('', 'r'): candidate -> True, reference -> ValueError
+  at ('ut', ''): candidate -> False, reference -> ValueError
+  at ('fo', ''): candidate -> True, reference -> ValueError
+  at ('', 'vtqsk'): candidate -> None, reference -> ValueError
+  at ('', 'ixgum'): candidate -> None, reference -> ValueError
+  at ('hkgtz', ''): candidate -> None, reference -> ValueError
+  at ('kbygejn', ''): candidate -> None, reference -> ValueError
+  at ('dzrpxm', ''): candidate -> None, reference -> ValueError
+  at ('zeysrsnd', ''): candidate -> None, reference -> ValueError
+  at ('ifwlg', ''): candidate -> None, reference -> ValueError
+  at ('', 'totrn'): candidate -> None, reference -> ValueError
+  at ('tca', ''): candidate -> False, reference -> ValueError
+  at ('qmrs', ''): candidate -> None, reference -> ValueError
+  at ('yhhzahpy', ''): candidate -> None, reference -> ValueError
+  at ('ltqctz', ''): candidate -> None, reference -> ValueError
+  at ('dmyui', ''): candidate -> None, reference -> ValueError
+  at ('mqmbydp', ''): candidate -> None, reference -> ValueError
+  at ('', 'i'): candidate -> True, reference -> ValueError
+  at ('', 'psrfaw'): candidate -> None, reference -> ValueError
+  at ('', 'tkz'): candidate -> None, reference -> ValueError
+  at ('cpic', ''): candidate -> None, reference -> ValueError
+  at ('', 'qfvd'): candidate -> None, reference -> ValueError
+  at ('', 't'): candidate -> True, reference -> ValueError
+  at ('', 'ghzgthn'): candidate -> None, reference -> ValueError
+  at ('jvno', ''): candidate -> None, reference -> ValueError
+  at ('xeeqz', ''): candidate -> None, reference -> ValueError
+  at ('', 'emjmqjpv'): candidate -> None, reference -> ValueError
+  at ('', 'eyfc'): candidate -> None, reference -> ValueError
+  at ('', 'v'): candidate -> True, reference -> ValueError
+  at ('vvgfea', ''): candidate -> None, reference -> ValueError
+  at ('k', ''): candidate -> True, reference -> ValueError
+  at ('oxgm', ''): candidate -> None, reference -> ValueError
+  at ('', 'jubhy'): candidate -> None, reference -> ValueError
+  at ('', 'dieeju'): candidate -> False, reference -> ValueError
+  at ('xnu', ''): candidate -> False, reference -> ValueError
+  at ('', 'xgfjtdrc'): candidate -> None, reference -> ValueError
+  at ('', 'xgiuulgl'): candidate -> None, reference -> ValueError
+  at ('wppixful', ''): candidate -> None, reference -> ValueError
+  at ('', 'gptnitbb'): candidate -> None, reference -> ValueError
+  at ('', 'lwhstp'): candidate -> None, reference -> ValueError
+  at ('pgubmx', ''): candidate -> None, reference -> ValueError
+  at ('il', ''): candidate -> False, reference -> ValueError
+  at ('wkdwfjyi', ''): candidate -> None, reference -> ValueError
+  at ('xfgkkec', ''): candidate -> None, reference -> ValueError
+  at ('xeqe', ''): candidate -> False, reference -> ValueError
+  at ('', 'txyez'): candidate -> None, reference -> ValueError
+  at ('', 'gi'): candidate -> True, reference -> ValueError
+  at ('', 'atvyv'): candidate -> None, reference -> ValueError
+  at ('', 'hwrgukbp'): candidate -> None, reference -> ValueError
+  at ('', 'pehdvbna'): candidate -> None, reference -> ValueError
+  at ('uqk', ''): candidate -> None, reference -> ValueError
+  at ('', 'fwkck'): candidate -> None, reference -> ValueError
+  at ('hrebnlam', ''): candidate -> None, reference -> ValueError
+  at ('', 'rqyc'): candidate -> None, reference -> ValueError
+  at ('', 'bnml'): candidate -> None, reference -> ValueError
+  at ('b', ''): candidate -> True, reference -> ValueError
+  at ('mdnh', ''): candidate -> None, reference -> ValueError
+  at ('cnxn', ''): candidate -> None, reference -> ValueError
+  at ('ml', ''): candidate -> False, reference -> ValueError
+  at ('jahp', ''): candidate -> None, reference -> ValueError
+  at ('bxg', ''): candidate -> None, reference -> ValueError
+  at ('h', ''): candidate -> True, reference -> ValueError
+  at ('lbyfotyc', ''): candidate -> None, reference -> ValueError
+  at ('v', ''): candidate -> True, reference -> ValueError
+  at ('', 'wqvuhzto'): candidate -> None, reference -> ValueError
+  at ('dkork', ''): candidate -> None, reference -> ValueError
+  at ('', 'wz'): candidate -> False, reference -> ValueError
+  at ('', 'kgoumwq'): candidate -> None, reference -> ValueError
+  at ('', 'mjsy'): candidate -> None, reference -> ValueError
+  at ('u', ''): candidate -> True, reference -> ValueError
+  at ('uykkos', ''): candidate -> None, reference -> ValueError
+  at ('', 'inu'): candidate -> False, reference -> ValueError
+  at ('', 'coyqgkk'): candidate -> None, reference -> ValueError
+  at ('', 'mgrgpgyf'): candidate -> None, reference -> ValueError
+  at ('tiahscm', ''): candidate -> None, reference -> ValueError
+  at ('', 'csdbz'): candidate -> None, reference -> ValueError
+  at ('pzuclb', ''): candidate -> None, reference -> ValueError
+  at ('yzcn', ''): candidate -> None, reference -> ValueError
+  at ('', 'zkvcyyf'): candidate -> None, reference -> ValueError
+  at ('', 'cfrzeo'): candidate -> None, reference -> ValueError
+  at ('ytzdjp', ''): candidate -> None, reference -> ValueError
+  at ('tcpy', ''): candidate -> None, reference -> ValueError
+  at ('', 'ixq'): candidate -> None, reference -> ValueError
+  at ('', 'mwxxilo'): candidate -> None, reference -> ValueError
+  at ('', 'nadfys'): candidate -> None, reference -> ValueError
+  at ('wx', ''): candidate -> False, reference -> ValueError
+  at ('hcsubrhr', ''): candidate -> None, reference -> ValueError
+  at ('', 'rih'): candidate -> False, reference -> ValueError
+  at ('', 'msehtc'): candidate -> None, reference -> ValueError
+  at ('', 'id'): candidate -> False, reference -> ValueError
+  at ('fwx', ''): candidate -> None, reference -> ValueError
+  at ('', 'pox'): candidate -> False, reference -> ValueError
+  at ('', 'oskwngy'): candidate -> None, reference -> ValueError
+  at ('', 'ddes'): candidate -> False, reference -> ValueError
+  at ('sqo', ''): candidate -> False, reference -> ValueError
+  at ('uqzpxnv', ''): candidate -> None, reference -> ValueError
+  at ('vmr', ''): candidate -> None, reference -> ValueError
+  at ('cjdse', ''): candidate -> None, reference -> ValueError
+  at ('', 'onxpqirv'): candidate -> None, reference -> ValueError
+  at ('of', ''): candidate -> False, reference -> ValueError
+  at ('ge', ''): candidate -> True, reference -> ValueError
+  at ('crckyw', ''): candidate -> None, reference -> ValueError
+  at ('qajolfhp', ''): candidate -> None, reference -> ValueError
+  at ('ke', ''): candidate -> True, reference -> ValueError
+  at ('', 'ymkegd'): candidate -> None, reference -> ValueError
+  at ('', 'vlqwlq'): candidate -> None, reference -> ValueError
+  at ('', 'fetp'): candidate -> None, reference -> ValueError
+  at ('txjd', ''): candidate -> None, reference -> ValueError
+  at ('fz', ''): candidate -> False, reference -> ValueError
+  at ('aqvwkuw', ''): candidate -> None, reference -> ValueError
+  at ('', 'nfnf'): candidate -> None, reference -> ValueError
+  at ('', 'noqr'): candidate -> None, reference -> ValueError
+  at ('', 'vmeopkdl'): candidate -> None, reference -> ValueError
+  at ('', 'rwd'): candidate -> None, reference -> ValueError
+  at ('', 'yjcvj'): candidate -> None, reference -> ValueError
+  at ('', 'bcb'): candidate -> None, reference -> ValueError
+  at ('dom', ''): candidate -> False, reference -> ValueError
+  at ('rornti', ''): candidate -> None, reference -> ValueError
+  at ('', 'afl'): candidate -> None, reference -> ValueError
+  at ('', 'gzgz'): candidate -> None, reference -> ValueError
+  at ('', 'ioyxsfn'): candidate -> None, reference -> ValueError
+  at ('ikc', ''): candidate -> None, reference -> ValueError
+  at ('wuxsvwg', ''): candidate -> None, reference -> ValueError
+  at ('xg', ''): candidate -> False, reference -> ValueError
+  at ('bhcau', ''): candidate -> None, reference -> ValueError
+  at ('', 'nclkqc'): candidate -> None, reference -> ValueError
+  at ('rcehlf', ''): candidate -> None, reference -> ValueError
+  at ('lv', ''): candidate -> False, reference -> ValueError
+  at ('gutndel', ''): candidate -> None, reference -> ValueError
+  at ('', 'bk'): candidate -> False, reference -> ValueError
+  at ('', 'pbs'): candidate -> None, reference -> ValueError
+  at ('xbnmf', ''): candidate -> None, reference -> ValueError
+  at ('dsguvjuj', ''): candidate -> None, reference -> ValueError
+  at ('', 'ufeowr'): candidate -> None, reference -> ValueError
+  at ('', 'vvduknp'): candidate -> None, reference -> ValueError
+  at ('', 'orlas'): candidate -> None, reference -> ValueError
+  at ('', 'vdqcxh'): candidate -> None, reference -> ValueError
+  at ('', 'vlnwfup'): candidate -> None, reference -> ValueError
+  at ('oxtnytjx', ''): candidate -> None, reference -> ValueError
+  at ('dsbhm', ''): candidate -> None, reference -> ValueError
+  at ('eykw', ''): candidate -> None, reference -> ValueError
+  at ('', 'uoj'): candidate -> False, reference -> ValueError
+  at ('syvq', ''): candidate -> None, reference -> ValueError
+  at ('xsseh', ''): candidate -> None, reference -> ValueError
+  at ('', 'zw'): candidate -> False, reference -> ValueError
+  at ('', 'ypi'): candidate -> False, reference -> ValueError
+  at ('', 'hgg'): candidate -> False, reference -> ValueError
+  at ('rymrvx', ''): candidate -> None, reference -> ValueError
+  at ('itzazln', ''): candidate -> None, reference -> ValueError
+  at ('uyl', ''): candidate -> None, reference -> ValueError
+  at ('wohbfp', ''): candidate -> None, reference -> ValueError
+  at ('dvuntv', ''): candidate -> None, reference -> ValueError
+  at ('', 'kk'): candidate -> True, reference -> ValueError
+  at ('', 'ebi'): candidate -> False, reference -> ValueError
+  at ('qucizox', ''): candidate -> None, reference -> ValueError
+  at ('', 'pjses'): candidate -> None, reference -> ValueError
+  at ('tdbh', ''): candidate -> None, reference -> ValueError
+  at ('', 'lbwzhbi'): candidate -> None, reference -> ValueError
+  at ('kcmutk', ''): candidate -> None, reference -> ValueError
+  at ('', 'tvbrawj'): candidate -> None, reference -> ValueError
+provenance: python 3.12, seed 1; inputs 133 corner + 0 literal + 1953 random; 0 raised on both sides; tier tested
+receipt-id: 3871cb646004937cac02402f939584009ee8046b578975976735ec38780af19b
+receipt: ac0000015820df126dfc93a8df10e50bffdc8e198da509336d4933b1c7ee0d25bcff427f4092025820d10294cfa6388eec1831baa23b1e3bdb2d7b86b26f11c066db23a155f24b711f035820ee8fe13c6537e4c046ee1eaaed5816a96a7bb3e45a2e3c9ef36f2ba5e7e1de8d048701682827272c2027272964547275656a56616c75654572726f721908261901dc6005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080109831885001907a10a000b66746573746564
+exit=1
+## B. ASCII letters and spaces only (same guard both sides)
+== metaphone seed 1
+COUNTEREXAMPLE at input ('mb')
+  candidate -> 'M'
+  reference -> 'MB'
+disagreements: 10 of 1589 judged inputs
+  at ('mb'): candidate -> 'M', reference -> 'MB'
+  at ('bmegn'): candidate -> 'BM', reference -> 'BMKN'
+  at ('jslludgh'): candidate -> 'JSLTKH', reference -> 'JSLT'
+  at ('cmxibgh'): candidate -> 'KMKSBKH', reference -> 'KMKSB'
+  at ('gh'): candidate -> 'KH', reference -> ''
+  at ('vwenmb'): candidate -> 'FWNM', reference -> 'FWNMB'
+  at ('odyfmb'): candidate -> 'OTFM', reference -> 'OTFMB'
+  at ('zkdvgh'): candidate -> 'SKTFKH', reference -> 'SKTF'
+  at ('rczgh'): candidate -> 'RKSKH', reference -> 'RKS'
+  at ('oujgh'): candidate -> 'OJKH', reference -> 'OJ'
+provenance: python 3.12, seed 1; inputs 40 corner + 0 literal + 1549 random; 0 raised on both sides; tier tested
+receipt-id: f4f01d629aa3745acee7e6d2787aedbcf5bab6c67d3a9df7c2c08fa4b4c609e5
+receipt: ac00000158208cf6dcf9d827e78c657b4753b3ecda0e8078cc2b3ab04d31df795e89ea81a0a6025820a6948edb5d81f31d8a68f7488fc0a1bb55042e9c3a6c5c0c46d7d471d2792e5c03582089b042a2aa22e5006e54140a8fff1488563911d97cdf150f3ab746024a23d35a0487016628276d62272963274d2764274d42271906350a6005826c65717569762d72657669657766302e31342e30061a003d09000764332e31320801098318280019060d0a000b66746573746564
+exit=1
+== metaphone seed 3
+COUNTEREXAMPLE at input ('ngn')
+  candidate -> 'N'
+  reference -> 'NKN'
+disagreements: 3 of 1579 judged inputs
+  at ('ngn'): candidate -> 'N', reference -> 'NKN'
+  at ('gumwigh'): candidate -> 'KMWKH', reference -> 'KMW'
+  at ('yzwywmb'): candidate -> 'SM', reference -> 'SMB'
+provenance: python 3.12, seed 3; inputs 40 corner + 0 literal + 1539 random; 0 raised on both sides; tier tested
+receipt-id: cc0d1e2d8ec4ebd669b676c6a4d4713efafa464f401988f89c33baf4c2825580
+receipt: ac00000158208cf6dcf9d827e78c657b4753b3ecda0e8078cc2b3ab04d31df795e89ea81a0a6025820a6948edb5d81f31d8a68f7488fc0a1bb55042e9c3a6c5c0c46d7d471d2792e5c035820b181141b707164a53c87892a158a609149ef31692e326dc2525eb2f520daaa480487016728276e676e272963274e2765274e4b4e2719062b036005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080309831828001906030a000b66746573746564
+exit=1
+== metaphone seed 5
+COUNTEREXAMPLE at input ('htpujpgh')
+  candidate -> 'HTPJPKH'
+  reference -> 'HTPJP'
+disagreements: 9 of 1576 judged inputs
+  at ('htpujpgh'): candidate -> 'HTPJPKH', reference -> 'HTPJP'
+  at ('eqcpgh'): candidate -> 'EKKPKH', reference -> 'EKKP'
+  at ('ulkogn'): candidate -> 'ULK', reference -> 'ULKKN'
+  at ('kmb'): candidate -> 'KM', reference -> 'KMB'
+  at ('lwpamgh'): candidate -> 'LPMKH', reference -> 'LPM'
+  at ('mxqgn'): candidate -> 'MKSK', reference -> 'MKSKKN'
+  at ('xnrgh'): candidate -> 'SNRKH', reference -> 'SNR'
+  at ('befkgh'): candidate -> 'BFKKH', reference -> 'BFK'
+  at ('gh'): candidate -> 'KH', reference -> ''
+provenance: python 3.12, seed 5; inputs 40 corner + 0 literal + 1536 random; 0 raised on both sides; tier tested
+receipt-id: fe4b040827ff05be741c0556a99382c616a8fe7f50779f8f50c3c0ed81ac3bd1
+receipt: ac00000158208cf6dcf9d827e78c657b4753b3ecda0e8078cc2b3ab04d31df795e89ea81a0a6025820a6948edb5d81f31d8a68f7488fc0a1bb55042e9c3a6c5c0c46d7d471d2792e5c035820d80b401bc7d662b913231bcb75c2d0d83364457cfe74297d7b84ea1dbfefc9a90487016c2827687470756a706768272969274854504a504b482767274854504a5027190628096005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080509831828001906000a000b66746573746564
+exit=1
+== match_rating_codex seed 1
+COUNTEREXAMPLE at input (' ')
+  candidate -> ' '
+  reference -> ValueError
+disagreements: 2 of 1589 judged inputs
+  at (' '): candidate -> ' ', reference -> ValueError
+  at (' x '): candidate -> ' X ', reference -> 'X'
+provenance: python 3.12, seed 1; inputs 40 corner + 0 literal + 1549 random; 0 raised on both sides; tier tested
+receipt-id: 1b5abd3ccb31599891a1dc906bd244c96ae6d48e3a9e1c71ea26250bff851f5e
+receipt: ac00000158208cf6dcf9d827e78c657b4753b3ecda0e8078cc2b3ab04d31df795e89ea81a0a6025820a6948edb5d81f31d8a68f7488fc0a1bb55042e9c3a6c5c0c46d7d471d2792e5c0358200135062125c0f12d7258d0d44e5a6cf90b7ff55b1ed2bf903cdc05eb5cccd388048701652827202729632720276a56616c75654572726f72190635026005826c65717569762d72657669657766302e31342e30061a003d09000764332e31320801098318280019060d0a000b66746573746564
+exit=1
+== match_rating_codex seed 3
+COUNTEREXAMPLE at input (' ')
+  candidate -> ' '
+  reference -> ValueError
+disagreements: 2 of 1579 judged inputs
+  at (' '): candidate -> ' ', reference -> ValueError
+  at (' x '): candidate -> ' X ', reference -> 'X'
+provenance: python 3.12, seed 3; inputs 40 corner + 0 literal + 1539 random; 0 raised on both sides; tier tested
+receipt-id: b978446c4b7c8202811841a520b36cd1a5878c4c273362d21ab9219a814551fb
+receipt: ac00000158208cf6dcf9d827e78c657b4753b3ecda0e8078cc2b3ab04d31df795e89ea81a0a6025820a6948edb5d81f31d8a68f7488fc0a1bb55042e9c3a6c5c0c46d7d471d2792e5c035820949d55b33831706598e9a7acde3a7ea4a2f445ca7d1ec6b022171167ba78692a048701652827202729632720276a56616c75654572726f7219062b026005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080309831828001906030a000b66746573746564
+exit=1
+== match_rating_codex seed 5
+COUNTEREXAMPLE at input (' ')
+  candidate -> ' '
+  reference -> ValueError
+disagreements: 2 of 1576 judged inputs
+  at (' '): candidate -> ' ', reference -> ValueError
+  at (' x '): candidate -> ' X ', reference -> 'X'
+provenance: python 3.12, seed 5; inputs 40 corner + 0 literal + 1536 random; 0 raised on both sides; tier tested
+receipt-id: cb3b625b76536a3d01a11daf640f3aba549b6e783e7a90a1965697cf1cbae348
+receipt: ac00000158208cf6dcf9d827e78c657b4753b3ecda0e8078cc2b3ab04d31df795e89ea81a0a6025820a6948edb5d81f31d8a68f7488fc0a1bb55042e9c3a6c5c0c46d7d471d2792e5c03582017ff41c8ff3a9688ff7317f519ca2f430d40355359b37077fe5ea6e31900a598048701652827202729632720276a56616c75654572726f72190628026005826c65717569762d72657669657766302e31342e30061a003d09000764332e3132080509831828001906000a000b66746573746564
+exit=1
+## C. metaphone word-final 'gh' disagreements by input count and seed
+0 0 0 0 0  <- n=200 seeds 1 3 5 7 9
+2 0 1 0 0  <- n=500 seeds 1 3 5 7 9
+5 1 2 0 1  <- n=1000 seeds 1 3 5 7 9
+6 1 6 3 4  <- n=2000 seeds 1 3 5 7 9

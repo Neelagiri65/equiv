@@ -1,0 +1,11 @@
+import jellyfish._jellyfish as _j
+def soundex(s): return _j.soundex(s)
+def metaphone(s): return _j.metaphone(s)
+def nysiis(s): return _j.nysiis(s)
+def match_rating_codex(s): return _j.match_rating_codex(s)
+def jaro_similarity(a, b): return _j.jaro_similarity(a, b)
+def jaro_winkler_similarity(a, b): return _j.jaro_winkler_similarity(a, b)
+def levenshtein_distance(a, b): return _j.levenshtein_distance(a, b)
+def damerau_levenshtein_distance(a, b): return _j.damerau_levenshtein_distance(a, b)
+def hamming_distance(a, b): return _j.hamming_distance(a, b)
+def match_rating_comparison(a, b): return _j.match_rating_comparison(a, b)
