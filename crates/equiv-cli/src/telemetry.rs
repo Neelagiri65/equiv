@@ -5,15 +5,17 @@
 //! This is the tournament's STEP-0 gating number.
 //!
 //! Trust posture (non-negotiable, mirrors the receipt discipline):
-//! - LOCAL ONLY. This slice never touches the network. It appends one JSON
-//!   line per run to `equiv-metrics.jsonl` in the working directory.
+//! - OFF BY DEFAULT. Nothing is written unless the user sets `EQUIV_METRICS=on`
+//!   (decision 2026-11-04: a trust tool must not leave files nobody asked for).
+//! - LOCAL ONLY. This slice never touches the network. When on, it appends one
+//!   JSON line per run to `equiv-metrics.jsonl` in the working directory.
 //! - Counts only. NEVER function names, source, paths, arg values, outputs,
 //!   receipt-ids, repo URL/name, author, branch, or commit SHA. Only counts,
 //!   a language tag, the equiv version, a day-granular stamp, and a
 //!   pseudonymous per-repo id.
 //! - Fail-silent. A metrics write must NEVER fail or slow a review. Any error
 //!   is swallowed (one stderr note at most). Determinism is the product.
-//! - Opt-out honoured: `EQUIV_METRICS=off` or `DO_NOT_TRACK=1` disables it.
+//! - `DO_NOT_TRACK=1` overrides an opt-in.
 //!
 //! The network upload is a later, explicitly opt-in slice; the payload built
 //! here is the same shape it will send.
@@ -156,12 +158,10 @@ fn build_event(
 }
 
 /// Append one metrics line to `equiv-metrics.jsonl` (or `$EQUIV_METRICS_OUT`).
-/// Best-effort and fail-silent: disabled by `EQUIV_METRICS=off` / `DO_NOT_TRACK`,
-/// and any I/O error is swallowed after a single stderr note.
+/// Off unless `EQUIV_METRICS=on`; `DO_NOT_TRACK` overrides. Best-effort and
+/// fail-silent: any I/O error is swallowed after a single stderr note.
 pub fn record(items: &[ReviewItem], unchecked: &[(String, String)], language: &str) {
-    let off = std::env::var("EQUIV_METRICS").as_deref() == Ok("off")
-        || std::env::var("DO_NOT_TRACK").is_ok_and(|v| !v.is_empty() && v != "0");
-    if off {
+    if !enabled(std::env::var("EQUIV_METRICS").ok().as_deref(), std::env::var("DO_NOT_TRACK").ok().as_deref()) {
         return;
     }
     let line = build_event(
@@ -182,6 +182,13 @@ pub fn record(items: &[ReviewItem], unchecked: &[(String, String)], language: &s
     if write.is_err() {
         eprintln!("equiv: note: could not write {path} (metrics skipped)");
     }
+}
+
+/// Metrics are on only for an explicit `EQUIV_METRICS=on`, and never when
+/// `DO_NOT_TRACK` is set to anything but empty or "0".
+fn enabled(metrics: Option<&str>, do_not_track: Option<&str>) -> bool {
+    let dnt = do_not_track.is_some_and(|v| !v.is_empty() && v != "0");
+    metrics == Some("on") && !dnt
 }
 
 #[cfg(test)]
@@ -254,5 +261,18 @@ mod tests {
             env!("CARGO_PKG_VERSION"),
         );
         assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn enabled_only_on_explicit_opt_in() {
+        assert!(!enabled(None, None));
+        assert!(!enabled(Some("off"), None));
+        assert!(!enabled(Some("1"), None));
+        assert!(!enabled(Some("ON"), None));
+        assert!(enabled(Some("on"), None));
+        assert!(enabled(Some("on"), Some("")));
+        assert!(enabled(Some("on"), Some("0")));
+        assert!(!enabled(Some("on"), Some("1")));
+        assert!(!enabled(Some("on"), Some("true")));
     }
 }
