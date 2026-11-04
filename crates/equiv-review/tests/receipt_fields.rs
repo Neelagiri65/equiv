@@ -53,7 +53,7 @@ fn python_field_is_part_of_the_receipt_bytes() {
     other.exceptions += 1;
     assert_ne!(rc.to_bytes(), other.to_bytes());
     let mut other = rc.clone();
-    other.inputs = InputCounts { corner: 0, literal: 0, random: 0 };
+    other.inputs = InputCounts { corner: 0, literal: 0, random: 0, harvested: 0 };
     assert_ne!(rc.to_bytes(), other.to_bytes());
 }
 
