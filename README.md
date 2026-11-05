@@ -61,7 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Neelagiri65/equiv@v0.18.0
+      - uses: Neelagiri65/equiv@v0.19.1
         with: { keyless: "true" }
 ```
 
@@ -77,7 +77,7 @@ call each function with (read, never run):
 To check only specific functions, list them in `.equiv-review` at the repo root,
 one per line: `src/math.py : total : int`.
 
-Pin a released tag (`@v0.18.0`), not `@main`, so results do not change under you.
+Pin a released tag (`@v0.19.1`), not `@main`, so results do not change under you.
 
 ## Use it from the command line
 
