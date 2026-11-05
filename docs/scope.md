@@ -41,9 +41,12 @@ means a divergence that needs two specific arguments at once may be missed. Meth
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,
-`str`, `list[int]`, `list[str]`, `float`, `dict`, `bool`. Dict and list results are compared
-structurally: a dict is a map (key order ignored); a value that is not
-JSON-structural (a set, a custom object, non-string keys) is refused. Float
+`str`, `list[int]`, `list[str]`, `float`, `dict`, `bool`. Dict, list and tuple results are compared
+structurally: a dict is a map (key order ignored); a tuple is compared element
+by element and is never equal to a list with the same items; a namedtuple is
+compared by class name, field names and values (so `(1, 2)` and `Point(x=1, y=2)`
+differ). Anything else (a set, a custom object, a subclass of a namedtuple,
+non-string keys) is refused. Float
 reviews are admitted only inside the IEEE-754
 correctly rounded operations, where the result is identical on every machine. A
 function that reaches a transcendental (sin, exp, log, pow) is refused by name
