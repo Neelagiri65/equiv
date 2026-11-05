@@ -29,12 +29,18 @@ creates a GitHub Release and attaches the archives, installers and checksums.
    `.sha256` checksums.
 
 ## How the review Action consumes it
-`action.yml`'s "Resolve equiv binary" step downloads
-the action repo's latest release asset `equiv-cli-x86_64-unknown-linux-gnu.tar.xz`,
-extracts `equiv`, then sets `EQUIV_BIN`. **If no release exists yet (or the
-download fails), it falls back to building from source**, so the Action works
-before the first release and on forks, just slower. After the first tagged
-release, PR runs skip compilation.
+`action.yml`'s "Resolve equiv binary" step runs `scripts/resolve-equiv-binary.sh`.
+It reads the version from the Action's own `Cargo.toml` (the code the workflow
+pinned, e.g. `@v0.19.0`) and downloads **that** release's
+`equiv-cli-x86_64-unknown-linux-gnu.tar.xz`, never "latest", so a pinned
+workflow's results do not change when a newer release ships. **If that release
+is not available (unreleased code on a branch, a fork, no access), it builds
+the pinned source instead**, just slower. Tested in
+`crates/equiv-cli/tests/action_resolve.rs`.
+
+Tags cut before this change (v0.18.0 and earlier) still carry the old step,
+which downloaded the latest release: pin a tag that includes this fix for an
+exact engine.
 
 ## Install for humans
 Once a release exists:

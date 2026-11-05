@@ -59,29 +59,17 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - name: Resolve equiv binary (prebuilt release, else build from source)
+    - name: Resolve equiv binary (the pinned version's release, else build the pinned source)
       shell: bash
       env:
         # Authenticated download. Works for private repos (plain curl 404s on
-        # private release assets). Falls back to building if no release / no access.
+        # private release assets). The resolver downloads the release matching the
+        # version in this Action's own Cargo.toml (never "latest"), else builds it.
         GH_TOKEN: ${{ github.token }}
-      run: |
-        set -euo pipefail
-        TARGET="x86_64-unknown-linux-gnu"   # GitHub Linux runners
-        REPO="${{ github.action_repository || 'Neelagiri65/equiv' }}"
-        ASSET="equiv-cli-${TARGET}.tar.xz"
-        TMP="$(mktemp -d)"
-        if gh release download --repo "$REPO" --pattern "$ASSET" --dir "$TMP" 2>/dev/null; then
-          tar -xJf "$TMP/$ASSET" -C "$TMP"
-          BIN="$(find "$TMP" -type f -name equiv | head -1)"
-          chmod +x "$BIN"
-          echo "EQUIV_BIN=$BIN" >> "$GITHUB_ENV"
-          echo "equiv: using prebuilt binary from $REPO latest release"
-        else
-          echo "equiv: no prebuilt release available; building from source (slower)."
-          ( cd "${{ github.action_path }}" && cargo build --release --bin equiv )
-          echo "EQUIV_BIN=${{ github.action_path }}/target/release/equiv" >> "$GITHUB_ENV"
-        fi
+        ACTION_PATH: ${{ github.action_path }}
+        EQUIV_ACTION_REPO: ${{ github.action_repository || 'Neelagiri65/equiv' }}
+        EQUIV_TARGET: x86_64-unknown-linux-gnu   # GitHub Linux runners
+      run: bash "${{ github.action_path }}/scripts/resolve-equiv-binary.sh"
     - name: Install cosign (keyless signing)
       if: ${{ inputs.keyless == 'true' }}
       uses: sigstore/cosign-installer@v3
