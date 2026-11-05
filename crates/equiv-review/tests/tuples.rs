@@ -130,3 +130,17 @@ fn other_tuple_subclass_still_refused() {
     let v = review(&p, &p, &spec("f")).expect("no safety stop").verdict;
     assert!(matches!(v, ReviewVerdict::Refused { .. }), "got {v:?}");
 }
+
+// Cross-host regression guard: the CI matrix runs this on all three targets,
+// proving the tuple and namedtuple canonical forms are byte-identical.
+#[test]
+fn golden_tuple_receipt_id_is_stable() {
+    let cand = wp("gt_c", &format!("{NT_A}def f(n):\n    return [(n, (n,)), RGB(n, 0, ())]\n"));
+    let refr = wp("gt_r", &format!("{NT_A}def f(n):\n    return [(n, (n + 1,)), RGB(n, 0, ())]\n"));
+    // python field pinned to the CI minor before hashing; see floats.rs.
+    let mut r = review(&cand, &refr, &spec("f")).expect("no safety stop");
+    assert!(matches!(r.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", r.verdict);
+    r.python = "3.12".into();
+    let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(id, "9b702be587350f42fe40820a7fd113ffbecd6893d476d3b6eefa79c599b070df", "receipt-id drifted");
+}

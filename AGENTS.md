@@ -15,9 +15,10 @@ equiv review <new_version>.py <original>.py <function> <arg types>
 - `<arg types>`: `int`, `str`, `list[int]`, `list[str]`, `float`, `dict`, `bool`, comma separated.
   Float reviews are admitted only inside the IEEE-754 correctly rounded
   operations. A function reaching a transcendental (sin, exp, log, pow) is
-  refused by name rather than judged. Dict and list results are compared
-  structurally (a dict is a map, key order ignored); a value that is not
-  JSON-structural is refused.
+  refused by name rather than judged. Dict, list and tuple results are compared
+  structurally (a dict is a map, key order ignored; a tuple never equals a
+  list; a namedtuple compares by name, fields and values); sets and custom
+  objects are refused.
 - Exit codes: `0` equivalent, `1` diverges with a printed counterexample, `2`
   could not check. On a PR, only `1` blocks the merge by default; "not checked"
   functions are listed in the comment and never count as a pass.
