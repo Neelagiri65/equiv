@@ -15,6 +15,11 @@ creates a GitHub Release and attaches the archives, installers and checksums.
   git add Cargo.toml .github/workflows/release.yml
   ```
 - Targets: macOS arm64/x64, Linux x64/arm64 (gnu), Windows x64.
+- Runner override: dist 0.32 builds Apple silicon on `macos-14`, which GitHub
+  rejected from 2026-11-05 ("configuration not supported"). The release that
+  hit this, v0.19.0, was tagged but never built. Cargo.toml's
+  `[workspace.metadata.dist.github-custom-runners]` sets `macos-15` instead.
+  Check `dist plan` after any dist upgrade.
 
 ## Cut a release
 1. Bump the version in `equiv/Cargo.toml` (`[workspace.package] version`).
