@@ -94,6 +94,13 @@ EVALUATOR ENVIRONMENT:
   locale, PYTHON*, virtualenv/conda and Windows system variables. Credentials
   such as $EQUIV_SIGNING_KEY or $GH_TOKEN are not passed. Not a sandbox.
 
+EVIDENCE:
+  If every generated input (10 or more) makes both versions raise, only errors
+  were compared: could not check (exit 2), never EQUIVALENT. If fewer than 10
+  inputs returned a value, EQUIVALENT is labelled thin evidence, in the output
+  and in the receipt (tier tested-thin). Functions with fewer than 10 possible
+  inputs (no arguments, a bool) are checked completely and exempt.
+
 SAFETY LIMIT:
   $EQUIV_SAFETY_SECONDS (default 120) caps the wall-clock time of one
   function's check, for long runs inside C code the step budget cannot count.
@@ -415,8 +422,9 @@ fn run() -> Result<u8, String> {
             match &r.verdict {
                 ReviewVerdict::Equivalent { n, not_judged } => {
                     println!(
-                        "EQUIVALENT: agreed on all {n} generated inputs (seed {seed}){}",
-                        equiv_review::not_judged_note(*not_judged)
+                        "EQUIVALENT: agreed on all {n} generated inputs (seed {seed}){}{}",
+                        equiv_review::not_judged_note(*not_judged),
+                        equiv_review::thin_note(&r).map(|t| format!("; {t}")).unwrap_or_default()
                     );
                 }
                 ReviewVerdict::Counterexample { input, candidate, reference, .. } => {

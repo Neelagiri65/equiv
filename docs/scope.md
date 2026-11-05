@@ -69,10 +69,28 @@ other functions in the same run still report. The budget needs Python 3.12 or
 newer; on an older Python the review reports could not check instead of running
 without a limit.
 
+## How much evidence an "equivalent" carries
+
+An "equivalent" is only as good as the inputs that reached the function's
+normal path. Two rules keep it honest (since 0.19.0):
+
+- If every generated input (10 or more) makes both versions raise, only errors
+  were compared. That is reported as could not check (exit `2`), never as
+  equivalent.
+- If fewer than 10 inputs returned a value (the rest raised on both sides), the
+  verdict stays equivalent but is labelled **thin evidence**: in the CLI line,
+  in the PR comment's headline and row, and in the receipt itself (tier
+  `tested-thin`). The count is computed from the receipt: judged inputs minus
+  inputs that raised on both sides.
+
+A function with fewer than 10 possible inputs (no arguments, a single `bool`)
+is checked completely by those calls and is exempt from both rules. A
+difference in which error is raised is still a counterexample.
+
 ## Exit codes
 
 Exit codes: `0` equivalent, `1` diverges with a printed counterexample, `2`
-could not check. For `review-pr` the code is a report over the whole run: `0`
+could not check (including "only errors were compared"). For `review-pr` the code is a report over the whole run: `0`
 every changed function was checked and preserved behaviour, `1` at least one
 changed behaviour, `2` nothing diverged but at least one changed function was
 not checked (safety stop, refused type, error, or no supported type hints; each

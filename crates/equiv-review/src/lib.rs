@@ -1064,6 +1064,33 @@ fn flag_bases(spec: &ReviewSpec) -> Vec<Vec<PyVal>> {
 
 // ---------- verdict + receipt ----------
 
+/// Evidence floor for an "equivalent". When at least THIN_K inputs were judged
+/// but fewer than THIN_K of them returned a value on both sides (the rest raised
+/// on both), the verdict rests on thin evidence and says so; when none returned
+/// a value it is "could not check". A function with fewer than THIN_K possible
+/// inputs (no arguments, a bool) is checked completely and exempt. Chosen from
+/// the v0.18 replay, where value-returning counts are bimodal (47 equivalents
+/// below 10, 3 between 10 and 100, 104 at 100 or more).
+pub const THIN_K: u32 = 10;
+
+/// The number of inputs that returned a value on both sides, when an
+/// "equivalent" over `n` judged inputs rests on thin evidence; else None.
+/// `exceptions` is the receipt's count of inputs that raised on both sides.
+pub fn thin_evidence(n: u32, exceptions: u32) -> Option<u32> {
+    let v = n.saturating_sub(exceptions);
+    (n >= THIN_K && v > 0 && v < THIN_K).then_some(v)
+}
+
+/// The one phrase every renderer uses for a thin "equivalent".
+pub fn thin_note(r: &ReviewReceipt) -> Option<String> {
+    match r.verdict {
+        ReviewVerdict::Equivalent { n, .. } => thin_evidence(n, r.exceptions).map(|v| {
+            format!("thin evidence: only {v} of {n} inputs returned a value (the rest raised on both sides)")
+        }),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReviewVerdict {
     /// Candidate and reference agreed on all `n` judged cases. `not_judged`
@@ -1579,14 +1606,19 @@ pub fn review_with_inputs(
             }
             b
         }),
-        verdict: ev.verdict,
         checker_version: env!("CARGO_PKG_VERSION").into(),
         budget: spec.budget,
         python: ev.python,
         seed: spec.seed,
         inputs,
         exceptions: ev.exceptions,
-        tier: "tested".into(),
+        // The receipt itself carries the evidence level, so a thin verdict
+        // cannot be re-read as a full one later (same frozen field, new value).
+        tier: match ev.verdict {
+            ReviewVerdict::Equivalent { n, .. } if thin_evidence(n, ev.exceptions).is_some() => "tested-thin".into(),
+            _ => "tested".into(),
+        },
+        verdict: ev.verdict,
         disagreements: ev.disagreements,
     })
 }
@@ -1878,7 +1910,12 @@ pub fn intoto_statement(file: &str, name: &str, receipt: &ReviewReceipt) -> Stri
     let (verdict, detail) = match &receipt.verdict {
         ReviewVerdict::Equivalent { n, not_judged } => (
             "equivalent".to_string(),
-            format!("agreed on {n} cases{}; {}", not_judged_note(*not_judged), provenance_note(receipt)),
+            format!(
+                "agreed on {n} cases{}; {}{}",
+                not_judged_note(*not_judged),
+                provenance_note(receipt),
+                thin_note(receipt).map(|t| format!("; {t}")).unwrap_or_default()
+            ),
         ),
         ReviewVerdict::Counterexample { input, candidate, reference, .. } => (
             "counterexample".to_string(),
@@ -1918,16 +1955,28 @@ pub fn render_markdown(items: &[ReviewItem], signer: Option<&str>) -> String {
 fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecked_n: usize) -> String {
     let mut diverged = 0;
     let mut errored = 0;
+    let mut thin = 0;
     for it in items {
         match &it.outcome {
             Ok(r) => match r.verdict {
                 ReviewVerdict::Counterexample { .. } => diverged += 1,
                 ReviewVerdict::Error { .. } | ReviewVerdict::Refused { .. } => errored += 1,
-                ReviewVerdict::Equivalent { .. } => {}
+                ReviewVerdict::Equivalent { .. } => {
+                    if thin_note(r).is_some() {
+                        thin += 1;
+                    }
+                }
             },
             Err(_) => errored += 1,
         }
     }
+    // A thin "equivalent" must be visible on the first line too, never folded
+    // into a plain pass headline.
+    let thin_more = match thin {
+        0 => String::new(),
+        1 => " 1 equivalent result rests on thin evidence (few inputs returned a value).".to_string(),
+        n => format!(" {n} equivalent results rest on thin evidence (few inputs returned a value)."),
+    };
     let total = items.len();
     let fns = |n: usize| if n == 1 { "function" } else { "functions" };
     let more = match unchecked_n {
@@ -1936,9 +1985,9 @@ fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecke
         n => format!(" {n} changed functions were not checked (listed below)."),
     };
     let headline = if diverged > 0 {
-        format!("{diverged} of {total} checked {} changed behaviour.{more}", fns(total))
+        format!("{diverged} of {total} checked {} changed behaviour.{more}{thin_more}", fns(total))
     } else if errored > 0 {
-        format!("{errored} of {total} {} could not be checked.{more}", fns(total))
+        format!("{errored} of {total} {} could not be checked.{more}{thin_more}", fns(total))
     } else if total == 0 && unchecked_n > 0 {
         // Nothing ran: this must never read as a pass (silence is not green).
         format!(
@@ -1947,7 +1996,7 @@ fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecke
         )
     } else {
         let verb = if total == 1 { "function: behaviour" } else { "functions: behaviour" };
-        format!("{total} checked {verb} preserved against base.{more}")
+        format!("{total} checked {verb} preserved against base.{more}{thin_more}")
     };
 
     let mut s = String::new();
@@ -1977,10 +2026,14 @@ fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecke
             }
         };
         let (v, detail) = match &r.verdict {
-            ReviewVerdict::Equivalent { n, not_judged } => (
-                "equivalent".to_string(),
-                format!("{n}/{n} generated inputs agree{} ({})", not_judged_note(*not_judged), provenance_note(r)),
-            ),
+            ReviewVerdict::Equivalent { n, not_judged } => {
+                let base =
+                    format!("{n}/{n} generated inputs agree{} ({})", not_judged_note(*not_judged), provenance_note(r));
+                match thin_note(r) {
+                    Some(t) => ("equivalent (thin evidence)".to_string(), format!("{base}; {t}")),
+                    None => ("equivalent".to_string(), base),
+                }
+            }
             ReviewVerdict::Counterexample { input, candidate, reference, .. } => (
                 "DIVERGES".to_string(),
                 format!(
@@ -2298,7 +2351,20 @@ fn run_python(
     // the large corners that finished, deduplicated), not the requested random
     // count: an honest tally. not_judged is the number of large-magnitude
     // corners where a side ran out of budget; both are in the receipt.
-    Ok(done(ReviewVerdict::Equivalent { n: cases.len() as u32 - not_judged, not_judged }, exceptions))
+    let n = cases.len() as u32 - not_judged;
+    // Never claim more than the evidence shows: if every one of many inputs
+    // made both versions raise, only errors were compared and the function's
+    // normal path was never reached. That is "could not check", not a pass.
+    // A function with fewer than THIN_K possible inputs (no arguments, a bool)
+    // was checked completely by those calls and is exempt.
+    if n >= THIN_K && exceptions >= n {
+        let reason = format!(
+            "only errors were compared: all {n} generated inputs made both versions raise, so no input reached \
+             a returned value; add inputs the function accepts (literal calls in the project's tests, or --inputs-from)"
+        );
+        return Ok(done(ReviewVerdict::Refused { reason }, exceptions));
+    }
+    Ok(done(ReviewVerdict::Equivalent { n, not_judged }, exceptions))
 }
 
 /// What one evaluator run produced: the verdict plus the provenance the

@@ -20,8 +20,11 @@ equiv review <new_version>.py <original>.py <function> <arg types>
   list; a namedtuple compares by name, fields and values); sets and custom
   objects are refused.
 - Exit codes: `0` equivalent, `1` diverges with a printed counterexample, `2`
-  could not check. On a PR, only `1` blocks the merge by default; "not checked"
-  functions are listed in the comment and never count as a pass.
+  could not check (including when every input only made both versions raise).
+  An equivalent labelled "thin evidence" rests on fewer than 10 inputs that
+  returned a value: say so, and do not present it as a full check. On a PR,
+  only `1` blocks the merge by default; "not checked" functions are listed in
+  the comment and never count as a pass.
 
 If equivalence cannot be shown, state that in your summary. Do not describe a
 refactor as safe on the basis that it appears correct.
