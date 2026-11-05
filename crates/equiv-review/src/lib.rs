@@ -1445,15 +1445,28 @@ def canon(x):
     # Canonical, order-independent form. int/str/bool/None reproduce repr (so
     # existing reviews are unchanged); float -> exact bits (NaN -> one token);
     # list -> recursive, order preserved (order is observable); dict -> sorted
-    # string keys (a map, order is not observable). Anything not JSON-structural
-    # (set, tuple, complex, custom object, non-string keys) -> __NONCANON__,
-    # which the driver turns into a Refused verdict.
+    # string keys (a map, order is not observable). tuple -> recursive in
+    # parentheses (distinct from list; a 1-tuple keeps its comma so it differs
+    # from its element). namedtuple -> class name + field names + values, not
+    # identity, so candidate and reference may each define their own class.
+    # Anything else (set, complex, custom object, other tuple subclasses,
+    # non-string keys) -> __NONCANON__, which the driver turns into Refused.
     if isinstance(x, bool): return repr(x)
     if isinstance(x, int): return repr(x)
     if isinstance(x, float): return 'nanq' if x != x else x.hex()
     if isinstance(x, str): return repr(x)
     if x is None: return 'None'
     if isinstance(x, list): return '[' + ', '.join(canon(e) for e in x) + ']'
+    if type(x) is tuple:
+        return '(' + ', '.join(canon(e) for e in x) + (',' if len(x) == 1 else '') + ')'
+    if isinstance(x, tuple):
+        # Only a class made directly by namedtuple()/NamedTuple (bases exactly
+        # (tuple,)); a further subclass may override __eq__ etc., so refuse it.
+        _f = getattr(type(x), '_fields', None)
+        if (type(x).__bases__ == (tuple,) and isinstance(_f, tuple) and len(_f) == len(x)
+                and all(isinstance(k, str) for k in _f)):
+            return type(x).__name__ + '(' + ', '.join(k + '=' + canon(v) for k, v in zip(_f, x)) + ')'
+        return '__NONCANON__'
     if isinstance(x, dict):
         if not all(isinstance(k, str) for k in x): return '__NONCANON__'
         return '{{' + ', '.join(repr(k) + ': ' + canon(x[k]) for k in sorted(x)) + '}}'
