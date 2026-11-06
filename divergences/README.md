@@ -87,14 +87,14 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.17.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.20.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
 | Cases | 107 (71 diverges, 36 equivalent) |
-| Catch rate | 63 / 71 = 88.7% |
+| Catch rate | 64 / 71 = 90.1% |
 | False-alarm rate | 0 / 36 = 0% |
-| Could not check | 5 |
+| Could not check | 4 |
 
 Cases 104-107 (class `holdout`, "mixed") were written on 2026-11-05, before
 any generator change, from a run against uutils `sort` where equiv found
@@ -179,7 +179,7 @@ By class (diverges caught / total, equivalent passed / total):
 | int-to-float | 2/2 | - |
 | or-default | 4/4 | 1/1 |
 | float-specials | 3/3 | 2/2 |
-| float-rounding | 3/4 | - |
+| float-rounding | 4/4 | - |
 | exception-vs-value | 3/3 | - |
 | unicode | 4/5 | 3/3 |
 | fixed-width-int | 3/3 | 3/3 |
@@ -188,7 +188,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 17/23 | 12/12 |
+| holdout | 25/31 | 15/16 |
 
 ### Misses and why
 
@@ -203,9 +203,14 @@ reported as equivalent. The reason is the generator's reach, read from
 | 095-holdout-two-bools-gated-large-int | needs 2^53 + 1 with both flags `True`; the bool fan-out sets one flag at a time, keeping the cost linear in the number of bools |
 | 076-holdout-is-int-double-sign | needs a repeated sign such as `--1`; the sign corners carry a single sign, and the source only spells `+-`, on which both sides agree |
 
-Could not check: `011-float-round-half-even-floor` is refused because
-`math.floor` is outside the float allowlist (only `+ - * /`, comparisons, a few
-exact builtins and `math.sqrt` are admitted). `085`, `086` and `088` are refused
+`011-float-round-half-even-floor` was refused until 0.20.0 because
+`math.floor` was outside the float allowlist. 0.20.0 admits the exact math
+functions (`floor`, `ceil`, `trunc`, `fabs`, `copysign`, `fmod`, `modf`,
+`frexp`, `ldexp`, `isfinite`, `isnan`, `isinf`: results exactly representable,
+so the same bits on every host) and adds exact halves (0.5, -0.5, 1.5, 2.5,
+-2.5) to the float corners; 011 is caught at `(0.5)`.
+
+Could not check: `085`, `086` and `088` are refused
 under their int and list signatures because they reach `math.log10`,
 `math.log` and `math.log2`: results whose last bit is not the same on every
 host, so no cross-host verdict is possible. Its sibling

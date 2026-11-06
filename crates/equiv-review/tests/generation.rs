@@ -285,7 +285,7 @@ fn joint_corners_do_not_touch_single_argument_reviews() {
     let refr = tmp("gen_joint_single_ref.py", "def f(a):\n    return a + a\n");
     let r = review(&cand, &refr, &spec("f", vec![ArgType::Float])).expect("no safety stop");
     match &r.verdict {
-        ReviewVerdict::Equivalent { n, .. } => assert_eq!(*n, 66, "single-float case count changed"),
+        ReviewVerdict::Equivalent { n, .. } => assert_eq!(*n, 71, "single-float case count changed (66 + 5 tie corners in 0.20)"),
         v => panic!("got {v:?}"),
     }
 }

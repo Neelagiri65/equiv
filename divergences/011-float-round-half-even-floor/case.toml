@@ -2,6 +2,6 @@ function = "round_half"
 args = "float"
 expected = "diverges"
 class = "float-rounding"
-pattern = "banker's round() replaced by math.floor(x + 0.5); expected to be refused by the float allowlist"
+pattern = "banker's round() replaced by math.floor(x + 0.5); diverges on exact halves of even integers. Refused until 0.20, when the exact math functions joined the float allowlist and exact halves joined the float corners"
 source = "https://docs.python.org/3/library/functions.html#round"
 witness = '''(2.5,)'''
