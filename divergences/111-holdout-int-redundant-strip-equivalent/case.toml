@@ -1,0 +1,5 @@
+function = "to_int"
+args = "str"
+expected = "equivalent"
+class = "holdout"
+pattern = "an explicit strip of space, tab and newline added before int(); int() already ignores those, so behaviour is unchanged. Guards the int()-grammar corners against false alarms. Written 2026-11-06 before those corners"

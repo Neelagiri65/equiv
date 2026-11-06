@@ -1,0 +1,6 @@
+function = "parse_ints"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "comma-separated ints: each field gains an explicit strip() before int(); str.strip() also removes U+001C-U+001F, which int() rejects. Written 2026-11-06 before the int()-grammar corners, to test the separator class rather than case 074's witness"
+witness = '''("\x1f3",)'''

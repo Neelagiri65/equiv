@@ -1,0 +1,6 @@
+function = "parse_count"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "digit grouping allowed by deleting every underscore before int(); int() already accepts single underscores between digits (PEP 515) but rejects leading, trailing and doubled ones. Written 2026-11-06 before the int()-grammar corners"
+witness = '''("2__0",)'''
