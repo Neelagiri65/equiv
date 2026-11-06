@@ -1525,7 +1525,11 @@ def _metered(fn, *args):
         v = fn(*args); e = None
     except BaseException as x:
         if _left[0] < 0 or isinstance(x, _Budget): return None, None, True
-        if not isinstance(x, Exception): raise
+        # A Rust panic through PyO3 (pyo3_runtime.PanicException) derives from
+        # BaseException. It is a deterministic outcome of the function, so it
+        # is observed like an exception; anything else non-Exception
+        # (KeyboardInterrupt, SystemExit, ...) still stops the run.
+        if not isinstance(x, Exception) and type(x).__name__ != 'PanicException': raise
         v = None; e = x
     finally:
         _M.set_events(_TOOL, 0)
