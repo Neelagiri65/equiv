@@ -32,10 +32,11 @@ code is correct or does what you intended.
 
 ## Does it actually catch bugs?
 
-- **Test corpus.** 107 labelled pairs of functions where we already know the
-  answer. Of the 71 that really change behaviour, `equiv` catches 63, misses 4,
-  and cannot check 4. Of the 36 that keep behaviour, it raises 0 false alarms
-  (35 pass, 1 cannot check). Every miss is listed. [`divergences/`](divergences/)
+- **Test corpus.** 113 labelled pairs of functions where we already know the
+  answer. Of the 75 that really change behaviour, `equiv` catches 72, misses 0,
+  and cannot check 3. Of the 38 that keep behaviour, it raises 0 false alarms
+  (37 pass, 1 cannot check). Each case it cannot check is listed with the reason
+  it is out of reach by design. [`divergences/`](divergences/)
 - **[jellyfish](docs/case-studies/jellyfish.md).** This library ships every
   function twice, once in Rust and once in Python. `equiv` finds the two
   disagreeing in 8 of 10 functions. It also catches a bug that shipped in
@@ -61,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Neelagiri65/equiv@v0.19.1
+      - uses: Neelagiri65/equiv@v0.20.0
         with: { keyless: "true" }
 ```
 
@@ -77,7 +78,7 @@ call each function with (read, never run):
 To check only specific functions, list them in `.equiv-review` at the repo root,
 one per line: `src/math.py : total : int`.
 
-Pin a released tag (`@v0.19.1`), not `@main`, so results do not change under you.
+Pin a released tag (`@v0.20.0`), not `@main`, so results do not change under you.
 
 ## Use it from the command line
 
