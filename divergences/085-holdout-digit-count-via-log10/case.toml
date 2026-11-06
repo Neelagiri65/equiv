@@ -4,3 +4,4 @@ expected = "diverges"
 class = "holdout"
 pattern = "len(str(abs(n))) rewritten as int(math.log10(abs(n))) + 1: log10 of 10**k - 1 rounds up to k once the value exceeds float64 precision, so the count is one too many; written off the planned corner list (powers of two) to test whether the corners generalise"
 witness = '''(999999999999999999,)'''
+writeoff = "reaches math.log10, a maths-library function whose last bit is not the same on every host; refused by name so no verdict depends on the host (DECISIONS #17). Path A step 3: written off by design"

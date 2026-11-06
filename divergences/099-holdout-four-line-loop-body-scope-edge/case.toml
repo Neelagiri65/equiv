@@ -4,3 +4,4 @@ expected = "equivalent"
 class = "holdout"
 pattern = "a four-line loop body over |n| up to 1e6 tidied into one tuple assignment; correct; sits past the stated budget scope (a loop with a one-line body), so the reference is expected to stay unjudged after the change"
 integrity_max_abs_int = 1000001
+writeoff = "the reference loops |n| times with a four-line body; at input 1000002 it exceeds the default step budget of 4,000,000 events, and a run past the budget is not judged by design (DECISIONS #16, #22). The case sits past the stated budget scope on purpose. Path A step 3: written off by design"
