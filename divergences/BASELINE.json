@@ -5,8 +5,8 @@
     "cases": 111,
     "diverges": 74,
     "equivalent": 37,
-    "caught": 69,
-    "missed": 2,
+    "caught": 70,
+    "missed": 1,
     "false_alarms": 0,
     "could_not_check": 4
   },
@@ -671,10 +671,10 @@
     },
     "095-holdout-two-bools-gated-large-int": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 892,
-      "detail": "EQUIVALENT: agreed on all 892 generated inputs (seed 1)"
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (9007199254740993, True, True) | candidate -> 18014398509481984 | reference -> 18014398509481986"
     },
     "096-holdout-loop-sum-closed-form": {
       "expected": "equivalent",

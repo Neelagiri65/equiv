@@ -899,9 +899,10 @@ fn gen_cases_soft(
         // Bool fan-out (DECISIONS #21): the corner and literal inputs above
         // ran with every bool at its default (False), so a divergence behind
         // a flag was out of reach. Run them again once per bool argument with
-        // that flag set to True. One flag at a time keeps the cost linear in
-        // the number of bools; a divergence that needs two flags set at once
-        // is still out of reach. Signatures without a bool add nothing.
+        // that flag set to True, plus once with every flag True when there are
+        // two or more. The cost stays linear in the number of bools; a
+        // divergence that needs a strict subset of three or more flags is
+        // still out of reach. Signatures without a bool add nothing.
         for fb in flag_bases(spec).into_iter().skip(1) {
             for (i, ty) in spec.args.iter().enumerate() {
                 if *ty == ArgType::Bool {
@@ -1074,6 +1075,14 @@ fn flag_bases(spec: &ReviewSpec) -> Vec<Vec<PyVal>> {
             b[i] = PyVal::Bool(true);
             out.push(b);
         }
+    }
+    // With two or more bools, one more base with every flag True: a
+    // divergence gated on all flags together is reached for one extra pass,
+    // whatever the number of bools (with two bools the bool space is then
+    // covered completely). A single bool adds nothing: all-True is its
+    // one-flag base. Path A step 3, corpus case 095.
+    if spec.args.iter().filter(|t| **t == ArgType::Bool).count() >= 2 {
+        out.push(spec.args.iter().map(|t| if *t == ArgType::Bool { PyVal::Bool(true) } else { default_val(*t) }).collect());
     }
     out
 }

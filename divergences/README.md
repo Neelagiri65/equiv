@@ -92,7 +92,7 @@ Recorded with equiv 0.20.0 on Python 3.14 (see `BASELINE.json`).
 | | |
 |---|---|
 | Cases | 111 (74 diverges, 37 equivalent) |
-| Catch rate | 69 / 74 = 93.2% |
+| Catch rate | 70 / 74 = 94.6% |
 | False-alarm rate | 0 / 37 = 0% |
 | Could not check | 4 |
 
@@ -182,7 +182,11 @@ Cases 093-095 (also `holdout`) were written *before* the 0.11.0 bool fan-out
 diverging pairs, 0.11.0 catches 1 / 2, with 0 / 1 false alarms. 092 is caught
 by the same change, at `(2^53 + 1, True)`. 095 (a large-int divergence that
 needs two flags set at once) was written off the planned list on purpose: the
-fan-out sets one flag at a time, so it is still missed.
+fan-out sets one flag at a time, so it was missed. 0.20.0 adds one pass with
+every flag `True` when a signature has two or more bools (one extra pass
+whatever the number of bools; with two bools the bool space is covered
+completely); 095 is caught at `(9007199254740993, True, True)`. A divergence
+that needs a strict subset of three or more flags is still out of reach.
 
 By class (diverges caught / total, equivalent passed / total):
 
@@ -200,7 +204,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 30/34 | 16/17 |
+| holdout | 31/34 | 16/17 |
 
 ### Misses and why
 
@@ -211,7 +215,6 @@ reported as equivalent. The reason is the generator's reach, read from
 | case | why equiv did not reach the witness |
 |------|-------------------------------------|
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
-| 095-holdout-two-bools-gated-large-int | needs 2^53 + 1 with both flags `True`; the bool fan-out sets one flag at a time, keeping the cost linear in the number of bools |
 
 `011-float-round-half-even-floor` was refused until 0.20.0 because
 `math.floor` was outside the float allowlist. 0.20.0 admits the exact math

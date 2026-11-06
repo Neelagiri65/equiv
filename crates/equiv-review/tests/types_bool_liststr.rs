@@ -5,6 +5,9 @@
 use equiv_review::{review, ArgType, ReviewSpec, ReviewVerdict};
 use std::io::Write;
 
+// int,bool case count before the all-True pass (0.20.0); pinned so it cannot move.
+const SINGLE_BOOL_N: u32 = 166;
+
 fn tmp(name: &str, body: &str) -> std::path::PathBuf {
     let p = std::env::temp_dir().join(format!("equiv_ty{}_{name}.py", std::process::id()));
     let mut f = std::fs::File::create(&p).unwrap();
@@ -131,4 +134,37 @@ fn fanout_leaves_signatures_without_a_bool_unchanged() {
     assert_eq!(rc.inputs, rc2.inputs);
     let with_bool = review(&c, &r, &spec("f", vec![ArgType::Int, ArgType::Bool])).expect("no safety stop");
     assert!(with_bool.inputs.corner > rc.inputs.corner / 2, "{:?} vs {:?}", with_bool.inputs, rc.inputs);
+}
+
+// Path A step 3, corpus case 095: with two or more bools the corner blocks
+// also run once with every flag True, so a divergence gated on all flags
+// together is reached. One extra pass whatever the number of bools; with
+// k = 2 the bool space (00, 10, 01, 11) is then covered completely. A
+// divergence needing a strict subset of three or more flags is still out of
+// reach (stated cost).
+#[test]
+fn large_int_corner_behind_two_flags_is_caught() {
+    let c = tmp("f2b_c", "def scale(n, a, b):\n    return int(n * 2.0) if (a and b) else n * 2\n");
+    let r = tmp("f2b_r", "def scale(n, a, b):\n    return n * 2\n");
+    let v = review(&c, &r, &spec("scale", vec![ArgType::Int, ArgType::Bool, ArgType::Bool]))
+        .expect("no safety stop")
+        .verdict;
+    match v {
+        ReviewVerdict::Counterexample { input, .. } => {
+            assert!(input.contains("9007199254740993, True, True"), "{input}")
+        }
+        v => panic!("expected the 2^53 + 1 corner with both flags set, got {v:?}"),
+    }
+}
+
+// A single bool gains no extra pass: all-True equals the one-flag base.
+#[test]
+fn single_bool_case_list_is_unchanged_by_the_all_true_pass() {
+    let c = tmp("sb_c", "def f(n, a):\n    return n if a else -n\n");
+    let r = tmp("sb_r", "def f(n, a):\n    return n if a else -n\n");
+    let rc = review(&c, &r, &spec("f", vec![ArgType::Int, ArgType::Bool])).expect("no safety stop");
+    match rc.verdict {
+        ReviewVerdict::Equivalent { n, .. } => assert_eq!(n, SINGLE_BOOL_N, "int,bool case count changed"),
+        v => panic!("got {v:?}"),
+    }
 }
