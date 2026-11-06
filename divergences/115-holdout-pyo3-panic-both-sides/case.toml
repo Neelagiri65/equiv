@@ -1,0 +1,5 @@
+function = "week_day"
+args = "int,int,int"
+expected = "equivalent"
+class = "holdout"
+pattern = "both versions panic (PyO3 PanicException) on the same out-of-range months and agree elsewhere; the same panic on both sides is agreement, not a difference. Written 2026-11-06 before equiv counted a panic as an outcome"

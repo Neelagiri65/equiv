@@ -1,0 +1,6 @@
+function = "week_day"
+args = "int,int,int"
+expected = "diverges"
+class = "holdout"
+witness = '''(2024, 13, 1)'''
+pattern = "compiled twin panics (PyO3 PanicException, a BaseException) on an out-of-range month where the Python version returns a value; modelled on pendulum 3.3.0 week_day. Written 2026-11-06 before equiv counted a panic as an outcome (step 2 Score 2 gap)"
