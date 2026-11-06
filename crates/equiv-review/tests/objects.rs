@@ -81,5 +81,5 @@ fn golden_dict_receipt_id_is_stable() {
     let mut r = review(&cand, &refr, &spec("f", vec![ArgType::Int])).expect("no safety stop");
     r.python = "3.12".into();
     let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "7067d0238e992e53ae1fc54cb49711278789c4ab39149b890f45e28820cfda10", "receipt-id drifted");
+    assert_eq!(id, "dda626cc65d60faf22088cbf09aed0fbf5715b67a6338eaf726dfebab07baf2b", "receipt-id drifted");
 }

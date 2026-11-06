@@ -1,14 +1,14 @@
 {
-  "equiv_version": "0.17.0",
+  "equiv_version": "0.20.0",
   "python": "3.14.9",
   "summary": {
     "cases": 107,
     "diverges": 71,
     "equivalent": 36,
-    "caught": 63,
+    "caught": 64,
     "missed": 4,
     "false_alarms": 0,
-    "could_not_check": 5
+    "could_not_check": 4
   },
   "cases": {
     "001-int-float-identity-scale": {
@@ -83,10 +83,10 @@
     },
     "011-float-round-half-even-floor": {
       "expected": "diverges",
-      "exit": 2,
-      "outcome": "could-not-check",
+      "exit": 1,
+      "outcome": "caught",
       "n": null,
-      "detail": "REFUSED: calls math.floor outside the admissible set"
+      "detail": "COUNTEREXAMPLE at input (0.5) | candidate -> 1 | reference -> 0"
     },
     "012-float-reassociation": {
       "expected": "diverges",
@@ -400,15 +400,15 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 530,
-      "detail": "EQUIVALENT: agreed on all 530 generated inputs (seed 1)"
+      "n": 534,
+      "detail": "EQUIVALENT: agreed on all 534 generated inputs (seed 1)"
     },
     "057-eq-float-halve": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 530,
-      "detail": "EQUIVALENT: agreed on all 530 generated inputs (seed 1)"
+      "n": 534,
+      "detail": "EQUIVALENT: agreed on all 534 generated inputs (seed 1)"
     },
     "058-eq-floordiv-via-mod": {
       "expected": "equivalent",
@@ -681,7 +681,7 @@
       "exit": 0,
       "outcome": "pass",
       "n": 755,
-      "detail": "EQUIVALENT: agreed on all 755 generated inputs (seed 1); 9 large-magnitude inputs not judged (step budget)"
+      "detail": "EQUIVALENT: agreed on all 755 generated inputs (seed 1); 9 large or costly inputs not judged (step budget)"
     },
     "097-holdout-sum-squares-float-closed-form": {
       "expected": "diverges",
@@ -695,7 +695,7 @@
       "exit": 0,
       "outcome": "pass",
       "n": 745,
-      "detail": "EQUIVALENT: agreed on all 745 generated inputs (seed 1); 19 large-magnitude inputs not judged (step budget)"
+      "detail": "EQUIVALENT: agreed on all 745 generated inputs (seed 1); 19 large or costly inputs not judged (step budget)"
     },
     "099-holdout-four-line-loop-body-scope-edge": {
       "expected": "equivalent",

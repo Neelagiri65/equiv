@@ -503,6 +503,14 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
             0x7FF8_0000_0000_0000,    // quiet NaN
             0x0000_0000_0000_0001,    // smallest subnormal
             0x7FEF_FFFF_FFFF_FFFF,    // largest finite
+            // exact halves: round() (half to even) and floor(x + 0.5) (half
+            // up) differ only on ties, which random fractions rarely hit;
+            // both parities, both signs
+            0x3FE0_0000_0000_0000,    // 0.5
+            0xBFE0_0000_0000_0000,    // -0.5
+            0x3FF8_0000_0000_0000,    // 1.5
+            0x4004_0000_0000_0000,    // 2.5
+            0xC004_0000_0000_0000,    // -2.5
         ]
         .into_iter()
         .map(PyVal::Float)
@@ -1310,7 +1318,8 @@ fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal
     // reviews an AST allowlist (spec-type-admissibility.md AD-2) runs first, at
     // source level, before any module loads: a function is admitted only if it
     // stays inside the IEEE-754 correctly rounded closure (+ - * / and
-    // math.sqrt, comparisons, literals, a small set of exact builtins). Anything
+    // math.sqrt and the exact math functions such as floor, comparisons, literals,
+    // a small set of exact builtins). Anything
     // else (** , //, %, dynamic dispatch, unknown calls, foreign imports) is
     // refused by name. This is the allowlist the spec mandates, not a denylist.
     // Always on, every signature: a function body that reaches a maths-library
@@ -1375,6 +1384,8 @@ def _bad(_path):
         if isinstance(_n, _ast.FunctionDef) and _n.name == {fn:?}: _target = _n; break
     if _target is None: return None
     _okcall = {{'float', 'int', 'abs', 'min', 'max', 'sum', 'len', 'range', 'round', 'bool'}}
+    _okmath = {{'sqrt', 'floor', 'ceil', 'trunc', 'fabs', 'copysign', 'fmod', 'modf', 'frexp', 'ldexp',
+               'isfinite', 'isnan', 'isinf'}}
     for _node in _ast.walk(_target):
         if isinstance(_node, _ast.BinOp) and not isinstance(_node.op, (_ast.Add, _ast.Sub, _ast.Mult, _ast.Div)):
             return 'uses operator ' + type(_node.op).__name__ + ' outside the correctly rounded closure'
@@ -1385,13 +1396,13 @@ def _bad(_path):
             if isinstance(_f, _ast.Name):
                 if _f.id not in _okcall: return 'calls ' + _f.id + ' outside the admissible set'
             elif isinstance(_f, _ast.Attribute):
-                if not (isinstance(_f.value, _ast.Name) and _f.value.id == 'math' and _f.attr == 'sqrt'):
+                if not (isinstance(_f.value, _ast.Name) and _f.value.id == 'math' and _f.attr in _okmath):
                     _nm = (_f.value.id + '.' + _f.attr) if isinstance(_f.value, _ast.Name) else _f.attr
                     return 'calls ' + _nm + ' outside the admissible set'
             else:
                 return 'uses a dynamic call that cannot be analysed'
         if isinstance(_node, _ast.Attribute):
-            if not (isinstance(_node.value, _ast.Name) and _node.value.id == 'math' and _node.attr == 'sqrt'):
+            if not (isinstance(_node.value, _ast.Name) and _node.value.id == 'math' and _node.attr in _okmath):
                 return 'uses attribute ' + _node.attr + ' that cannot be analysed'
     return None
 for _p in ({cand:?}, {refr:?}):

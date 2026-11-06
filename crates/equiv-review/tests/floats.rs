@@ -117,6 +117,43 @@ fn sqrt_is_admissible() {
     assert!(matches!(review(&p, &p, &s).expect("no safety stop").verdict, ReviewVerdict::Equivalent { .. }), "sqrt must be admitted");
 }
 
+// The exact maths functions (results exactly representable, so the same bits
+// on every host) are admitted under a float signature: the same exact set the
+// libm guard already names (DECISIONS #17). Path A step 3, corpus case 011.
+#[test]
+fn exact_math_functions_are_admissible() {
+    for call in ["math.floor(x)", "math.ceil(x)", "math.trunc(x)", "math.fabs(x)", "math.copysign(1.0, x)",
+                 "math.fmod(x, 3.0)", "math.modf(x)", "math.frexp(x)", "math.ldexp(x, 3)",
+                 "math.isfinite(x)", "math.isnan(x)", "math.isinf(x)"] {
+        let p = write_py("exact", &format!("import math\ndef e(x):\n    return {call}\n"));
+        let s = spec("e", vec![ArgType::Float]);
+        let v = review(&p, &p, &s).expect("no safety stop").verdict;
+        assert!(!matches!(v, ReviewVerdict::Refused { .. }), "{call} must be admitted, got {v:?}");
+    }
+}
+
+// Functions whose last bit depends on the maths library stay refused.
+#[test]
+fn transcendental_math_functions_stay_refused() {
+    for call in ["math.sin(x)", "math.exp(x)", "math.log(abs(x) + 1.0)", "math.fsum([x, 1.0])"] {
+        let p = write_py("transc", &format!("import math\ndef t(x):\n    return {call}\n"));
+        let s = spec("t", vec![ArgType::Float]);
+        let v = review(&p, &p, &s).expect("no safety stop").verdict;
+        assert!(matches!(v, ReviewVerdict::Refused { .. }), "{call} must be refused, got {v:?}");
+    }
+}
+
+// Ties are a corner class: round() (half to even) against floor(x + 0.5)
+// (half up) differ only on exact halves, which random fractions rarely hit.
+#[test]
+fn round_half_even_vs_half_up_is_caught() {
+    let cand = write_py("tie_c", "import math\ndef r(x):\n    return math.floor(x + 0.5)\n");
+    let refr = write_py("tie_r", "def r(x):\n    return round(x)\n");
+    let s = spec("r", vec![ArgType::Float]);
+    let v = review(&cand, &refr, &s).expect("no safety stop").verdict;
+    assert!(matches!(v, ReviewVerdict::Counterexample { .. }), "got {v:?}");
+}
+
 // Regression guard for the receipt bytes (the cross-host moat). A fixed
 // admissible float review must always produce this exact receipt-id. True
 // cross-host identity is proven by the CI matrix; this pins the encoding so a
@@ -133,5 +170,5 @@ fn golden_receipt_id_is_stable() {
     let mut r = review(&cand, &refr, &s).expect("no safety stop");
     r.python = "3.12".into();
     let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "87da3070bffd6410507a5fb799508731e32670335d9cfd9afdad60991c145611", "receipt-id drifted");
+    assert_eq!(id, "273927733d20caf214f6e4d6fce1019df5061b692232025aa8f0296c4caafd05", "receipt-id drifted");
 }
