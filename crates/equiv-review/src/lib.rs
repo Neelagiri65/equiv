@@ -140,6 +140,20 @@ pub use harvest::Slots;
 // ---------- deterministic input generation (Rust-side, seeded) ----------
 
 struct Rng(u64);
+
+/// The random stream for a seed. xorshift needs a non-zero state. Odd seeds
+/// are used as they are (so seed 1 and every odd-seed receipt keep their
+/// stream); even seeds were once made odd with `| 1`, which ran seed 2 as
+/// seed 3, so they are mixed with splitmix64 into their own odd state.
+fn seed_rng(seed: u64) -> Rng {
+    if seed & 1 == 1 {
+        return Rng(seed);
+    }
+    let mut z = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    Rng((z ^ (z >> 31)) | 1)
+}
 impl Rng {
     fn next(&mut self) -> u64 {
         let mut x = self.0;
@@ -1031,7 +1045,7 @@ fn gen_cases_soft(
         }
     }
 
-    let mut rng = Rng(spec.seed | 1);
+    let mut rng = seed_rng(spec.seed);
     for _ in 0..spec.n {
         let c: Vec<PyVal> = spec.args.iter().map(|t| gen_arg(&mut rng, *t)).collect();
         if seen.insert(key(&c)) {
@@ -2603,6 +2617,23 @@ mod generator_tests {
         let c = gen_cases(&spec(vec![ArgType::Int], 2), &[src]);
         assert_eq!(a, b, "same seed, same cases");
         assert_ne!(a, c, "a different seed must change the random cases");
+    }
+
+    // Neighbouring seeds must not alias (path A step 4 finding: `seed | 1`
+    // ran seed 2 as seed 3 and seed 4 as seed 5), and odd seeds keep the
+    // stream they had, so seed 1 and every odd-seed receipt are unchanged.
+    #[test]
+    fn neighbouring_seeds_give_different_streams_and_odd_seeds_are_unchanged() {
+        let src = "def f(a):\n    return a\n";
+        let cases = |seed| gen_cases(&spec(vec![ArgType::Int], seed), &[src]);
+        for (even, odd) in [(0, 1), (2, 3), (4, 5), (100, 101)] {
+            assert_ne!(cases(even), cases(odd), "seed {even} ran the same stream as seed {odd}");
+        }
+        let mut r = seed_rng(7);
+        let mut legacy = Rng(7);
+        for _ in 0..5 {
+            assert_eq!(r.next(), legacy.next(), "an odd seed must keep its pre-0.21 stream");
+        }
     }
 
     // 0.17.0: random strings mix case, digits and control characters, and
