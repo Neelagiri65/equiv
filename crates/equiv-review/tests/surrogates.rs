@@ -34,3 +34,20 @@ fn same_error_on_both_sides_stays_equivalent() {
     let v = review(&c, &r, &spec("f")).expect("no safety stop").verdict;
     assert!(matches!(v, ReviewVerdict::Equivalent { .. }), "got {v:?}");
 }
+
+// Surrogate corners run after the random inputs (path A step 2 finding): a
+// compiled twin that rejects lone surrogates must not hide an ordinary
+// difference behind a '\ud800' headline. The surrogate difference is still
+// counted among the disagreements.
+#[test]
+fn an_ordinary_difference_is_the_headline_before_surrogates() {
+    let c = tmp("oc", "def f(s):\n    s.encode('utf-8')\n    return s.upper() if 'z' in s else s\n");
+    let r = tmp("or", "def f(s):\n    return s\n");
+    match review(&c, &r, &spec("f")).expect("no safety stop").verdict {
+        ReviewVerdict::Counterexample { input, disagreeing, .. } => {
+            assert!(!input.contains("\\ud") && input.contains('z'), "headline {input}");
+            assert!(disagreeing > 3, "surrogates still counted: {disagreeing}");
+        }
+        v => panic!("expected a counterexample, got {v:?}"),
+    }
+}

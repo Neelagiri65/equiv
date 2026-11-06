@@ -506,14 +506,9 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
         ArgType::Int => [0, 1, -1, 2, -2].into_iter().map(PyVal::Int).collect(),
         // Shapes the random generator (len<=8) rarely reaches: empty,
         // uppercase, digit, whitespace, and a string longer than 8.
-        // Then lone surrogates, which a Rust String cannot hold: high, low,
-        // and a low surrogate after text (the shape surrogateescape leaves
-        // for an undecodable byte). Strict UTF-8 encoding raises on all three.
-        ArgType::Str => STR_CORNERS
-            .iter()
-            .map(|s| PyVal::Str(s.to_string()))
-            .chain(SURROGATE_CORNERS.iter().map(|u| PyVal::StrUnits(u.to_vec())))
-            .collect(),
+        // (Lone surrogates are str corners too, but they run after the random
+        // inputs; see the SURROGATE_CORNERS block after the random draw.)
+        ArgType::Str => STR_CORNERS.iter().map(|s| PyVal::Str(s.to_string())).collect(),
         // Structural corners the random generator (len<=6, vals -20..20) misses:
         // empty, singleton, all-equal, sorted, reverse-sorted, length>6.
         ArgType::ListInt => [
@@ -1042,6 +1037,31 @@ fn gen_cases_soft(
         if seen.insert(key(&c)) {
             cases.push(c);
             counts.random += 1;
+        }
+    }
+
+    // Lone surrogates (a Rust String cannot hold them): high, low, and a low
+    // surrogate after text (the shape surrogateescape leaves for an
+    // undecodable byte), one str argument at a time, on every flag base.
+    // They run after the random inputs because a compiled twin that takes
+    // &str (PyO3) rejects every one of them: the difference is real and still
+    // counted, but an ordinary difference, when there is one, comes first and
+    // is the headline. Path A step 2 finding (DECISIONS #34).
+    if spec.args.iter().any(|t| *t == ArgType::Str) {
+        for base in flag_bases(spec) {
+            for (i, ty) in spec.args.iter().enumerate() {
+                if *ty != ArgType::Str {
+                    continue;
+                }
+                for u in SURROGATE_CORNERS {
+                    let mut c = base.clone();
+                    c[i] = PyVal::StrUnits(u.to_vec());
+                    if seen.insert(key(&c)) {
+                        cases.push(c);
+                        counts.corner += 1;
+                    }
+                }
+            }
         }
     }
 
