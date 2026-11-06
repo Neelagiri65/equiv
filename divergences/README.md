@@ -74,11 +74,13 @@ The runner exits non-zero only on:
 - any false alarm;
 - any corpus error;
 - a regression against `BASELINE.json`: a case that was `caught` or `pass` in
-  the baseline and is now anything else.
+  the baseline and is now anything else;
+- a case that is not caught (or passed) and has no `writeoff`, or a `writeoff`
+  on a case that is now caught (see the completeness gate below).
 
-Misses and could-not-check results never fail the run; they are what the corpus
-exists to measure. A case that moves to a better outcome is printed as `BETTER`
-with a prompt to refresh the baseline.
+Misses and could-not-check results are what the corpus exists to measure; the
+gate only requires that each one has its reason recorded. A case that moves to
+a better outcome is printed as `BETTER` with a prompt to refresh the baseline.
 
 `BASELINE.json` records, per case, the exit code, outcome, number of generated
 inputs and the first line of equiv's verdict, plus the equiv and Python versions
@@ -91,9 +93,9 @@ Recorded with equiv 0.20.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 111 (74 diverges, 37 equivalent) |
-| Catch rate | 70 / 74 = 94.6% |
-| False-alarm rate | 0 / 37 = 0% |
+| Cases | 113 (75 diverges, 38 equivalent) |
+| Catch rate | 72 / 75 = 96.0% |
+| False-alarm rate | 0 / 38 = 0% |
 | Could not check | 4 |
 
 Cases 108-111 (class `holdout`) were written on 2026-11-06, before the
@@ -197,43 +199,51 @@ By class (diverges caught / total, equivalent passed / total):
 | float-specials | 3/3 | 2/2 |
 | float-rounding | 4/4 | - |
 | exception-vs-value | 3/3 | - |
-| unicode | 4/5 | 3/3 |
+| unicode | 5/5 | 3/3 |
 | fixed-width-int | 3/3 | 3/3 |
 | negative-division | 3/3 | 2/2 |
 | boundary | 2/2 | 4/4 |
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 31/34 | 16/17 |
+| holdout | 32/35 | 17/18 |
 
-### Misses and why
+### Misses, write-offs and the completeness gate
 
-Each of these is a pair that diverges on its recorded witness and that equiv
-reported as equivalent. The reason is the generator's reach, read from
-`crates/equiv-review/src/lib.rs`:
+There are no misses as of 0.20.0. Every case equiv does not catch (or, if
+equivalent, does not pass) carries a `writeoff` in its `case.toml` with the
+reason it is out of reach by design. The runner fails on a case that is not
+caught and has no write-off (`OPEN`), and on a write-off left on a case that is
+now caught (`STALE`). This is path A's completeness gate: inside the fixed
+scope, everything is caught or written off with its reason.
 
-| case | why equiv did not reach the witness |
-|------|-------------------------------------|
-| 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
+| case | outcome | why it is out of reach by design |
+|------|---------|----------------------------------|
+| 085-holdout-digit-count-via-log10 | could not check | reaches `math.log10`, whose last bit is not the same on every host (DECISIONS #17) |
+| 086-holdout-digit-count-via-log-base | could not check | reaches `math.log` (same reason) |
+| 088-holdout-list-bit-length-via-log2 | could not check | reaches `math.log2` (same reason) |
+| 099-holdout-four-line-loop-body-scope-edge | could not check | the reference passes the default step budget at input 1000002; a run past the budget is not judged (DECISIONS #16, #22) |
 
-`011-float-round-half-even-floor` was refused until 0.20.0 because
-`math.floor` was outside the float allowlist. 0.20.0 admits the exact math
-functions (`floor`, `ceil`, `trunc`, `fabs`, `copysign`, `fmod`, `modf`,
-`frexp`, `ldexp`, `isfinite`, `isnan`, `isinf`: results exactly representable,
-so the same bits on every host) and adds exact halves (0.5, -0.5, 1.5, 2.5,
--2.5) to the float corners; 011 is caught at `(0.5)`.
+Closed in 0.20.0 (path A step 3):
 
-Could not check: `085`, `086` and `088` are refused
-under their int and list signatures because they reach `math.log10`,
-`math.log` and `math.log2`: results whose last bit is not the same on every
-host, so no cross-host verdict is possible. Its sibling
-`010-float-round-half-even-int` (same bug, written with `int(x + 0.5)`) is
-caught.
+- `011-float-round-half-even-floor` was refused because `math.floor` was
+  outside the float allowlist. 0.20.0 admits the exact math functions
+  (`floor`, `ceil`, `trunc`, `fabs`, `copysign`, `fmod`, `modf`, `frexp`,
+  `ldexp`, `isfinite`, `isnan`, `isinf`: results exactly representable, so the
+  same bits on every host) and adds exact halves (0.5, -0.5, 1.5, 2.5, -2.5) to
+  the float corners; 011 is caught at `(0.5)`.
+- `021-unicode-lone-surrogate`: a lone surrogate cannot be held in a Rust
+  `String`. 0.20.0 carries three surrogate corners as UTF-16 code units (high,
+  low, and a low surrogate after text); 021 is caught at `('\ud800')`.
+  Holdouts 112 (diverges) and 113 (equivalent) were written first: 112 missed
+  before the change, caught after; 113 passes throughout.
+- `074` and `076`: see cases 108-111 above.
+- `095`: see the bool fan-out paragraph above.
 
 Contrast pair worth reading together: `023-fixedwidth-int32-wrap-large` is now
 caught because its masks (`0xFFFFFFFF`, `0x80000000`) are in the source and the
 literal scan aims at them; `024-int-float-precision-large` has no such constant
-and is still missed.
+and is caught by the large-int corners (at `(9007199254740993)`).
 
 ## Adding a case
 
@@ -256,6 +266,7 @@ and is still missed.
    pattern = ">= threshold rewritten as >, excluding the boundary value"
    source = "https://..."          # optional
    witness = '''(18,)'''           # required for diverges
+   # writeoff = "..."              # only if equiv cannot reach it by design: the reason
    ```
 
 6. Run `scripts/run-divergences.sh`. The integrity pass must be clean: your

@@ -1,0 +1,6 @@
+function = "is_encodable"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "a try/except around strict UTF-8 encoding rewritten as a code point range check; every str passes the range check, but a lone surrogate cannot be encoded. Written 2026-11-06 before surrogate corners existed"
+witness = '''("x\udc80",)'''

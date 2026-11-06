@@ -14,8 +14,12 @@ Two passes:
    label and to the checked-in baseline (divergences/BASELINE.json).
 
 Exit status: 0 when there are no false alarms, no regressions against the
-baseline and no corpus errors; 1 otherwise. Misses and could-not-check results
-are reported, never failed: they are what the corpus measures.
+baseline, no corpus errors and no open cases; 1 otherwise. Completeness gate
+(path A, Bellard B1): a case that is not caught (or, if equivalent, not
+passed) must carry a `writeoff` in its case.toml giving the reason it is out of
+reach by design; a case without one is OPEN and fails the run. A write-off on a
+case that is now caught or passed is STALE and fails too, so the record cannot
+drift from the engine.
 
 Usage: run_divergences.py --bin PATH [--update-baseline] [--skip-integrity]
                           [--integrity-n N] [--only SUBSTRING]
@@ -87,6 +91,8 @@ def load_cases(only=None):
             sys.exit(f"{d.name}: expected must be 'diverges' or 'equivalent'")
         if meta["expected"] == "diverges" and "witness" not in meta:
             sys.exit(f"{d.name}: a diverges case needs a `witness`")
+        if "writeoff" in meta and not str(meta["writeoff"]).strip():
+            sys.exit(f"{d.name}: `writeoff` must give the reason")
         meta["id"] = d.name
         meta["dir"] = d
         cases.append(meta)
@@ -298,7 +304,7 @@ def main():
         code, detail, n = run_equiv(a.bin, c)
         results[c["id"]] = dict(
             expected=c["expected"], cls=c["class"], exit=code, outcome=classify(c["expected"], code),
-            n=n, detail=detail,
+            n=n, detail=detail, writeoff=c.get("writeoff"),
         )
 
     base = json.loads(BASELINE.read_text()) if BASELINE.exists() else None
@@ -358,6 +364,18 @@ def main():
                 print(f"  {cid}: {r['detail']}")
     for line in notes:
         print(line)
+
+    written_off = [(cid, r) for cid, r in results.items() if r["outcome"] not in GOOD and r["writeoff"]]
+    if written_off:
+        print()
+        print("Written off (out of reach by design, reason recorded in case.toml):")
+        for cid, r in written_off:
+            print(f"  {cid} [{r['outcome']}]: {r['writeoff']}")
+    for cid, r in results.items():
+        if r["outcome"] not in GOOD and not r["writeoff"]:
+            failures.append(f"OPEN {cid}: {r['outcome']} with no `writeoff`; catch it or record why it is out of reach")
+        if r["outcome"] in GOOD and r["writeoff"]:
+            failures.append(f"STALE WRITE-OFF {cid}: now {r['outcome']}; remove its `writeoff`")
 
     if a.update_baseline:
         if a.only:

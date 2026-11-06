@@ -167,6 +167,10 @@ pub enum PyVal {
     Dict(Vec<(String, i64)>),
     Bool(bool),
     ListStr(Vec<String>),
+    /// A str as UTF-16 code units, for the strings a Rust String cannot hold:
+    /// lone surrogates. Only generated as str corners; handed to the
+    /// evaluator as a Python literal with explicit escapes, like any str.
+    StrUnits(Vec<u16>),
 }
 
 impl PyVal {
@@ -177,6 +181,7 @@ impl PyVal {
         match self {
             PyVal::Int(n) => n.to_string(),
             PyVal::Str(s) => py_str_literal(s),
+            PyVal::StrUnits(units) => py_units_literal(units),
             PyVal::ListInt(xs) => {
                 let inner: Vec<String> = xs.iter().map(|n| n.to_string()).collect();
                 format!("[{}]", inner.join(", "))
@@ -217,6 +222,25 @@ impl PyVal {
 // everything else uses an explicit escape, so tabs, newlines and non-ASCII
 // characters reach the evaluator exactly and the literal is the same on
 // every host.
+// The same literal for a sequence of UTF-16 code units: paired surrogates
+// decode to their character, a lone surrogate is written as its \u escape
+// (which Python accepts in a str literal). Equal to py_str_literal for any
+// sequence that is valid UTF-16.
+fn py_units_literal(units: &[u16]) -> String {
+    let mut out = String::from("'");
+    for r in char::decode_utf16(units.iter().copied()) {
+        match r {
+            Ok(ch) => {
+                let lit = py_str_literal(&ch.to_string());
+                out.push_str(&lit[1..lit.len() - 1]);
+            }
+            Err(e) => out.push_str(&format!("\\u{:04x}", e.unpaired_surrogate())),
+        }
+    }
+    out.push('\'');
+    out
+}
+
 fn py_str_literal(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('\'');
@@ -442,8 +466,8 @@ fn default_val(ty: ArgType) -> PyVal {
 // String corners the random generator (len<=8, small alphabet) rarely or never reaches. Grouped by
 // the semantics they stress; each is a well-known place where string
 // refactors change behaviour. Fixed and ordered, so the case list is the same
-// on every host. (A lone surrogate cannot be held in a Rust String, so that
-// class stays out of reach; see divergences/README.md.)
+// on every host. (A lone surrogate cannot be held in a Rust String; those
+// corners are SURROGATE_CORNERS, carried as UTF-16 code units.)
 const STR_CORNERS: &[&str] = &[
     // shape: empty, case, digit, space, longer than the random range
     "", "a", "A", "0", " ", "abcdefghij",
@@ -471,6 +495,8 @@ const STR_CORNERS: &[&str] = &[
     "1_000", "_1", "1_", "1__0", "1_0.5",
 ];
 
+const SURROGATE_CORNERS: &[&[u16]] = &[&[0xD800], &[0xDFFF], &[0x78, 0xDC80]];
+
 // Deterministic corner inputs the seeded random generator reaches rarely or
 // never: the exact shapes where refactors break. All stay inside the O(n)-safe
 // envelope so a linear reference cannot hang on them.
@@ -480,7 +506,14 @@ fn boundary_cases(ty: ArgType) -> Vec<PyVal> {
         ArgType::Int => [0, 1, -1, 2, -2].into_iter().map(PyVal::Int).collect(),
         // Shapes the random generator (len<=8) rarely reaches: empty,
         // uppercase, digit, whitespace, and a string longer than 8.
-        ArgType::Str => STR_CORNERS.iter().map(|s| PyVal::Str(s.to_string())).collect(),
+        // Then lone surrogates, which a Rust String cannot hold: high, low,
+        // and a low surrogate after text (the shape surrogateescape leaves
+        // for an undecodable byte). Strict UTF-8 encoding raises on all three.
+        ArgType::Str => STR_CORNERS
+            .iter()
+            .map(|s| PyVal::Str(s.to_string()))
+            .chain(SURROGATE_CORNERS.iter().map(|u| PyVal::StrUnits(u.to_vec())))
+            .collect(),
         // Structural corners the random generator (len<=6, vals -20..20) misses:
         // empty, singleton, all-equal, sorted, reverse-sorted, length>6.
         ArgType::ListInt => [
@@ -2414,11 +2447,20 @@ mod generator_tests {
         ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET }
     }
 
+    #[test]
+    fn surrogate_literals_escape_lone_units_and_match_valid_utf16() {
+        assert_eq!(py_units_literal(&[0xD800]), "'\\ud800'");
+        assert_eq!(py_units_literal(&[0x78, 0xDC80]), "'x\\udc80'");
+        // a valid pair decodes to the same literal a String would give
+        assert_eq!(py_units_literal(&[0xD83D, 0xDE00]), py_str_literal("😀"));
+        assert_eq!(py_units_literal(&[0x61, 0x27, 0x5C]), py_str_literal("a'\\"));
+    }
+
     fn matches_type(v: &PyVal, t: ArgType) -> bool {
         matches!(
             (v, t),
             (PyVal::Int(_), ArgType::Int)
-                | (PyVal::Str(_), ArgType::Str)
+                | (PyVal::Str(_) | PyVal::StrUnits(_), ArgType::Str)
                 | (PyVal::ListInt(_), ArgType::ListInt)
                 | (PyVal::Float(_), ArgType::Float)
                 | (PyVal::Dict(_), ArgType::Dict)
