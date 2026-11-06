@@ -1,0 +1,5 @@
+function = "utf8_size"
+args = "str"
+expected = "equivalent"
+class = "holdout"
+pattern = "byte length of the strict UTF-8 encoding computed per character instead of on the whole string; same result, and the same UnicodeEncodeError on a lone surrogate. Guards surrogate corners against false alarms. Written 2026-11-06 before surrogate corners existed"
