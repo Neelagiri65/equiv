@@ -89,13 +89,13 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.20.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.21.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 113 (75 diverges, 38 equivalent) |
-| Catch rate | 72 / 75 = 96.0% |
-| False-alarm rate | 0 / 38 = 0% |
+| Cases | 115 (76 diverges, 39 equivalent) |
+| Catch rate | 73 / 76 = 96.1% |
+| False-alarm rate | 0 / 39 = 0% |
 | Could not check | 4 |
 
 Cases 108-111 (class `holdout`) were written on 2026-11-06, before the
@@ -206,7 +206,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 32/35 | 17/18 |
+| holdout | 33/36 | 18/19 |
 
 ### Misses, write-offs and the completeness gate
 
@@ -239,6 +239,17 @@ Closed in 0.20.0 (path A step 3):
   before the change, caught after; 113 passes throughout.
 - `074` and `076`: see cases 108-111 above.
 - `095`: see the bool fan-out paragraph above.
+
+Closed in 0.21.0 (path A step 5):
+
+- A Rust panic surfacing through PyO3 (`pyo3_runtime.PanicException`) derives
+  from `BaseException`, so equiv stopped the run and reported *could not
+  check* (path A step 2: pendulum 3.3.0 `week_day`). It is now observed like
+  an exception: a panic on one side and a value on the other is a
+  counterexample; the same panic on both sides is agreement. Other
+  non-`Exception` exits (`SystemExit`, `KeyboardInterrupt`) still stop the run.
+  Holdouts 114 (diverges) and 115 (equivalent) were written first; both were
+  *could not check* on 0.20.0; 114 is caught and 115 passes on 0.21.0.
 
 Contrast pair worth reading together: `023-fixedwidth-int32-wrap-large` is now
 caught because its masks (`0xFFFFFFFF`, `0x80000000`) are in the source and the

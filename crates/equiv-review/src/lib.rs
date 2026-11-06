@@ -1539,7 +1539,11 @@ def _metered(fn, *args):
         v = fn(*args); e = None
     except BaseException as x:
         if _left[0] < 0 or isinstance(x, _Budget): return None, None, True
-        if not isinstance(x, Exception): raise
+        # A Rust panic through PyO3 (pyo3_runtime.PanicException) derives from
+        # BaseException. It is a deterministic outcome of the function, so it
+        # is observed like an exception; anything else non-Exception
+        # (KeyboardInterrupt, SystemExit, ...) still stops the run.
+        if not isinstance(x, Exception) and type(x).__name__ != 'PanicException': raise
         v = None; e = x
     finally:
         _M.set_events(_TOOL, 0)
@@ -1925,7 +1929,15 @@ fn evaluator_command() -> Command {
 /// invariant: a changed function is never silently dropped. Unchanged functions
 /// are simply absent.
 pub fn detect_changed_functions(base_src: &str, head_src: &str) -> Result<Vec<Detected>, String> {
-    let tag = hex(&sha256(format!("{base_src}\u{0}{head_src}").as_bytes()))[..16].to_string();
+    // Unique per call (process id + counter), not per content: concurrent runs
+    // on the same diff must not truncate and rewrite each other's files.
+    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tag = format!(
+        "{}_{}_{call}",
+        &hex(&sha256(format!("{base_src}\u{0}{head_src}").as_bytes()))[..16],
+        std::process::id()
+    );
     let dir = std::env::temp_dir();
     let bpath = dir.join(format!("equiv_detb_{tag}.py"));
     let hpath = dir.join(format!("equiv_deth_{tag}.py"));
@@ -1939,7 +1951,13 @@ pub fn detect_changed_functions(base_src: &str, head_src: &str) -> Result<Vec<De
         .arg(&hpath)
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
-        .map_err(|e| format!("python3 not runnable: {e}"))?;
+        .map_err(|e| format!("python3 not runnable: {e}"));
+    // The names are unique per call now, so remove them rather than leave one
+    // set behind per review.
+    for p in [&bpath, &hpath, &spath] {
+        let _ = std::fs::remove_file(p);
+    }
+    let out = out?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("detector error").to_string());
     }

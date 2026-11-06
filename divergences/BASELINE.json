@@ -1,11 +1,11 @@
 {
-  "equiv_version": "0.20.0",
+  "equiv_version": "0.21.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 113,
-    "diverges": 75,
-    "equivalent": 38,
-    "caught": 72,
+    "cases": 115,
+    "diverges": 76,
+    "equivalent": 39,
+    "caught": 73,
     "missed": 0,
     "false_alarms": 0,
     "could_not_check": 4
@@ -801,6 +801,20 @@
       "outcome": "pass",
       "n": 1694,
       "detail": "EQUIVALENT: agreed on all 1694 generated inputs (seed 1)"
+    },
+    "114-holdout-pyo3-panic-one-side": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (0, 0, 0) | candidate -> PanicException | reference -> 2"
+    },
+    "115-holdout-pyo3-panic-both-sides": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 2049,
+      "detail": "EQUIVALENT: agreed on all 2049 generated inputs (seed 1)"
     }
   }
 }

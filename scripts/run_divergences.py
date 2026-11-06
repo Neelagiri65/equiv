@@ -68,10 +68,21 @@ def canon(x):
     return "__NONCANON__"
 
 
+def _is_panic(e):
+    # A Rust panic surfacing through PyO3 (pyo3_runtime.PanicException) derives
+    # from BaseException, not Exception. It is a deterministic outcome of the
+    # function, so it is observed like an exception (equiv does the same).
+    return type(e).__name__ == "PanicException"
+
+
 def outcome(fn, args):
     try:
         return canon(fn(*args))
     except Exception as e:  # noqa: BLE001 - exception type is the observable
+        return "raise " + type(e).__name__
+    except BaseException as e:
+        if not _is_panic(e):
+            raise
         return "raise " + type(e).__name__
 
 
