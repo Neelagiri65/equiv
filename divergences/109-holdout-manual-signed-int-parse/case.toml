@@ -1,0 +1,6 @@
+function = "to_int"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = "int() replaced by a hand-written parser: strip, note a leading minus, drop every leading sign, require decimal digits. Accepts runs of signs that int() rejects and rejects digit-group underscores that int() accepts. Written 2026-11-06 before the int()-grammar corners"
+witness = '''("+-4",)'''
