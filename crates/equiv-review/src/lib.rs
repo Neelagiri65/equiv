@@ -461,6 +461,14 @@ const STR_CORNERS: &[&str] = &[
     // decimal point and an exponent (float() accepts both), whitespace-padded
     // digits (int() and float() ignore the padding), and signed / decimal zero
     "-1", "+1", "1.5", "1e3", " 7 ", "-0", "+0", "0.0",
+    // the rest of the int()/float() text grammar, where hand-written parsers
+    // and an added strip() disagree with it: the four characters str.strip()
+    // removes but int() and float() reject (U+001C-U+001F, the only such
+    // characters), runs of signs (rejected), and PEP 515 underscores (one
+    // between digits accepted; leading, trailing, doubled rejected)
+    "\u{1c}7\u{1c}", "\u{1d}7\u{1d}", "\u{1e}7\u{1e}", "\u{1f}7\u{1f}",
+    "--1", "+-1", "-+1", "++1",
+    "1_000", "_1", "1_", "1__0", "1_0.5",
 ];
 
 // Deterministic corner inputs the seeded random generator reaches rarely or

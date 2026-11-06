@@ -91,10 +91,22 @@ Recorded with equiv 0.20.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 107 (71 diverges, 36 equivalent) |
-| Catch rate | 64 / 71 = 90.1% |
-| False-alarm rate | 0 / 36 = 0% |
+| Cases | 111 (74 diverges, 37 equivalent) |
+| Catch rate | 69 / 74 = 93.2% |
+| False-alarm rate | 0 / 37 = 0% |
 | Could not check | 4 |
+
+Cases 108-111 (class `holdout`) were written on 2026-11-06, before the
+int()-grammar string corners, to test that class rather than the witnesses of
+074 and 076: separators via `split` + `strip` (108), a hand-written signed-int
+parser (109), underscore digit groups (110) and an equivalent redundant strip
+(111). Recorded on 0.20.0 before the corners: 108 and 109 missed, 110 caught
+by the random mixed alphabet, 111 passes. The corners (U+001C-U+001F padding,
+the only characters `str.strip()` removes that `int()` and `float()` reject;
+sign runs; PEP 515 underscores) then catch 074, 076, 108 and 109, with 0 / 37
+false alarms. This reverses DECISIONS #5 ("doubled signs / rare invisible
+separators: not now") under path A: the corners come from int()'s own grammar,
+not from a case witness.
 
 Cases 104-107 (class `holdout`, "mixed") were written on 2026-11-05, before
 any generator change, from a run against uutils `sort` where equiv found
@@ -188,7 +200,7 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 25/31 | 15/16 |
+| holdout | 30/34 | 16/17 |
 
 ### Misses and why
 
@@ -199,9 +211,7 @@ reported as equivalent. The reason is the generator's reach, read from
 | case | why equiv did not reach the witness |
 |------|-------------------------------------|
 | 021-unicode-lone-surrogate | a lone surrogate cannot be held in a Rust `String`, so the generator cannot produce one |
-| 074-holdout-int-strip-separators | needs digits wrapped in U+001C-U+001F, which `str.strip()` removes and `int()` rejects; no string corner contains those characters |
 | 095-holdout-two-bools-gated-large-int | needs 2^53 + 1 with both flags `True`; the bool fan-out sets one flag at a time, keeping the cost linear in the number of bools |
-| 076-holdout-is-int-double-sign | needs a repeated sign such as `--1`; the sign corners carry a single sign, and the source only spells `+-`, on which both sides agree |
 
 `011-float-round-half-even-floor` was refused until 0.20.0 because
 `math.floor` was outside the float allowlist. 0.20.0 admits the exact math
