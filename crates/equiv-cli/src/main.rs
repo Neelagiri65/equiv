@@ -68,7 +68,7 @@ fn usage() -> &'static str {
 
 USAGE:
   equiv review <cand.py> <ref.py> <fn> <sig> [n] [seed] [--sign] [--all]
-               [--inputs-from <file|dir>]...
+               [--inputs-from <file|dir>]... [--errors-agree]
         Check a function against a reference on generated inputs. <sig> is the
         argument types (int|str|list[int]|list[str]|float|dict|bool), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
@@ -77,6 +77,10 @@ USAGE:
         --inputs-from also tries the literal arguments of every call to <fn>
         (and pytest parametrize rows) in those Python files; they are parsed,
         never run, and bound into the receipt.
+        --errors-agree (parity mode, for a port and its reference): when both
+        versions raise, count it as agreement whatever the exception class.
+        One raising while the other returns is still a difference. The mode is
+        printed and bound into the receipt.
   equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]
                [--no-harvest]
         Check every listed (or auto-detected) changed function against base.
@@ -216,7 +220,7 @@ fn run() -> Result<u8, String> {
                                     name: d.name.clone(),
                                     head_path: std::path::PathBuf::from(file),
                                     base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget: equiv_review::DEFAULT_BUDGET },
+                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false },
                                 });
                             }
                             DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
@@ -256,7 +260,7 @@ fn run() -> Result<u8, String> {
                         name: func.to_string(),
                         head_path: std::path::PathBuf::from(file),
                         base_path,
-                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET },
+                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false },
                     });
                 }
             }
@@ -371,6 +375,7 @@ fn run() -> Result<u8, String> {
             let safety = safety_seconds()?;
             let want_sign = args.iter().any(|a| a == "--sign");
             let want_all = args.iter().any(|a| a == "--all");
+            let errors_agree = args.iter().any(|a| a == "--errors-agree");
             // --inputs-from <file|dir>, repeatable: harvest literal call
             // inputs from those Python files (0.17.0).
             let mut inputs_from: Vec<std::path::PathBuf> = Vec::new();
@@ -384,7 +389,7 @@ fn run() -> Result<u8, String> {
                     rest.push(a);
                 }
             }
-            let pos: Vec<&String> = rest.into_iter().filter(|a| *a != "--sign" && *a != "--all").collect();
+            let pos: Vec<&String> = rest.into_iter().filter(|a| *a != "--sign" && *a != "--all" && *a != "--errors-agree").collect();
             let cand = pos.first().ok_or("review: missing candidate .py")?;
             let refr = pos.get(1).ok_or("review: missing reference .py")?;
             let func = pos.get(2).ok_or("review: missing function name")?;
@@ -396,7 +401,7 @@ fn run() -> Result<u8, String> {
                 .filter(|s| !s.trim().is_empty())
                 .map(|s| ArgType::parse(s).ok_or_else(|| format!("bad arg type `{s}`")))
                 .collect::<Result<Vec<_>, _>>()?;
-            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET };
+            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
                 Vec::new()
             } else {
@@ -442,6 +447,9 @@ fn run() -> Result<u8, String> {
                 ReviewVerdict::Refused { reason } => println!("REFUSED: {reason}"),
             }
             println!("provenance: {}", equiv_review::provenance_note(&r));
+            if errors_agree {
+                println!("mode: errors agree (both sides raising counts as agreement, whatever the exception class)");
+            }
             println!("receipt-id: {}", hex(&r.sha256()));
             if want_sign {
                 let seed = std::env::var("EQUIV_SIGNING_KEY")

@@ -16,7 +16,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
+    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false }
 }
 
 #[test]

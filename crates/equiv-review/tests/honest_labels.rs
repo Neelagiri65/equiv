@@ -21,7 +21,7 @@ fn wp(name: &str, body: &str) -> std::path::PathBuf {
     p
 }
 fn spec(args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: "f".into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
+    ReviewSpec { func: "f".into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false }
 }
 
 const ERRORS_ONLY: &str = "def f(s):\n    raise ValueError(s)\n";

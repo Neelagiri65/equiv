@@ -107,6 +107,13 @@ pub struct ReviewSpec {
     /// events (sys.monitoring LINE | JUMP). Bound into the spec hash and
     /// written into the receipt.
     pub budget: u64,
+    /// Parity mode (0.23.0): when both sides raise, count it as agreement
+    /// whatever the exception class. Twins (a Rust/C/Cython port and its
+    /// Python reference) routinely reject bad input with different classes;
+    /// without this, those rejections bury the real differences. A side that
+    /// raises against a side that returns is still a difference. Bound into
+    /// the spec hash only when on, so strict receipts keep their ids.
+    pub errors_agree: bool,
 }
 
 impl ReviewSpec {
@@ -130,6 +137,9 @@ impl ReviewSpec {
         v.extend_from_slice(&self.n.to_le_bytes());
         v.extend_from_slice(&self.seed.to_le_bytes());
         v.extend_from_slice(&self.budget.to_le_bytes());
+        if self.errors_agree {
+            v.extend_from_slice(b"\0errors-agree");
+        }
         v
     }
 }
@@ -1521,6 +1531,7 @@ _BUDGET = {budget}
 # the envelope). Exhausting the budget there is 'not judged at this input',
 # printed as SKIP and counted; before it, exhaustion ends the review.
 _LARGE = {large_from}
+_ERRORS_AGREE = {errors_agree}
 # Harvested inputs before the tail: also 'not judged' on budget exhaustion.
 _SOFT = {{{soft}}}
 _left = [0]
@@ -1623,7 +1634,7 @@ for i, args in enumerate(cases):
     if (cv is not None and '__NONCANON__' in cv) or (rv is not None and '__NONCANON__' in rv):
         print('__REFUSED__\treturns a value that is not JSON-structural (no stable cross-host form)'); _sys.exit(0)
     if ce is not None or re_ is not None:
-        ok = (ce == re_)
+        ok = (ce == re_) or (_ERRORS_AGREE and ce is not None and re_ is not None)
         # Show each side's outcome: its exception name if it raised, else its
         # actual value. (Previously printed ce/re_ for both, so the non-raising
         # side reported None instead of its real value.)
@@ -1635,6 +1646,7 @@ for i, args in enumerate(cases):
         print(f"{{i}}\t{{'EQ' if cv == rv else 'NE'}}\t{{cv}}\t{{rv}}")
 "#,
         libm = libm,
+        errors_agree = if spec.errors_agree { "True" } else { "False" },
         admis = admis,
         cand = cand,
         refr = refr,
@@ -2496,7 +2508,7 @@ mod generator_tests {
     use super::*;
 
     fn spec(args: Vec<ArgType>, seed: u64) -> ReviewSpec {
-        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET }
+        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false }
     }
 
     #[test]

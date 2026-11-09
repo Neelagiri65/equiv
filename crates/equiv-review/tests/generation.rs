@@ -13,7 +13,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
+    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false }
 }
 
 // A divergence that lives only at a magic constant (x == 777). Uniform random
@@ -390,7 +390,7 @@ fn even_seed_checks_a_full_set_of_cases() {
     let cand = tmp("gen_seed_cand.py", "def f(a):\n    return a * 2\n");
     let refr = tmp("gen_seed_ref.py", "def f(a):\n    return a + a\n");
     let n_of = |seed: u64| {
-        let s = ReviewSpec { func: "f".into(), args: vec![ArgType::Int], n: 200, seed, budget: equiv_review::DEFAULT_BUDGET };
+        let s = ReviewSpec { func: "f".into(), args: vec![ArgType::Int], n: 200, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false };
         match review(&cand, &refr, &s).expect("no safety stop").verdict {
             ReviewVerdict::Equivalent { n, .. } => n,
             v => panic!("got {v:?}"),
