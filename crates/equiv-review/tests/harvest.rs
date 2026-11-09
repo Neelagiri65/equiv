@@ -35,7 +35,7 @@ def test_rows(raw, expected):
 "#;
 
 fn spec() -> ReviewSpec {
-    ReviewSpec { func: "norm".into(), args: vec![ArgType::Str, ArgType::Bool], n: 200, seed: 1, budget: DEFAULT_BUDGET }
+    ReviewSpec { func: "norm".into(), args: vec![ArgType::Str, ArgType::Bool], n: 200, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false }
 }
 
 #[test]
@@ -95,7 +95,7 @@ fn zero_argument_functions_are_checked() {
     std::fs::write(d.join("a.py"), "def f():\n    return 1\n").unwrap();
     std::fs::write(d.join("b.py"), "def f():\n    return 2\n").unwrap();
     std::fs::write(d.join("c.py"), "def f():\n    return 1\n").unwrap();
-    let spec = ReviewSpec { func: "f".into(), args: vec![], n: 200, seed: 1, budget: DEFAULT_BUDGET };
+    let spec = ReviewSpec { func: "f".into(), args: vec![], n: 200, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false };
     let diff = review_limited(&d.join("a.py"), &d.join("b.py"), &spec, 60).unwrap();
     assert!(matches!(diff.verdict, ReviewVerdict::Counterexample { .. }), "{:?}", diff.verdict);
     let same = review_limited(&d.join("a.py"), &d.join("c.py"), &spec, 60).unwrap();
@@ -111,7 +111,7 @@ fn a_costly_harvested_value_is_not_judged_rather_than_fatal() {
     let src = "def f(s):\n    n = 0\n    if s == 'slow':\n        while True:\n            n += 1\n    return len(s)\n";
     std::fs::write(d.join("a.py"), src).unwrap();
     std::fs::write(d.join("b.py"), src).unwrap();
-    let spec = ReviewSpec { func: "f".into(), args: vec![ArgType::Str], n: 200, seed: 1, budget: DEFAULT_BUDGET };
+    let spec = ReviewSpec { func: "f".into(), args: vec![ArgType::Str], n: 200, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false };
     let slow: Vec<equiv_review::Slots> = vec![vec![Some(PyVal::Str("slow".into()))]];
     let r = review_with_inputs(&d.join("a.py"), &d.join("b.py"), &spec, &slow, 60).unwrap();
     match r.verdict {

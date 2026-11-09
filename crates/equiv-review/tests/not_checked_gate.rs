@@ -21,7 +21,7 @@ fn headline(md: &str) -> String {
 }
 
 fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 50, seed: 1, budget: equiv_review::DEFAULT_BUDGET }
+    ReviewSpec { func: func.into(), args, n: 50, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false }
 }
 
 /// A safety stop next to an equivalent function: exit 2 (not 1), and the
