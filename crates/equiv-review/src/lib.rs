@@ -51,6 +51,90 @@ impl ArgType {
             _ => return None,
         })
     }
+
+    /// Parse a signature token with an optional input domain (0.23.0):
+    /// `int[lo..hi]` (inclusive), `str[ascii]`, `str[1]` (exactly one code
+    /// point), and the same inside lists: `list[int[1..12]]`, `list[str[1]]`.
+    /// A plain token parses as with `parse`, with `Domain::Any`.
+    pub fn parse_domain(s: &str) -> Option<(Self, Domain)> {
+        let s = s.trim();
+        if let Some(t) = Self::parse(s) {
+            return Some((t, Domain::Any));
+        }
+        let (outer, inner) = match s.strip_prefix("list[").and_then(|r| r.strip_suffix(']')) {
+            Some(inner) => (true, inner.trim()),
+            None => (false, s),
+        };
+        let (base, dom) = inner.strip_suffix(']').and_then(|r| r.split_once('['))?;
+        let dom = dom.trim();
+        let (ty, d) = match base.trim() {
+            "int" => {
+                let (lo, hi) = dom.split_once("..")?;
+                let lo: i64 = lo.trim().parse().ok()?;
+                let hi: i64 = hi.trim().parse().ok()?;
+                if lo > hi {
+                    return None;
+                }
+                (if outer { ArgType::ListInt } else { ArgType::Int }, Domain::IntRange(lo, hi))
+            }
+            "str" => {
+                let d = match dom {
+                    "ascii" => Domain::Ascii,
+                    "1" => Domain::OneChar,
+                    _ => return None,
+                };
+                (if outer { ArgType::ListStr } else { ArgType::Str }, d)
+            }
+            _ => return None,
+        };
+        Some((ty, d))
+    }
+}
+
+/// The declared domains, readable: "arg 1 int[1..9999], arg 3 str[1]".
+/// None when every argument is unconstrained.
+pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
+    if !has_domains(spec) {
+        return None;
+    }
+    let parts: Vec<String> = spec
+        .args
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| dom(spec, *i) != Domain::Any)
+        .map(|(i, t)| {
+            let d = match dom(spec, i) {
+                Domain::IntRange(lo, hi) => format!("[{lo}..{hi}]"),
+                Domain::Ascii => "[ascii]".into(),
+                Domain::OneChar => "[1]".into(),
+                Domain::Any => String::new(),
+            };
+            let label = match t {
+                ArgType::Int => format!("int{d}"),
+                ArgType::Str => format!("str{d}"),
+                ArgType::ListInt => format!("list[int{d}]"),
+                ArgType::ListStr => format!("list[str{d}]"),
+                other => format!("{other:?}{d}"),
+            };
+            format!("arg {} {label}", i + 1)
+        })
+        .collect();
+    Some(parts.join(", "))
+}
+
+/// An opt-in input domain for one argument (0.23.0). For a list type it
+/// constrains the elements. Generation, corners, source literals and harvested
+/// inputs all stay inside it; a review under a domain is bound into the
+/// receipt, so it can never be mistaken for a review of the whole type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Domain {
+    Any,
+    /// Inclusive integer range.
+    IntRange(i64, i64),
+    /// Strings of ASCII characters only.
+    Ascii,
+    /// Exactly one code point (Python `len(s) == 1`).
+    OneChar,
 }
 
 /// Default step budget per call: how many Python line and jump events one call
@@ -114,6 +198,9 @@ pub struct ReviewSpec {
     /// raises against a side that returns is still a difference. Bound into
     /// the spec hash only when on, so strict receipts keep their ids.
     pub errors_agree: bool,
+    /// Per-argument input domains, by position (0.23.0). Empty, short, or
+    /// all-`Any` means unconstrained, and then the spec hash is unchanged.
+    pub domains: Vec<Domain>,
 }
 
 impl ReviewSpec {
@@ -139,6 +226,24 @@ impl ReviewSpec {
         v.extend_from_slice(&self.budget.to_le_bytes());
         if self.errors_agree {
             v.extend_from_slice(b"\0errors-agree");
+        }
+        // Input domains (0.23.0): only when some argument has one, so every
+        // unconstrained receipt keeps its id. One tag per argument position,
+        // int bounds at fixed width.
+        if has_domains(self) {
+            v.extend_from_slice(b"\0domains");
+            for i in 0..self.args.len() {
+                match dom(self, i) {
+                    Domain::Any => v.push(0),
+                    Domain::IntRange(lo, hi) => {
+                        v.push(1);
+                        v.extend_from_slice(&lo.to_le_bytes());
+                        v.extend_from_slice(&hi.to_le_bytes());
+                    }
+                    Domain::Ascii => v.push(2),
+                    Domain::OneChar => v.push(3),
+                }
+            }
         }
         v
     }
@@ -894,7 +999,7 @@ fn gen_cases_soft(
     }
 
     if !spec.args.is_empty() {
-        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+        let base: Vec<PyVal> = base_vals(spec);
         if seen.insert(key(&base)) {
             cases.push(base.clone());
             counts.corner += 1;
@@ -907,7 +1012,9 @@ fn gen_cases_soft(
         for h in harvested {
             if h.iter().all(Option::is_some) && h.iter().flatten().all(harvest::inside_envelope) {
                 let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
-                if seen.insert(key(&c)) {
+                if !case_in_domain(spec, &c) {
+                    counts.out_of_domain += 1;
+                } else if seen.insert(key(&c)) {
                     soft.push(cases.len());
                     cases.push(c);
                     counts.harvested += 1;
@@ -917,6 +1024,10 @@ fn gen_cases_soft(
         for h in harvested {
             for (i, v) in h.iter().enumerate() {
                 if let Some(v) = v.as_ref().filter(|v| harvest::inside_envelope(v)) {
+                    if !in_domain(v, dom(spec, i)) {
+                        counts.out_of_domain += 1;
+                        continue;
+                    }
                     let mut c = base.clone();
                     c[i] = v.clone();
                     if seen.insert(key(&c)) {
@@ -930,14 +1041,18 @@ fn gen_cases_soft(
         for (i, ty) in spec.args.iter().enumerate() {
             // Order is unchanged from before counting existed (corners, then
             // literals, per argument); only the attribution is recorded.
-            let n_corner = boundary_cases(*ty).len();
-            let mut vals = boundary_cases(*ty);
+            let mut vals = domain_corners(*ty, dom(spec, i));
+            let n_corner = vals.len();
             for s in sources {
                 vals.extend(literal_inputs(s, *ty));
             }
             for (k, v) in vals.into_iter().enumerate() {
                 let mut c = base.clone();
                 c[i] = v;
+                if !case_in_domain(spec, &c) {
+                    counts.out_of_domain += 1;
+                    continue;
+                }
                 if seen.insert(key(&c)) {
                     cases.push(c);
                     if k < n_corner {
@@ -960,15 +1075,15 @@ fn gen_cases_soft(
                 if *ty == ArgType::Bool {
                     continue;
                 }
-                let n_corner = boundary_cases(*ty).len();
-                let mut vals = boundary_cases(*ty);
+                let mut vals = domain_corners(*ty, dom(spec, i));
+                let n_corner = vals.len();
                 for s in sources {
                     vals.extend(literal_inputs(s, *ty));
                 }
                 for (k, v) in vals.into_iter().enumerate() {
                     let mut c = fb.clone();
                     c[i] = v;
-                    if seen.insert(key(&c)) {
+                    if case_in_domain(spec, &c) && seen.insert(key(&c)) {
                         cases.push(c);
                         if k < n_corner {
                             counts.corner += 1;
@@ -998,7 +1113,7 @@ fn gen_cases_soft(
                         let mut c = base.clone();
                         c[i] = PyVal::Str(l);
                         c[j] = PyVal::Str(r);
-                        if seen.insert(key(&c)) {
+                        if case_in_domain(spec, &c) && seen.insert(key(&c)) {
                             cases.push(c);
                             counts.corner += 1;
                         }
@@ -1009,7 +1124,7 @@ fn gen_cases_soft(
     }
 
     if !spec.args.is_empty() {
-        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+        let base: Vec<PyVal> = base_vals(spec);
         // Joint numeric corners: a divergence that needs two arguments to be
         // related (cancelling magnitudes, equal values) is unreachable when
         // the others sit at their default. For every pair of same-type
@@ -1045,7 +1160,7 @@ fn gen_cases_soft(
                         let mut c = base.clone();
                         c[i] = l.clone();
                         c[j] = r.clone();
-                        if seen.insert(key(&c)) {
+                        if case_in_domain(spec, &c) && seen.insert(key(&c)) {
                             cases.push(c);
                             counts.corner += 1;
                         }
@@ -1057,7 +1172,7 @@ fn gen_cases_soft(
 
     let mut rng = seed_rng(spec.seed);
     for _ in 0..spec.n {
-        let c: Vec<PyVal> = spec.args.iter().map(|t| gen_arg(&mut rng, *t)).collect();
+        let c: Vec<PyVal> = spec.args.iter().enumerate().map(|(i, t)| gen_in(&mut rng, *t, dom(spec, i))).collect();
         if seen.insert(key(&c)) {
             cases.push(c);
             counts.random += 1;
@@ -1080,7 +1195,7 @@ fn gen_cases_soft(
                 for u in SURROGATE_CORNERS {
                     let mut c = base.clone();
                     c[i] = PyVal::StrUnits(u.to_vec());
-                    if seen.insert(key(&c)) {
+                    if case_in_domain(spec, &c) && seen.insert(key(&c)) {
                         cases.push(c);
                         counts.corner += 1;
                     }
@@ -1107,7 +1222,7 @@ fn gen_cases_soft(
                 for &n in LARGE_INT_CORNERS {
                     let mut c = base.clone();
                     c[i] = PyVal::Int(n);
-                    if seen.insert(key(&c)) {
+                    if case_in_domain(spec, &c) && seen.insert(key(&c)) {
                         cases.push(c);
                         counts.corner += 1;
                     }
@@ -1116,17 +1231,23 @@ fn gen_cases_soft(
         }
         // Harvested values outside the envelope (a test's f(10**12)): here,
         // where a side running out of budget is "not judged at this input".
-        let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+        let base: Vec<PyVal> = base_vals(spec);
         for h in harvested {
             if h.iter().all(Option::is_some) && !h.iter().flatten().all(harvest::inside_envelope) {
                 let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
-                if seen.insert(key(&c)) {
+                if !case_in_domain(spec, &c) {
+                    counts.out_of_domain += 1;
+                } else if seen.insert(key(&c)) {
                     cases.push(c);
                     counts.harvested += 1;
                 }
             }
             for (i, v) in h.iter().enumerate() {
                 if let Some(v) = v.as_ref().filter(|v| !harvest::inside_envelope(v)) {
+                    if !in_domain(v, dom(spec, i)) {
+                        counts.out_of_domain += 1;
+                        continue;
+                    }
                     let mut c = base.clone();
                     c[i] = v.clone();
                     if seen.insert(key(&c)) {
@@ -1143,8 +1264,9 @@ fn gen_cases_soft(
 // The default base (every argument at its default) followed by one base per
 // bool argument with that flag set to True. Just the default base when the
 // signature holds no bool, so other signatures generate exactly as before.
+// Every argument sits at its in-domain default (see `default_in`).
 fn flag_bases(spec: &ReviewSpec) -> Vec<Vec<PyVal>> {
-    let base: Vec<PyVal> = spec.args.iter().map(|t| default_val(*t)).collect();
+    let base: Vec<PyVal> = base_vals(spec);
     let mut out = vec![base.clone()];
     for (i, ty) in spec.args.iter().enumerate() {
         if *ty == ArgType::Bool {
@@ -1159,9 +1281,166 @@ fn flag_bases(spec: &ReviewSpec) -> Vec<Vec<PyVal>> {
     // covered completely). A single bool adds nothing: all-True is its
     // one-flag base. Path A step 3, corpus case 095.
     if spec.args.iter().filter(|t| **t == ArgType::Bool).count() >= 2 {
-        out.push(spec.args.iter().map(|t| if *t == ArgType::Bool { PyVal::Bool(true) } else { default_val(*t) }).collect());
+        out.push(
+            base.iter().zip(&spec.args).map(|(v, t)| if *t == ArgType::Bool { PyVal::Bool(true) } else { v.clone() }).collect(),
+        );
     }
     out
+}
+
+
+// ---------- input domains (0.23.0) ----------
+//
+// Opt-in per argument. With no domain (the default) every function below is
+// the identity on the unconstrained path: same values, same order, no extra
+// random draws, so unconstrained reviews generate byte-identical cases.
+
+fn dom(spec: &ReviewSpec, i: usize) -> Domain {
+    spec.domains.get(i).copied().unwrap_or(Domain::Any)
+}
+
+fn has_domains(spec: &ReviewSpec) -> bool {
+    spec.domains.iter().any(|d| *d != Domain::Any)
+}
+
+/// Is `v` inside `d`? For a list, every element must be.
+fn in_domain(v: &PyVal, d: Domain) -> bool {
+    let one = |s: &str| s.chars().count() == 1;
+    match (d, v) {
+        (Domain::Any, _) => true,
+        (Domain::IntRange(lo, hi), PyVal::Int(x)) => lo <= *x && *x <= hi,
+        (Domain::IntRange(lo, hi), PyVal::ListInt(xs)) => xs.iter().all(|x| lo <= *x && *x <= hi),
+        (Domain::Ascii, PyVal::Str(s)) => s.is_ascii(),
+        (Domain::Ascii, PyVal::StrUnits(u)) => u.iter().all(|c| *c < 0x80),
+        (Domain::Ascii, PyVal::ListStr(xs)) => xs.iter().all(|s| s.is_ascii()),
+        (Domain::OneChar, PyVal::Str(s)) => one(s),
+        (Domain::OneChar, PyVal::StrUnits(u)) => u.len() == 1,
+        (Domain::OneChar, PyVal::ListStr(xs)) => xs.iter().all(|s| one(s)),
+        // parse_domain only pairs int ranges with int types and string
+        // domains with string types; anything else is not constrained.
+        _ => true,
+    }
+}
+
+fn case_in_domain(spec: &ReviewSpec, c: &[PyVal]) -> bool {
+    c.iter().enumerate().all(|(i, v)| in_domain(v, dom(spec, i)))
+}
+
+/// The default value, moved inside the domain when it falls outside (an int
+/// range that excludes 0 sits at the endpoint nearest 0; one character is
+/// "a"), so one-argument-at-a-time cases are not all dropped for the others.
+fn default_in(ty: ArgType, d: Domain) -> PyVal {
+    let v = default_val(ty);
+    if in_domain(&v, d) {
+        return v;
+    }
+    match (ty, d) {
+        (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(if lo > 0 { lo } else { hi }),
+        (ArgType::Str, Domain::OneChar) => PyVal::Str("a".into()),
+        _ => v,
+    }
+}
+
+fn base_vals(spec: &ReviewSpec) -> Vec<PyVal> {
+    spec.args.iter().enumerate().map(|(i, t)| default_in(*t, dom(spec, i))).collect()
+}
+
+/// Corners for one argument: the unconstrained corners that fall inside the
+/// domain, then corners of the domain itself (its endpoints and their
+/// neighbours, 0 and ±1 when inside; for strings, in-domain characters that
+/// separate implementations).
+fn domain_corners(ty: ArgType, d: Domain) -> Vec<PyVal> {
+    if d == Domain::Any {
+        return boundary_cases(ty);
+    }
+    let mut v: Vec<PyVal> = boundary_cases(ty).into_iter().filter(|x| in_domain(x, d)).collect();
+    let strs = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<Vec<String>>();
+    const ASCII: &[&str] = &["a", "A", "0", " ", "\t", "\n", "\x7f", "Hello, World!", "  x  ", "-12"];
+    const ONE: &[&str] = &["a", "A", "z", "0", " ", "\n", "é", "ß", "İ", "ǅ", "\u{3000}", "٣", "ﬁ", "😀"];
+    match (ty, d) {
+        (ArgType::Int, Domain::IntRange(lo, hi)) => {
+            let near = [Some(lo), lo.checked_add(1), hi.checked_sub(1), Some(hi), Some(0), Some(1), Some(-1)];
+            v.extend(near.into_iter().flatten().filter(|x| lo <= *x && *x <= hi).map(PyVal::Int));
+        }
+        (ArgType::ListInt, Domain::IntRange(lo, hi)) => {
+            for xs in [vec![lo], vec![hi], vec![lo, hi], vec![hi, lo], vec![lo, lo]] {
+                v.push(PyVal::ListInt(xs));
+            }
+        }
+        (ArgType::Str, Domain::Ascii) => v.extend(ASCII.iter().map(|s| PyVal::Str(s.to_string()))),
+        (ArgType::Str, Domain::OneChar) => v.extend(ONE.iter().map(|s| PyVal::Str(s.to_string()))),
+        (ArgType::ListStr, Domain::Ascii) => {
+            for xs in [&["a"][..], &["b", "a"], &["A", "a"], &["a", "a"], &[" a", "a"]] {
+                v.push(PyVal::ListStr(strs(xs)));
+            }
+        }
+        (ArgType::ListStr, Domain::OneChar) => {
+            for xs in [&["a"][..], &["b", "a"], &["A", "a"], &["a", "a"], &["é"], &["ß", "S"], &["٣", "3"]] {
+                v.push(PyVal::ListStr(strs(xs)));
+            }
+        }
+        _ => {}
+    }
+    v.retain(|x| in_domain(x, d));
+    v
+}
+
+/// A random value inside the domain, drawn from the same seeded stream.
+fn gen_in(rng: &mut Rng, ty: ArgType, d: Domain) -> PyVal {
+    fn int_in(rng: &mut Rng, lo: i64, hi: i64) -> i64 {
+        let span = (hi as i128 - lo as i128 + 1) as u128;
+        let pick = |rng: &mut Rng, w: u128| (rng.next() as u128 % w) as i128;
+        // Log-scaled offset: magnitudes 1, 10, 1000, 10^6... all get drawn, so
+        // a wide range still reaches ordinary values and not only its ends.
+        let log = |rng: &mut Rng| {
+            let bits = rng.next() % 32;
+            pick(rng, (1u128 << bits).min(span))
+        };
+        let x = match rng.next() % 4 {
+            0 => lo as i128 + log(rng),
+            1 => hi as i128 - log(rng),
+            // The unconstrained shape (0, ±12, ±1000, ±10^6) when it lands
+            // inside, so small values near 0 are reached as in plain `int`.
+            2 => match gen_arg(rng, ArgType::Int) {
+                PyVal::Int(v) if lo <= v && v <= hi => v as i128,
+                _ => lo as i128 + log(rng),
+            },
+            _ => lo as i128 + pick(rng, span),
+        };
+        x as i64
+    }
+    fn str_in(rng: &mut Rng, d: Domain) -> String {
+        let s = match gen_arg(rng, ArgType::Str) {
+            PyVal::Str(s) => s,
+            _ => unreachable!(),
+        };
+        match d {
+            Domain::Ascii => s.chars().map(|c| if c.is_ascii() { c } else { char::from((c as u32 % 0x80) as u8) }).collect(),
+            Domain::OneChar => {
+                let cs: Vec<char> = s.chars().collect();
+                if cs.is_empty() {
+                    char::from((0x20 + rng.next() % 0x5f) as u8).to_string()
+                } else {
+                    cs[(rng.next() % cs.len() as u64) as usize].to_string()
+                }
+            }
+            _ => s,
+        }
+    }
+    match (ty, d) {
+        (_, Domain::Any) => gen_arg(rng, ty),
+        (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(int_in(rng, lo, hi)),
+        (ArgType::ListInt, Domain::IntRange(lo, hi)) => {
+            let len = (rng.next() % 7) as usize;
+            PyVal::ListInt((0..len).map(|_| int_in(rng, lo, hi)).collect())
+        }
+        (ArgType::Str, _) => PyVal::Str(str_in(rng, d)),
+        (ArgType::ListStr, _) => {
+            let len = (rng.next() % 7) as usize;
+            PyVal::ListStr((0..len).map(|_| str_in(rng, d)).collect())
+        }
+        _ => gen_arg(rng, ty),
+    }
 }
 
 // ---------- verdict + receipt ----------
@@ -1327,6 +1606,10 @@ pub struct ReviewReceipt {
     pub seed: u64,
     /// How many inputs came from each source; see `InputCounts`.
     pub inputs: InputCounts,
+    /// The declared input domains, readable (e.g. "arg 1 int[1..9999]");
+    /// empty without domains. NOT in the receipt bytes: the domains
+    /// themselves are bound through `spec_sha256`.
+    pub domains: String,
     /// Judged inputs on which at least one side raised (and both agreed).
     pub exceptions: u32,
     /// The claim tier. This checker only ever produces `tested`: bounded
@@ -1352,6 +1635,9 @@ pub struct InputCounts {
     pub random: u32,
     /// Inputs harvested from the project's own calls and tests (0.17.0).
     pub harvested: u32,
+    /// Source literals and harvested values skipped because they fall
+    /// outside a declared input domain (0.23.0). Zero without domains.
+    pub out_of_domain: u32,
 }
 
 impl ReviewReceipt {
@@ -1379,7 +1665,11 @@ impl ReviewReceipt {
                     Value::Uint(self.inputs.literal as u64),
                     Value::Uint(self.inputs.random as u64),
                     Value::Uint(self.inputs.harvested as u64),
-                ]),
+                ]
+                .into_iter()
+                // Only under input domains, so other receipts keep their bytes.
+                .chain((self.inputs.out_of_domain > 0).then(|| Value::Uint(self.inputs.out_of_domain as u64)))
+                .collect()),
             ),
             (10, Value::Uint(self.exceptions as u64)),
             (11, Value::Text(self.tier.clone())),
@@ -1722,6 +2012,7 @@ pub fn review_with_inputs(
         python: ev.python,
         seed: spec.seed,
         inputs,
+        domains: domains_note(spec).unwrap_or_default(),
         exceptions: ev.exceptions,
         // The receipt itself carries the evidence level, so a thin verdict
         // cannot be re-read as a full one later (same frozen field, new value).
@@ -1738,13 +2029,26 @@ pub fn review_with_inputs(
 pub fn provenance_note(r: &ReviewReceipt) -> String {
     let i = &r.inputs;
     format!(
-        "python {}, seed {}; inputs {} corner + {} literal + {} random{}; {} raised on both sides; tier {}",
+        "python {}, seed {}; inputs {} corner + {} literal + {} random{}{}; {} raised on both sides; tier {}",
         if r.python.is_empty() { "unknown" } else { &r.python },
         r.seed,
         i.corner,
         i.literal,
         i.random,
         if i.harvested > 0 { format!(" + {} from the project's code", i.harvested) } else { String::new() },
+        if r.domains.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; inside domains {}{}",
+                r.domains,
+                if i.out_of_domain > 0 {
+                    format!(" ({} source/harvested values outside them skipped)", i.out_of_domain)
+                } else {
+                    String::new()
+                }
+            )
+        },
         r.exceptions,
         r.tier
     )
@@ -2508,7 +2812,7 @@ mod generator_tests {
     use super::*;
 
     fn spec(args: Vec<ArgType>, seed: u64) -> ReviewSpec {
-        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false }
+        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![] }
     }
 
     #[test]

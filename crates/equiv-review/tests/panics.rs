@@ -12,7 +12,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec() -> ReviewSpec {
-    ReviewSpec { func: "f".into(), args: vec![ArgType::Int], n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false }
+    ReviewSpec { func: "f".into(), args: vec![ArgType::Int], n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![] }
 }
 
 const PANIC: &str = "class PanicException(BaseException):\n    __module__ = 'pyo3_runtime'\n";

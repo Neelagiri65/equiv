@@ -220,7 +220,7 @@ fn run() -> Result<u8, String> {
                                     name: d.name.clone(),
                                     head_path: std::path::PathBuf::from(file),
                                     base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false },
+                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![] },
                                 });
                             }
                             DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
@@ -246,8 +246,9 @@ fn run() -> Result<u8, String> {
                     let arg_types = sig
                         .split(',')
                         .filter(|s| !s.trim().is_empty())
-                        .map(|s| ArgType::parse(s).ok_or_else(|| format!("bad arg type `{s}`")))
+                        .map(|s| ArgType::parse_domain(s).ok_or_else(|| format!("bad arg type `{}`", s.trim())))
                         .collect::<Result<Vec<_>, _>>()?;
+                    let (arg_types, domains): (Vec<ArgType>, Vec<equiv_review::Domain>) = arg_types.into_iter().unzip();
                     let base_out = std::process::Command::new("git")
                         .args(["-c", "core.quotepath=false", "show", &format!("{base}:{file}")])
                         .output();
@@ -260,7 +261,7 @@ fn run() -> Result<u8, String> {
                         name: func.to_string(),
                         head_path: std::path::PathBuf::from(file),
                         base_path,
-                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false },
+                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains },
                     });
                 }
             }
@@ -399,9 +400,10 @@ fn run() -> Result<u8, String> {
             let arg_types = sig
                 .split(',')
                 .filter(|s| !s.trim().is_empty())
-                .map(|s| ArgType::parse(s).ok_or_else(|| format!("bad arg type `{s}`")))
+                .map(|s| ArgType::parse_domain(s).ok_or_else(|| format!("bad arg type `{}`", s.trim())))
                 .collect::<Result<Vec<_>, _>>()?;
-            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree };
+            let (arg_types, domains): (Vec<ArgType>, Vec<equiv_review::Domain>) = arg_types.into_iter().unzip();
+            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree, domains };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
                 Vec::new()
             } else {
@@ -447,6 +449,9 @@ fn run() -> Result<u8, String> {
                 ReviewVerdict::Refused { reason } => println!("REFUSED: {reason}"),
             }
             println!("provenance: {}", equiv_review::provenance_note(&r));
+            if let Some(d) = equiv_review::domains_note(&spec) {
+                println!("domains: {d} (inputs generated only inside these; a pass says nothing outside them)");
+            }
             if errors_agree {
                 println!("mode: errors agree (both sides raising counts as agreement, whatever the exception class)");
             }

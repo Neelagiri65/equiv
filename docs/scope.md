@@ -112,6 +112,32 @@ across a PR in a manifest at the repository root. The format of each line is
 src/math.py : total : int
 ```
 
+### Input domains (parity checks)
+
+A compiled twin (Rust, C, Cython) often rejects inputs that its Python reference
+accepts: day 0, years beyond int32, several characters where one is meant. To check
+only the inputs the function is meant to take, give an argument a domain:
+
+- `int[lo..hi]`: integers from `lo` to `hi`, inclusive;
+- `str[ascii]`: ASCII strings only;
+- `str[1]`: exactly one character (one code point);
+- the same inside lists: `list[int[1..12]]`, `list[str[1]]`.
+
+```
+src/dates.py : week_day : int[1..9999], int[1..12], int[1..28]
+```
+
+Random inputs, corners (including both ends of a range), source literals and harvested
+inputs all stay inside the domain. Literal and harvested values outside it are skipped,
+and the output says how many. The domains are printed with the result and bound into
+the receipt id, so a pass under a domain cannot be mistaken for a pass on the whole
+type. **A pass says nothing about inputs outside the domain.** Without domains,
+generation and receipts are unchanged.
+
+`equiv review --errors-agree` is for the same use: when both sides raise, it counts as
+agreement whatever the exception class. One side raising while the other returns is
+still a difference.
+
 ## How it works
 
 Input generation and the verdict are computed in Rust from a fixed seed. The
