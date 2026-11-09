@@ -7,7 +7,8 @@ BIN="${EQUIV_BIN:-equiv}"
 MANIFEST="${EQUIV_MANIFEST:-.equiv-review}"
 AUTO="${EQUIV_AUTO:-}"
 BASE="${EQUIV_BASE_INPUT:-}"
-FAIL="${EQUIV_FAIL:-true}"
+FAIL="${EQUIV_FAIL:-}"
+ONLY_LABEL="${EQUIV_ONLY_LABEL:-}"
 FAIL_NOT_CHECKED="${EQUIV_FAIL_NOT_CHECKED:-false}"
 
 # Mode. `auto` unset (the default): use the manifest if it exists, otherwise
@@ -16,6 +17,37 @@ FAIL_NOT_CHECKED="${EQUIV_FAIL_NOT_CHECKED:-false}"
 # "false" with no manifest means there is nothing to review.
 if [[ -z "$AUTO" ]]; then
   if [[ -f "$MANIFEST" ]]; then AUTO="false"; else AUTO="true"; fi
+fi
+
+# Intent. equiv answers "did behaviour change?", which is only a defect when the
+# PR is meant to keep behaviour. With `only-label` set, the review runs only on
+# PRs carrying that label (the author declares "no behaviour change"); other PRs
+# are skipped. Unlabelled feature PRs change behaviour on purpose, and blocking
+# them would only restate the author's intent.
+LABELLED="false"
+if [[ -n "$ONLY_LABEL" ]]; then
+  if [[ -n "${GITHUB_EVENT_PATH:-}" && -f "$GITHUB_EVENT_PATH" ]] && \
+     python3 - "$GITHUB_EVENT_PATH" "$ONLY_LABEL" <<'PY'
+import json, sys
+ev = json.load(open(sys.argv[1]))
+labels = [l.get("name") for l in (ev.get("pull_request") or {}).get("labels", [])]
+sys.exit(0 if sys.argv[2] in labels else 1)
+PY
+  then
+    LABELLED="true"
+  else
+    echo "equiv-review: PR does not carry the '$ONLY_LABEL' label; skipping (only-label is set)."
+    exit 0
+  fi
+fi
+
+# Gate default. Unset fail-on-divergence blocks the merge only when the PR has
+# declared that behaviour must not change: the functions are listed in the
+# manifest, or the PR carries the only-label label. In plain auto-detect mode a
+# divergence is reported in the comment but does not block, because most changed
+# functions in an ordinary PR change on purpose. Explicit "true"/"false" wins.
+if [[ -z "$FAIL" ]]; then
+  if [[ "$AUTO" != "true" || "$LABELLED" == "true" ]]; then FAIL="true"; else FAIL="false"; fi
 fi
 if [[ "$AUTO" != "true" && ! -f "$MANIFEST" ]]; then
   echo "equiv-review: no manifest at '$MANIFEST' and auto is off; skipping."
@@ -95,7 +127,7 @@ case "$CODE" in
       echo "::error::equiv-review: a function changed behaviour; see the PR comment (exit 1)"
       exit 1
     fi
-    echo "::notice::equiv-review: a function changed behaviour but fail-on-divergence is off (exit 1 not enforced)"
+    echo "::notice::equiv-review: a function changed behaviour; reported in the PR comment, not blocking (auto-detect mode without a manifest or only-label, or fail-on-divergence is \"false\"). If this PR is meant to keep behaviour, list the functions in .equiv-review or set only-label."
     exit 0 ;;
   2)
     if [[ "$FAIL_NOT_CHECKED" == "true" ]]; then
