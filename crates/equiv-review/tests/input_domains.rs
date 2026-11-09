@@ -250,3 +250,48 @@ fn domain_position_is_bound_into_the_receipt() {
     let second = review(&c, &r, &spec("f", &["int", "int[1..9]"])).expect("no safety stop");
     assert_ne!(first.sha256(), second.sha256());
 }
+
+// --- coverage inside wide ranges and harvested slots (advisor review) -------
+
+#[test]
+fn wide_ranges_keep_the_small_magnitude_spread() {
+    // `int[0..2147483647]` must still reach ordinary values (3-digit here),
+    // as unconstrained `int` does; a draw that only hugs the endpoints or is
+    // uniform over 2^31 would pass this twin as equivalent. No int literals,
+    // so the literal scan cannot supply the value.
+    let c = tmp("w_c.py", "def f(x):\n    return x + (len('x') if len(str(x)) == len('abc') else 0)\n");
+    let r = tmp("w_r.py", "def f(x):\n    return x\n");
+    let rec = review(&c, &r, &spec("f", &["int[0..2147483647]"])).expect("no safety stop");
+    assert!(matches!(rec.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", rec.verdict);
+    let neg = review(&c, &r, &spec("f", &["int[-2147483648..-1]"])).expect("no safety stop");
+    // '-12' has three characters: small negatives must be reached as well.
+    assert!(matches!(neg.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", neg.verdict);
+}
+
+#[test]
+fn harvested_slots_outside_the_domain_are_skipped_and_counted() {
+    use equiv_review::{review_with_inputs, PyVal, Slots};
+    let c = tmp(
+        "hs_c.py",
+        "def f(a, b):\n    return a + b + (len('xy') if str(a) in ('50000', '5000000') or str(b) == '70000' else 0)\n",
+    );
+    let r = tmp("hs_r.py", "def f(a, b):\n    return a + b\n");
+    let int = |x: i64| Some(PyVal::Int(x));
+    let slots: Vec<Slots> = vec![
+        vec![int(50000), int(2)],   // complete call, inside the envelope
+        vec![None, int(70000)],     // one argument only
+        vec![int(5_000_000), int(3)], // complete call, outside the envelope (tail)
+    ];
+    let plain = spec("f", &["int", "int"]);
+    let base = review_with_inputs(&c, &r, &plain, &slots, 60).expect("no safety stop");
+    assert!(matches!(base.verdict, ReviewVerdict::Counterexample { .. }), "harvest baseline: {:?}", base.verdict);
+
+    let dom = spec("f", &["int[1..9999]", "int[1..9999]"]);
+    let none = review_with_inputs(&c, &r, &dom, &[], 60).expect("no safety stop");
+    let rec = review_with_inputs(&c, &r, &dom, &slots, 60).expect("no safety stop");
+    assert!(matches!(rec.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", rec.verdict);
+    // Two complete calls and three single values fall outside.
+    assert_eq!(rec.inputs.out_of_domain - none.inputs.out_of_domain, 5, "{:?} vs {:?}", rec.inputs, none.inputs);
+    // In-domain harvested values are still used.
+    assert!(rec.inputs.harvested > 0, "{:?}", rec.inputs);
+}

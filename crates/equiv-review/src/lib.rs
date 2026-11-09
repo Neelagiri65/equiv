@@ -1390,10 +1390,21 @@ fn gen_in(rng: &mut Rng, ty: ArgType, d: Domain) -> PyVal {
     fn int_in(rng: &mut Rng, lo: i64, hi: i64) -> i64 {
         let span = (hi as i128 - lo as i128 + 1) as u128;
         let pick = |rng: &mut Rng, w: u128| (rng.next() as u128 % w) as i128;
-        // A third near each end (where ranges break), a third anywhere.
-        let x = match rng.next() % 3 {
-            0 => lo as i128 + pick(rng, span.min(24)),
-            1 => hi as i128 - pick(rng, span.min(24)),
+        // Log-scaled offset: magnitudes 1, 10, 1000, 10^6... all get drawn, so
+        // a wide range still reaches ordinary values and not only its ends.
+        let log = |rng: &mut Rng| {
+            let bits = rng.next() % 32;
+            pick(rng, (1u128 << bits).min(span))
+        };
+        let x = match rng.next() % 4 {
+            0 => lo as i128 + log(rng),
+            1 => hi as i128 - log(rng),
+            // The unconstrained shape (0, ±12, ±1000, ±10^6) when it lands
+            // inside, so small values near 0 are reached as in plain `int`.
+            2 => match gen_arg(rng, ArgType::Int) {
+                PyVal::Int(v) if lo <= v && v <= hi => v as i128,
+                _ => lo as i128 + log(rng),
+            },
             _ => lo as i128 + pick(rng, span),
         };
         x as i64
