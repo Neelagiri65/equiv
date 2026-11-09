@@ -1,5 +1,5 @@
 name: "equiv review"
-description: "Gate refactors, rewrites and ports: block the merge when behaviour changes. Deterministic, signed receipts."
+description: '"It''s just a refactor." Prove it. Blocks the merge when a refactor, rewrite or port changes behaviour.'
 branding:
   icon: "check-circle"
   color: "blue"

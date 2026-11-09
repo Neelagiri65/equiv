@@ -1,11 +1,11 @@
 # equiv
 
-**Did this rewrite change what the function does? equiv runs both versions and shows you.**
+**"It's just a refactor." Prove it.**
 
-You rewrite a function, or an AI does it for you. `equiv` runs the old version and
-the new version on the same few thousand inputs. If they ever give different
-answers, it prints the exact input where they differ. If they never do, it says
-so, along with how many inputs it tried.
+`equiv` runs your old and new code side by side on thousands of inputs. Same
+behaviour: the check passes. Anything different: the merge is blocked, with the
+exact input that shows it. It works the same whether you rewrote the function or
+an AI did.
 
 Every result comes with a receipt. Anyone can re-run the receipt on any machine
 and get the same answer, byte for byte. There is no model's opinion involved.
