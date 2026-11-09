@@ -123,14 +123,60 @@ fn int_range_twins_that_agree_in_domain_pass() {
 #[test]
 fn range_endpoints_are_judged() {
     // Corners are clipped to the range, not dropped: lo and hi are inputs.
-    let c = tmp("e_c.py", "def f(x):\n    return -1 if x in (3, 40) else x\n");
+    // The range is wide (random draws won't saturate it) and the endpoints are
+    // built from strings so the int-literal scan cannot supply them.
+    let c = tmp("e_c.py", "def f(x):\n    return -1 if str(x) in ('3' + '7', '9000' + '00') else x\n");
     let r = tmp("e_r.py", "def f(x):\n    return x\n");
-    let lo = review(&c, &r, &spec("f", &["int[3..39]"])).expect("no safety stop");
-    assert!(matches!(lo.verdict, ReviewVerdict::Counterexample { .. }), "lo not judged: {:?}", lo.verdict);
-    let hi = review(&c, &r, &spec("f", &["int[4..40]"])).expect("no safety stop");
-    assert!(matches!(hi.verdict, ReviewVerdict::Counterexample { .. }), "hi not judged: {:?}", hi.verdict);
-    let none = review(&c, &r, &spec("f", &["int[4..39]"])).expect("no safety stop");
+    let both = review(&c, &r, &spec("f", &["int[37..900000]"])).expect("no safety stop");
+    assert!(matches!(both.verdict, ReviewVerdict::Counterexample { disagreeing: 2, .. }), "endpoints not both judged: {:?}", both.verdict);
+    let none = review(&c, &r, &spec("f", &["int[38..899999]"])).expect("no safety stop");
     assert!(matches!(none.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", none.verdict);
+}
+
+// The pendulum helper shape: (year, month, day), each with its own domain.
+const YMD_TWIN: &str = "def f(y, m, d):\n    if not (1 <= y <= 9999 and 1 <= m <= 12 and 1 <= d <= 28):\n        raise ValueError('date out of range')\n    return y * 10000 + m * 100 + d\n";
+const YMD_TWIN_DIFF: &str = "def f(y, m, d):\n    if not (1 <= y <= 9999 and 1 <= m <= 12 and 1 <= d <= 28):\n        raise ValueError('date out of range')\n    return y * 10000 + m * 100 + d + (1 if d % 5 == 2 else 0)\n";
+const YMD_REFR: &str = "def f(y, m, d):\n    return y * 10000 + m * 100 + d\n";
+const YMD_SIG: [&str; 3] = ["int[1..9999]", "int[1..12]", "int[1..28]"];
+
+#[test]
+fn multi_arg_unconstrained_leads_out_of_domain() {
+    let c = tmp("m0_c.py", YMD_TWIN);
+    let r = tmp("m0_r.py", YMD_REFR);
+    let rec = review(&c, &r, &spec("f", &["int", "int", "int"])).expect("no safety stop");
+    match rec.verdict {
+        ReviewVerdict::Counterexample { input, .. } => {
+            let xs = ints_in(&input);
+            assert_eq!(xs.len(), 3, "input format: {input}");
+            let inside = (1..=9999).contains(&xs[0]) && (1..=12).contains(&xs[1]) && (1..=28).contains(&xs[2]);
+            assert!(!inside, "expected out-of-domain first, got {input}");
+        }
+        v => panic!("got {v:?}"),
+    }
+}
+
+#[test]
+fn multi_arg_domains_pass_clean_twins() {
+    let c = tmp("m1_c.py", YMD_TWIN);
+    let r = tmp("m1_r.py", YMD_REFR);
+    let rec = review(&c, &r, &spec("f", &YMD_SIG)).expect("no safety stop");
+    assert!(matches!(rec.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", rec.verdict);
+}
+
+#[test]
+fn multi_arg_domains_lead_with_the_in_domain_difference() {
+    let c = tmp("m2_c.py", YMD_TWIN_DIFF);
+    let r = tmp("m2_r.py", YMD_REFR);
+    let rec = review(&c, &r, &spec("f", &YMD_SIG)).expect("no safety stop");
+    match rec.verdict {
+        ReviewVerdict::Counterexample { input, .. } => {
+            let xs = ints_in(&input);
+            assert_eq!(xs.len(), 3, "input format: {input}");
+            assert!((1..=9999).contains(&xs[0]) && (1..=12).contains(&xs[1]) && (1..=28).contains(&xs[2]), "got {input}");
+            assert_eq!(xs[2] % 5, 2, "expected the real difference, got {input}");
+        }
+        v => panic!("got {v:?}"),
+    }
 }
 
 #[test]
@@ -194,4 +240,13 @@ fn domains_change_the_receipt_and_unconstrained_does_not() {
     assert_eq!(plain.sha256(), empty.sha256());
     assert_ne!(plain.sha256(), dom.sha256());
     assert_ne!(dom.sha256(), dom2.sha256());
+}
+
+#[test]
+fn domain_position_is_bound_into_the_receipt() {
+    let c = tmp("pos_c.py", "def f(a, b):\n    return a + b\n");
+    let r = tmp("pos_r.py", "def f(a, b):\n    return b + a\n");
+    let first = review(&c, &r, &spec("f", &["int[1..9]", "int"])).expect("no safety stop");
+    let second = review(&c, &r, &spec("f", &["int", "int[1..9]"])).expect("no safety stop");
+    assert_ne!(first.sha256(), second.sha256());
 }

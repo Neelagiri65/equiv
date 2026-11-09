@@ -51,6 +51,59 @@ impl ArgType {
             _ => return None,
         })
     }
+
+    /// Parse a signature token with an optional input domain (0.23.0):
+    /// `int[lo..hi]` (inclusive), `str[ascii]`, `str[1]` (exactly one code
+    /// point), and the same inside lists: `list[int[1..12]]`, `list[str[1]]`.
+    /// A plain token parses as with `parse`, with `Domain::Any`.
+    pub fn parse_domain(s: &str) -> Option<(Self, Domain)> {
+        let s = s.trim();
+        if let Some(t) = Self::parse(s) {
+            return Some((t, Domain::Any));
+        }
+        let (outer, inner) = match s.strip_prefix("list[").and_then(|r| r.strip_suffix(']')) {
+            Some(inner) => (true, inner.trim()),
+            None => (false, s),
+        };
+        let (base, dom) = inner.strip_suffix(']').and_then(|r| r.split_once('['))?;
+        let dom = dom.trim();
+        let (ty, d) = match base.trim() {
+            "int" => {
+                let (lo, hi) = dom.split_once("..")?;
+                let lo: i64 = lo.trim().parse().ok()?;
+                let hi: i64 = hi.trim().parse().ok()?;
+                if lo > hi {
+                    return None;
+                }
+                (if outer { ArgType::ListInt } else { ArgType::Int }, Domain::IntRange(lo, hi))
+            }
+            "str" => {
+                let d = match dom {
+                    "ascii" => Domain::Ascii,
+                    "1" => Domain::OneChar,
+                    _ => return None,
+                };
+                (if outer { ArgType::ListStr } else { ArgType::Str }, d)
+            }
+            _ => return None,
+        };
+        Some((ty, d))
+    }
+}
+
+/// An opt-in input domain for one argument (0.23.0). For a list type it
+/// constrains the elements. Generation, corners, source literals and harvested
+/// inputs all stay inside it; a review under a domain is bound into the
+/// receipt, so it can never be mistaken for a review of the whole type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Domain {
+    Any,
+    /// Inclusive integer range.
+    IntRange(i64, i64),
+    /// Strings of ASCII characters only.
+    Ascii,
+    /// Exactly one code point (Python `len(s) == 1`).
+    OneChar,
 }
 
 /// Default step budget per call: how many Python line and jump events one call
@@ -114,6 +167,9 @@ pub struct ReviewSpec {
     /// raises against a side that returns is still a difference. Bound into
     /// the spec hash only when on, so strict receipts keep their ids.
     pub errors_agree: bool,
+    /// Per-argument input domains, by position (0.23.0). Empty, short, or
+    /// all-`Any` means unconstrained, and then the spec hash is unchanged.
+    pub domains: Vec<Domain>,
 }
 
 impl ReviewSpec {
@@ -2508,7 +2564,7 @@ mod generator_tests {
     use super::*;
 
     fn spec(args: Vec<ArgType>, seed: u64) -> ReviewSpec {
-        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false }
+        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![] }
     }
 
     #[test]

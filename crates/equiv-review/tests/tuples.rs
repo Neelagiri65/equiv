@@ -21,7 +21,7 @@ fn wp(name: &str, body: &str) -> std::path::PathBuf {
     p
 }
 fn spec(func: &str) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args: vec![ArgType::Int], n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false }
+    ReviewSpec { func: func.into(), args: vec![ArgType::Int], n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![] }
 }
 fn verdict(c: &str, r: &str, name: &str) -> ReviewVerdict {
     let cand = wp(&format!("{name}_c"), c);
