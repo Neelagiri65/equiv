@@ -30,6 +30,12 @@ pass. That includes:
 A pass means "no difference found on the inputs tried". It does not mean the
 code is correct or does what you intended.
 
+**Use it where behaviour must not change**: refactors, speed-ups, AI-written
+rewrites, and ports (for example a Python function and its Rust or C twin).
+There, any difference is a mistake, and the input `equiv` prints is the bug.
+It is not a general bug finder for feature work: when a pull request changes
+behaviour on purpose, `equiv` can only tell you that it changed.
+
 ## Does it actually catch bugs?
 
 - **Test corpus.** 115 labelled pairs of functions where we already know the
@@ -44,17 +50,27 @@ code is correct or does what you intended.
 - **[rapidfuzz](docs/case-studies/rapidfuzz.md)** (about 116M downloads a month).
   Its C++ and Python versions score text differently when it contains a
   non-breaking space.
+- **Real regressions from project history (the limit).** We traced 713
+  regressions that 57 Python projects shipped and later fixed. In only 6 was the
+  broken function one `equiv` can check (a module-level function with supported
+  type hints that existed before the change). On the one we could confirm end to
+  end, `equiv` (and CrossHair) flagged the change but showed the change the
+  author intended, not the bug. That is why the Action below gates refactor and
+  port PRs, not every PR.
 - **Six common refactor mistakes**, run live. Five caught with the exact input,
   one honestly missed. [`examples/scenarios/`](examples/scenarios/)
 
 ![equiv across six real-world bug patterns: five caught, one honest miss](assets/equiv-scenarios.gif)
 
-## Use it on pull requests
+## Use it on refactor and port PRs
 
-Add `.github/workflows/equiv-review.yml`:
+Add `.github/workflows/equiv-review.yml`, and label pull requests that are meant
+to keep behaviour with `refactor`:
 
 ```yaml
-on: pull_request
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
 permissions: { contents: read, pull-requests: write, id-token: write }
 jobs:
   review:
@@ -63,20 +79,28 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: Neelagiri65/equiv@v0.21.0
-        with: { keyless: "true" }
+        with: { keyless: "true", only-label: "refactor" }
 ```
 
-That is all. On every PR, `equiv` finds the changed functions, checks each one
-against its version on the base branch, and posts one comment. Besides its own
-generated inputs, it tries the literal values your tests and other code already
-call each function with (read, never run):
+On a `refactor` PR, `equiv` finds the changed functions, checks each one against
+its version on the base branch, and posts one comment. Besides its own generated
+inputs, it tries the literal values your tests and other code already call each
+function with (read, never run):
 
 - **behaviour preserved**: the check passes
-- **behaviour changed**: the check fails, and the comment shows the input that tells the two apart
+- **behaviour changed**: the check fails and blocks the merge, and the comment shows the input that tells the two apart
 - **not checked**: listed with the reason (for example, a parameter needs a type hint)
 
-To check only specific functions, list them in `.equiv-review` at the repo root,
-one per line: `src/math.py : total : int`.
+PRs without the label are skipped.
+
+Other ways to run it:
+
+- **List the functions that must not change** in `.equiv-review` at the repo root,
+  one per line: `src/math.py : total : int`. A divergence in a listed function
+  blocks the merge on every PR. Good for ports and parity code.
+- **No label, no manifest**: `equiv` reviews every changed function and reports
+  divergences in the comment **without blocking**, because in an ordinary PR most
+  changes are intended. Set `fail-on-divergence: "true"` to block anyway.
 
 Pin a released tag (`@v0.21.0`), not `@main`, so results do not change under you.
 
