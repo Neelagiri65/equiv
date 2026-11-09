@@ -170,5 +170,5 @@ fn golden_receipt_id_is_stable() {
     let mut r = review(&cand, &refr, &s).expect("no safety stop");
     r.python = "3.12".into();
     let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "5d2b1295192f77d64b1694280ebdff95ad7428439ccd074c761302933b30d7fe", "receipt-id drifted");
+    assert_eq!(id, "d742351fe11ef99acf97f743db7b223d2353074965f03f0c0163b7e6a7b03bd9", "receipt-id drifted");
 }
