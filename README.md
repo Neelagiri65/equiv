@@ -55,22 +55,19 @@ behaviour on purpose, `equiv` can only tell you that it changed.
   broken function one `equiv` can check (a module-level function with supported
   type hints that existed before the change). On the one we could confirm end to
   end, `equiv` (and CrossHair) flagged the change but showed the change the
-  author intended, not the bug. That is why the Action below gates refactor and
+  author intended, not the bug. That is why the next release gates refactor and
   port PRs, not every PR.
 - **Six common refactor mistakes**, run live. Five caught with the exact input,
   one honestly missed. [`examples/scenarios/`](examples/scenarios/)
 
 ![equiv across six real-world bug patterns: five caught, one honest miss](assets/equiv-scenarios.gif)
 
-## Use it on refactor and port PRs
+## Use it on pull requests
 
-Add `.github/workflows/equiv-review.yml`, and label pull requests that are meant
-to keep behaviour with `refactor`:
+Add `.github/workflows/equiv-review.yml`:
 
 ```yaml
-on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
+on: pull_request
 permissions: { contents: read, pull-requests: write, id-token: write }
 jobs:
   review:
@@ -79,28 +76,24 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: Neelagiri65/equiv@v0.21.0
-        with: { keyless: "true", only-label: "refactor" }
+        with: { keyless: "true" }
 ```
 
-On a `refactor` PR, `equiv` finds the changed functions, checks each one against
-its version on the base branch, and posts one comment. Besides its own generated
-inputs, it tries the literal values your tests and other code already call each
-function with (read, never run):
+That is all. On every PR, `equiv` finds the changed functions, checks each one
+against its version on the base branch, and posts one comment. Besides its own
+generated inputs, it tries the literal values your tests and other code already
+call each function with (read, never run):
 
 - **behaviour preserved**: the check passes
-- **behaviour changed**: the check fails and blocks the merge, and the comment shows the input that tells the two apart
+- **behaviour changed**: the check fails, and the comment shows the input that tells the two apart
 - **not checked**: listed with the reason (for example, a parameter needs a type hint)
 
-PRs without the label are skipped.
+To check only specific functions, list them in `.equiv-review` at the repo root,
+one per line: `src/math.py : total : int`.
 
-Other ways to run it:
-
-- **List the functions that must not change** in `.equiv-review` at the repo root,
-  one per line: `src/math.py : total : int`. A divergence in a listed function
-  blocks the merge on every PR. Good for ports and parity code.
-- **No label, no manifest**: `equiv` reviews every changed function and reports
-  divergences in the comment **without blocking**, because in an ordinary PR most
-  changes are intended. Set `fail-on-divergence: "true"` to block anyway.
+Gating only refactor and port PRs (an `only-label` input, and blocking by
+default only where behaviour must not change) is on `main` and ships in the
+next release.
 
 Pin a released tag (`@v0.21.0`), not `@main`, so results do not change under you.
 
