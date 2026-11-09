@@ -91,6 +91,37 @@ impl ArgType {
     }
 }
 
+/// The declared domains, readable: "arg 1 int[1..9999], arg 3 str[1]".
+/// None when every argument is unconstrained.
+pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
+    if !has_domains(spec) {
+        return None;
+    }
+    let parts: Vec<String> = spec
+        .args
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| dom(spec, *i) != Domain::Any)
+        .map(|(i, t)| {
+            let d = match dom(spec, i) {
+                Domain::IntRange(lo, hi) => format!("[{lo}..{hi}]"),
+                Domain::Ascii => "[ascii]".into(),
+                Domain::OneChar => "[1]".into(),
+                Domain::Any => String::new(),
+            };
+            let label = match t {
+                ArgType::Int => format!("int{d}"),
+                ArgType::Str => format!("str{d}"),
+                ArgType::ListInt => format!("list[int{d}]"),
+                ArgType::ListStr => format!("list[str{d}]"),
+                other => format!("{other:?}{d}"),
+            };
+            format!("arg {} {label}", i + 1)
+        })
+        .collect();
+    Some(parts.join(", "))
+}
+
 /// An opt-in input domain for one argument (0.23.0). For a list type it
 /// constrains the elements. Generation, corners, source literals and harvested
 /// inputs all stay inside it; a review under a domain is bound into the
@@ -1564,6 +1595,10 @@ pub struct ReviewReceipt {
     pub seed: u64,
     /// How many inputs came from each source; see `InputCounts`.
     pub inputs: InputCounts,
+    /// The declared input domains, readable (e.g. "arg 1 int[1..9999]");
+    /// empty without domains. NOT in the receipt bytes: the domains
+    /// themselves are bound through `spec_sha256`.
+    pub domains: String,
     /// Judged inputs on which at least one side raised (and both agreed).
     pub exceptions: u32,
     /// The claim tier. This checker only ever produces `tested`: bounded
@@ -1966,6 +2001,7 @@ pub fn review_with_inputs(
         python: ev.python,
         seed: spec.seed,
         inputs,
+        domains: domains_note(spec).unwrap_or_default(),
         exceptions: ev.exceptions,
         // The receipt itself carries the evidence level, so a thin verdict
         // cannot be re-read as a full one later (same frozen field, new value).
@@ -1982,13 +2018,26 @@ pub fn review_with_inputs(
 pub fn provenance_note(r: &ReviewReceipt) -> String {
     let i = &r.inputs;
     format!(
-        "python {}, seed {}; inputs {} corner + {} literal + {} random{}; {} raised on both sides; tier {}",
+        "python {}, seed {}; inputs {} corner + {} literal + {} random{}{}; {} raised on both sides; tier {}",
         if r.python.is_empty() { "unknown" } else { &r.python },
         r.seed,
         i.corner,
         i.literal,
         i.random,
         if i.harvested > 0 { format!(" + {} from the project's code", i.harvested) } else { String::new() },
+        if r.domains.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; inside domains {}{}",
+                r.domains,
+                if i.out_of_domain > 0 {
+                    format!(" ({} source/harvested values outside them skipped)", i.out_of_domain)
+                } else {
+                    String::new()
+                }
+            )
+        },
         r.exceptions,
         r.tier
     )

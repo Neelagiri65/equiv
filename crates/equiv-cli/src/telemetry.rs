@@ -209,6 +209,7 @@ mod tests {
                 python: "3.12".to_string(),
                 seed: 1,
                 inputs: equiv_review::InputCounts::default(),
+                domains: String::new(),
                 exceptions: 0,
                 tier: "tested".to_string(),
                 disagreements: Vec::new(),
