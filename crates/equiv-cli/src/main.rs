@@ -145,6 +145,7 @@ fn run() -> Result<u8, String> {
         Some("review-pr") => {
             let safety = safety_seconds()?;
             let budget = step_budget(&args)?;
+            let same_host = args.iter().any(|a| a == "--same-host");
             use equiv_review::{
                 detect_changed_functions, render_markdown_with_unchecked, run_pr_with_inputs, ArgType,
                 DetectedStatus, PrCheck, ReviewSpec,
@@ -237,7 +238,7 @@ fn run() -> Result<u8, String> {
                                     name: d.name.clone(),
                                     head_path: std::path::PathBuf::from(file),
                                     base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget, errors_agree: false, domains: vec![], same_host: false },
+                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget, errors_agree: false, domains: vec![], same_host },
                                 });
                             }
                             DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
@@ -278,7 +279,7 @@ fn run() -> Result<u8, String> {
                         name: func.to_string(),
                         head_path: std::path::PathBuf::from(file),
                         base_path,
-                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree: false, domains, same_host: false },
+                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree: false, domains, same_host },
                     });
                 }
             }
@@ -392,6 +393,7 @@ fn run() -> Result<u8, String> {
             use equiv_review::{review_with_inputs, ArgType, ReviewSpec, ReviewVerdict};
             let safety = safety_seconds()?;
             let budget = step_budget(&args)?;
+            let same_host = args.iter().any(|a| a == "--same-host");
             let want_sign = args.iter().any(|a| a == "--sign");
             let want_all = args.iter().any(|a| a == "--all");
             let errors_agree = args.iter().any(|a| a == "--errors-agree");
@@ -410,7 +412,10 @@ fn run() -> Result<u8, String> {
                     rest.push(a);
                 }
             }
-            let pos: Vec<&String> = rest.into_iter().filter(|a| *a != "--sign" && *a != "--all" && *a != "--errors-agree").collect();
+            let pos: Vec<&String> = rest
+                .into_iter()
+                .filter(|a| *a != "--sign" && *a != "--all" && *a != "--errors-agree" && *a != "--same-host")
+                .collect();
             let cand = pos.first().ok_or("review: missing candidate .py")?;
             let refr = pos.get(1).ok_or("review: missing reference .py")?;
             let func = pos.get(2).ok_or("review: missing function name")?;
@@ -423,7 +428,7 @@ fn run() -> Result<u8, String> {
                 .map(|s| ArgType::parse_domain(s).ok_or_else(|| format!("bad arg type `{}`", s.trim())))
                 .collect::<Result<Vec<_>, _>>()?;
             let (arg_types, domains): (Vec<ArgType>, Vec<equiv_review::Domain>) = arg_types.into_iter().unzip();
-            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains, same_host: false };
+            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains, same_host };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
                 Vec::new()
             } else {
@@ -471,6 +476,9 @@ fn run() -> Result<u8, String> {
             println!("provenance: {}", equiv_review::provenance_note(&r));
             if !r.domains.is_empty() {
                 println!("domains: {} (inputs generated only inside these; a pass says nothing outside them)", r.domains);
+            }
+            if same_host {
+                println!("tier: {} (same host only: floats compared on this machine; another machine or maths library may give a different verdict)", r.tier);
             }
             if errors_agree {
                 println!("mode: errors agree (both sides raising counts as agreement, whatever the exception class)");

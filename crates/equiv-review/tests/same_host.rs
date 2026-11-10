@@ -47,9 +47,15 @@ fn same_host_judges_libm_and_finds_a_float_difference() {
     // round(x, 3) vs a hand-rolled version that differs on some inputs.
     let c = tmp("l_c.py", "import math\n\ndef f(x, n):\n    return round(x, n) + 0.0 * math.sin(0.0)\n");
     let r = tmp("l_r.py", "def f(x, n):\n    return float(int(x * 10 ** n)) / 10 ** n if abs(x) < 1e15 else x\n");
-    let plain = review(&c, &r, &spec(vec![ArgType::Float, ArgType::Int], false)).expect("no safety stop");
+    // n stays small (10 ** n with a huge n would just be slow, not a test).
+    let ndig = |same_host| {
+        let mut s = spec(vec![ArgType::Float, ArgType::Int], same_host);
+        s.domains = vec![equiv_review::Domain::Any, equiv_review::Domain::IntRange(0, 6)];
+        s
+    };
+    let plain = review(&c, &r, &ndig(false)).expect("no safety stop");
     assert!(matches!(plain.verdict, ReviewVerdict::Refused { .. }), "{:?}", plain.verdict);
-    let rec = review(&c, &r, &spec(vec![ArgType::Float, ArgType::Int], true)).expect("no safety stop");
+    let rec = review(&c, &r, &ndig(true)).expect("no safety stop");
     assert!(matches!(rec.verdict, ReviewVerdict::Counterexample { .. }), "{:?}", rec.verdict);
     assert_eq!(rec.tier, "tested-same-host");
 }
