@@ -123,3 +123,20 @@ fn pr_manifest_accepts_a_value_set_from_the_package() {
     let (bad, out) = run("pkg/m.py : f : str[in .constant.MISSING]\n");
     assert_eq!(bad, Some(2), "an unresolvable list is could-not-check, never green: {out}");
 }
+
+#[test]
+fn review_prints_the_resolved_value_count() {
+    let d = dir("review_vs");
+    std::fs::write(d.join("names.py"), "NAMES = ['a', 'b', 'c']\n").unwrap();
+    std::fs::write(d.join("c.py"), "def f(s):\n    return {'a': 1, 'b': 2, 'c': 3}[s]\n").unwrap();
+    std::fs::write(d.join("r.py"), "def f(s):\n    return {'a': 1, 'b': 2, 'c': 3}.get(s, 0)\n").unwrap();
+    let out = Command::new(BIN)
+        .args(["review", "c.py", "r.py", "f", "str[in names.NAMES]"])
+        .current_dir(&d)
+        .env("EQUIV_METRICS", "off")
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(text.lines().any(|l| l.starts_with("domains:") && l.contains("(3 values)")), "{text}");
+}

@@ -1413,13 +1413,14 @@ fn domain_corners(ty: ArgType, d: &Domain) -> Vec<PyVal> {
             }
         }
         (ArgType::Str, Domain::OneOf { values, .. }) => {
-            // Every name when the list is short; else 64 spread across it,
-            // first and last included (the rest come from random draws).
+            // A finite list is checked completely: every name is a corner, up
+            // to VALUE_SET_ALL names. A longer list gets that many spread
+            // across it (first and last included) plus random draws.
             let n = values.len();
-            if n <= 64 {
+            if n <= VALUE_SET_ALL {
                 v.extend(values.iter().map(|s| PyVal::Str(s.clone())));
             } else {
-                v.extend((0..64).map(|k| PyVal::Str(values[k * (n - 1) / 63].clone())));
+                v.extend((0..VALUE_SET_ALL).map(|k| PyVal::Str(values[k * (n - 1) / (VALUE_SET_ALL - 1)].clone())));
             }
         }
         (ArgType::ListStr, Domain::OneOf { values, .. }) if !values.is_empty() => {
@@ -1434,6 +1435,11 @@ fn domain_corners(ty: ArgType, d: &Domain) -> Vec<PyVal> {
     v.retain(|x| in_domain(x, d));
     v
 }
+
+/// Lists of up to this many strings (`str[in ...]`) have every value judged
+/// for each argument, one argument at a time. Pairs across two such arguments
+/// are sampled.
+const VALUE_SET_ALL: usize = 4096;
 
 /// A random value inside the domain, drawn from the same seeded stream.
 fn gen_in(rng: &mut Rng, ty: ArgType, d: &Domain) -> PyVal {

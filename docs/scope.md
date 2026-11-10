@@ -134,8 +134,10 @@ src/dates.py : week_day : int[1..9999], int[1..12], int[1..28]
 src/pkg/utils.py : is_multi_byte_encoding : str[in .constant.IANA_SUPPORTED]
 ```
 
-A value-set list is read from the PR's own version of the code (the head), and every
-value in it is bound into the receipt, so a pass is tied to that exact list.
+A value-set list is read from the PR's own version of the code (the head), so a PR that
+edits the list also changes its own domain. Every value in it is bound into the receipt,
+so a pass is tied to that exact list. Each value of a list of up to 4,096 names is
+judged (one argument at a time); combinations across two such arguments are sampled.
 
 Random inputs, corners (including both ends of a range), source literals and harvested
 inputs all stay inside the domain. Literal and harvested values outside it are skipped,

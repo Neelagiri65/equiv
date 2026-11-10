@@ -180,3 +180,21 @@ fn the_resolved_values_are_bound_into_the_receipt() {
     assert_ne!(x.spec_sha256, y.spec_sha256);
     assert_ne!(x.spec_sha256, plain.spec_sha256);
 }
+
+#[test]
+fn every_name_in_a_list_is_judged() {
+    // A difference on one name out of 500 must be found even at n = 300: a
+    // finite list is checked completely, not sampled.
+    let d = dir("all");
+    write(&d, "names.py", "NAMES = ['n%d' % i for i in range(500)]\n");
+    let c = write(&d, "c.py", "def f(s):\n    return 1 if s == 'n' + str(250) else 0\n");
+    let r = write(&d, "r.py", "def f(s):\n    return 0\n");
+    let rec = review(&c, &r, &spec("f", &["str[in names.NAMES]"])).expect("no safety stop");
+    assert!(first_input(&rec.verdict).contains("n250"), "{:?}", rec.verdict);
+    let same = write(&d, "same.py", "def f(s):\n    return 0\n");
+    let all = review(&same, &r, &spec("f", &["str[in names.NAMES]"])).expect("no safety stop");
+    match all.verdict {
+        ReviewVerdict::Equivalent { n, .. } => assert!(n >= 500, "judged {n} of 500 names"),
+        v => panic!("got {v:?}"),
+    }
+}
