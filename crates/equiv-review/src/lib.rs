@@ -1286,6 +1286,14 @@ fn gen_cases_soft(
             }
         }
     }
+    // Value-set domains (0.25.0): every input is drawn from the project's own
+    // list, like a harvested input, so one that runs past the step budget (a
+    // parser on a long real file) is "not judged at this input", counted and
+    // printed, and the review goes on; `--budget` judges it. Unconstrained and
+    // other domains keep "exhaustion ends the review" as before.
+    if spec.domains.iter().any(|d| matches!(d, Domain::OneOf { .. })) {
+        soft = (0..large_from).collect();
+    }
     (cases, large_from, counts, soft)
 }
 

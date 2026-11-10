@@ -24,6 +24,22 @@ fn from_hex(s: &str) -> Result<Vec<u8>, String> {
 
 /// Per-function wall-clock safety limit (backlog 0.3b). Read here, never in the
 /// library, and never written into a receipt.
+/// Step budget per call: `--budget N`, else $EQUIV_BUDGET (the Action's
+/// `budget` input), else the default. Bound into the receipt either way.
+fn step_budget(args: &[String]) -> Result<u64, String> {
+    let raw = match args.iter().position(|a| a == "--budget") {
+        Some(i) => Some(args.get(i + 1).cloned().ok_or("--budget needs a whole number of Python line/jump events")?),
+        None => std::env::var("EQUIV_BUDGET").ok().filter(|v| !v.trim().is_empty()),
+    };
+    match raw {
+        None => Ok(equiv_review::DEFAULT_BUDGET),
+        Some(v) => match v.trim().parse::<u64>() {
+            Ok(n) if n > 0 => Ok(n),
+            _ => Err(format!("--budget (or EQUIV_BUDGET) must be a whole number of steps above 0, got `{v}`")),
+        },
+    }
+}
+
 fn safety_seconds() -> Result<u64, String> {
     match std::env::var("EQUIV_SAFETY_SECONDS") {
         Err(_) => Ok(equiv_review::DEFAULT_SAFETY_SECONDS),
@@ -128,6 +144,7 @@ fn run() -> Result<u8, String> {
     match args.first().map(String::as_str) {
         Some("review-pr") => {
             let safety = safety_seconds()?;
+            let budget = step_budget(&args)?;
             use equiv_review::{
                 detect_changed_functions, render_markdown_with_unchecked, run_pr_with_inputs, ArgType,
                 DetectedStatus, PrCheck, ReviewSpec,
@@ -220,7 +237,7 @@ fn run() -> Result<u8, String> {
                                     name: d.name.clone(),
                                     head_path: std::path::PathBuf::from(file),
                                     base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![] },
+                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget, errors_agree: false, domains: vec![] },
                                 });
                             }
                             DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
@@ -261,7 +278,7 @@ fn run() -> Result<u8, String> {
                         name: func.to_string(),
                         head_path: std::path::PathBuf::from(file),
                         base_path,
-                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains },
+                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree: false, domains },
                     });
                 }
             }
@@ -374,6 +391,7 @@ fn run() -> Result<u8, String> {
         Some("review") => {
             use equiv_review::{review_with_inputs, ArgType, ReviewSpec, ReviewVerdict};
             let safety = safety_seconds()?;
+            let budget = step_budget(&args)?;
             let want_sign = args.iter().any(|a| a == "--sign");
             let want_all = args.iter().any(|a| a == "--all");
             let errors_agree = args.iter().any(|a| a == "--errors-agree");
@@ -386,6 +404,8 @@ fn run() -> Result<u8, String> {
                 if a == "--inputs-from" {
                     let p = it.next().ok_or("--inputs-from needs a file or directory")?;
                     inputs_from.push(std::path::PathBuf::from(p));
+                } else if a == "--budget" {
+                    it.next(); // read by step_budget
                 } else {
                     rest.push(a);
                 }
@@ -403,7 +423,7 @@ fn run() -> Result<u8, String> {
                 .map(|s| ArgType::parse_domain(s).ok_or_else(|| format!("bad arg type `{}`", s.trim())))
                 .collect::<Result<Vec<_>, _>>()?;
             let (arg_types, domains): (Vec<ArgType>, Vec<equiv_review::Domain>) = arg_types.into_iter().unzip();
-            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget: equiv_review::DEFAULT_BUDGET, errors_agree, domains };
+            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
                 Vec::new()
             } else {
