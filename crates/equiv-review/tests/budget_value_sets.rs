@@ -72,3 +72,34 @@ fn a_larger_budget_judges_a_heavy_value() {
     let big = review(&c, &r, &spec("str[in names.NAMES]", 50_000_000)).expect("no safety stop");
     assert!(matches!(big.verdict, ReviewVerdict::Equivalent { not_judged: 0, .. }), "{:?}", big.verdict);
 }
+
+#[test]
+fn a_review_where_no_input_was_judged_is_never_green() {
+    // Every name runs past the budget: nothing was compared, so this is
+    // could-not-check, not "agreed on all 0 inputs".
+    let d = dir("none");
+    write(&d, "names.py", "NAMES = ['wxyz', 'abcd']\n");
+    let c = write(&d, "c.py", SLOW);
+    let r = write(&d, "r.py", SLOW);
+    let rec = review(&c, &r, &spec("str[in names.NAMES]", DEFAULT_BUDGET)).expect("no safety stop");
+    match &rec.verdict {
+        ReviewVerdict::Error { reason } => assert!(reason.contains("budget"), "{reason}"),
+        v => panic!("expected could-not-check, got {v:?}"),
+    }
+}
+
+#[test]
+fn one_side_running_past_the_budget_is_not_judged_and_said_so() {
+    // Decided behaviour: a compiled twin raises no Python events, so in twin
+    // reviews one side exhausting is the normal case (sqlfluff: the Python
+    // parser on a long file). The input is not judged, counted in the receipt
+    // and the verdict line, never silently dropped.
+    let d = dir("onesided");
+    write(&d, "names.py", NAMES);
+    let c = write(&d, "c.py", SLOW);
+    let r = write(&d, "r.py", "def f(s):\n    return len(s)\n");
+    let rec = review(&c, &r, &spec("str[in names.NAMES]", DEFAULT_BUDGET)).expect("no safety stop");
+    assert!(matches!(rec.verdict, ReviewVerdict::Equivalent { not_judged: 1, .. }), "{:?}", rec.verdict);
+    let note = equiv_review::not_judged_note(1);
+    assert!(note.contains("not judged"), "{note}");
+}

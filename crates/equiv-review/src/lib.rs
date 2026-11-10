@@ -2994,6 +2994,16 @@ fn run_python(
         );
         return Ok(done(ReviewVerdict::Refused { reason }, exceptions));
     }
+    // Inputs existed but every one ran past the step budget: nothing was
+    // compared, so this is "could not check", never "agreed on all 0".
+    if n == 0 && not_judged > 0 {
+        let reason = format!(
+            "no input was judged: all {not_judged} inputs ran past the step budget of {} Python line/jump events; \
+             raise it with --budget",
+            spec.budget
+        );
+        return Ok(done(ReviewVerdict::Error { reason }, exceptions));
+    }
     Ok(done(ReviewVerdict::Equivalent { n, not_judged }, exceptions))
 }
 

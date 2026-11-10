@@ -76,3 +76,22 @@ fn review_pr_takes_a_budget() {
     assert_eq!(small, Some(2), "{out_s}");
     assert_eq!(big, Some(0), "{out_b}");
 }
+
+#[test]
+fn the_budget_env_var_is_honoured_and_empty_means_default() {
+    let d = dir("env");
+    std::fs::write(d.join("c.py"), HEAVY).unwrap();
+    std::fs::write(d.join("r.py"), HEAVY).unwrap();
+    let go = |v: &str| {
+        let out = Command::new(BIN)
+            .args(["review", "c.py", "r.py", "f", "int[0..9]"])
+            .current_dir(&d)
+            .env("EQUIV_METRICS", "off")
+            .env("EQUIV_BUDGET", v)
+            .output()
+            .unwrap();
+        out.status.code()
+    };
+    assert_eq!(go("50000000"), Some(0));
+    assert_eq!(go(""), Some(2), "empty = the default budget, which this input exceeds");
+}
