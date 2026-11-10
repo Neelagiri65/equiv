@@ -24,7 +24,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(func: &str) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args: vec![ArgType::Int], n: 20, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![] }
+    ReviewSpec { func: func.into(), args: vec![ArgType::Int], n: 20, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false }
 }
 
 const TERMINATES: &str = "def f(x):\n    return x\n";

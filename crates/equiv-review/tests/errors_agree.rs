@@ -15,7 +15,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(func: &str, args: Vec<ArgType>, errors_agree: bool) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 300, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree, domains: vec![] }
+    ReviewSpec { func: func.into(), args, n: 300, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree, domains: vec![], same_host: false }
 }
 
 // Same values on valid input; bad input rejected with different classes.

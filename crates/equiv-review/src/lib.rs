@@ -217,6 +217,11 @@ pub struct ReviewSpec {
     /// Per-argument input domains, by position (0.23.0). Empty, short, or
     /// all-`Any` means unconstrained, and then the spec hash is unchanged.
     pub domains: Vec<Domain>,
+    /// Same-host float tier (0.26.0; reopens DECISIONS #17 as an opt-in):
+    /// lift the cross-host float refusals (libm functions, calls equiv cannot
+    /// analyse) and judge on this machine only. Bound into the spec hash only
+    /// when on; the receipt tier is then `tested-same-host`.
+    pub same_host: bool,
 }
 
 impl ReviewSpec {
@@ -3023,7 +3028,7 @@ mod generator_tests {
     use super::*;
 
     fn spec(args: Vec<ArgType>, seed: u64) -> ReviewSpec {
-        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![] }
+        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false }
     }
 
     #[test]

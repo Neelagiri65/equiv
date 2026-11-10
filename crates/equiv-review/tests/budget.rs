@@ -16,7 +16,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(func: &str, args: Vec<ArgType>, budget: u64) -> ReviewSpec {
-    ReviewSpec { func: func.into(), args, n: 50, seed: 1, budget, errors_agree: false, domains: vec![] }
+    ReviewSpec { func: func.into(), args, n: 50, seed: 1, budget, errors_agree: false, domains: vec![], same_host: false }
 }
 
 fn reason(v: &ReviewVerdict) -> &str {

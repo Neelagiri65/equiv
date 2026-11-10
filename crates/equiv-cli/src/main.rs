@@ -237,7 +237,7 @@ fn run() -> Result<u8, String> {
                                     name: d.name.clone(),
                                     head_path: std::path::PathBuf::from(file),
                                     base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget, errors_agree: false, domains: vec![] },
+                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget, errors_agree: false, domains: vec![], same_host: false },
                                 });
                             }
                             DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
@@ -278,7 +278,7 @@ fn run() -> Result<u8, String> {
                         name: func.to_string(),
                         head_path: std::path::PathBuf::from(file),
                         base_path,
-                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree: false, domains },
+                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree: false, domains, same_host: false },
                     });
                 }
             }
@@ -423,7 +423,7 @@ fn run() -> Result<u8, String> {
                 .map(|s| ArgType::parse_domain(s).ok_or_else(|| format!("bad arg type `{}`", s.trim())))
                 .collect::<Result<Vec<_>, _>>()?;
             let (arg_types, domains): (Vec<ArgType>, Vec<equiv_review::Domain>) = arg_types.into_iter().unzip();
-            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains };
+            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains, same_host: false };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
                 Vec::new()
             } else {
