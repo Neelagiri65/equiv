@@ -121,11 +121,23 @@ only the inputs the function is meant to take, give an argument a domain:
 - `int[lo..hi]`: integers from `lo` to `hi`, inclusive;
 - `str[ascii]`: ASCII strings only;
 - `str[1]`: exactly one character (one code point);
-- the same inside lists: `list[int[1..12]]`, `list[str[1]]`.
+- `str[in mod.NAME]`: one of a fixed list of strings in your own code, such as encoding
+  or Unicode range names. Write `.constant.NAME` for a module next to the function
+  (same package), `pkg.constant.NAME` for an absolute import, or `NAME` for a name in
+  the function's own module. A list, tuple, set or dict of strings works (for a dict,
+  its keys). A name that cannot be resolved makes the function "not checked", never
+  green;
+- the same inside lists: `list[int[1..12]]`, `list[str[1]]`, `list[str[in mod.NAME]]`.
 
 ```
 src/dates.py : week_day : int[1..9999], int[1..12], int[1..28]
+src/pkg/utils.py : is_multi_byte_encoding : str[in .constant.IANA_SUPPORTED]
 ```
+
+A value-set list is read from the PR's own version of the code (the head), so a PR that
+edits the list also changes its own domain. Every value in it is bound into the receipt,
+so a pass is tied to that exact list. Each value of a list of up to 4,096 names is
+judged (one argument at a time); combinations across two such arguments are sampled.
 
 Random inputs, corners (including both ends of a range), source literals and harvested
 inputs all stay inside the domain. Literal and harvested values outside it are skipped,

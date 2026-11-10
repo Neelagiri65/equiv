@@ -449,8 +449,8 @@ fn run() -> Result<u8, String> {
                 ReviewVerdict::Refused { reason } => println!("REFUSED: {reason}"),
             }
             println!("provenance: {}", equiv_review::provenance_note(&r));
-            if let Some(d) = equiv_review::domains_note(&spec) {
-                println!("domains: {d} (inputs generated only inside these; a pass says nothing outside them)");
+            if !r.domains.is_empty() {
+                println!("domains: {} (inputs generated only inside these; a pass says nothing outside them)", r.domains);
             }
             if errors_agree {
                 println!("mode: errors agree (both sides raising counts as agreement, whatever the exception class)");

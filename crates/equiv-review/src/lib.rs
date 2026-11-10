@@ -81,7 +81,16 @@ impl ArgType {
                 let d = match dom {
                     "ascii" => Domain::Ascii,
                     "1" => Domain::OneChar,
-                    _ => return None,
+                    _ => {
+                        let src = dom.strip_prefix("in ")?.trim();
+                        let ok = !src.is_empty()
+                            && !src.ends_with('.')
+                            && src.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
+                        if !ok {
+                            return None;
+                        }
+                        Domain::OneOf { source: src.to_string(), values: Vec::new() }
+                    }
                 };
                 (if outer { ArgType::ListStr } else { ArgType::Str }, d)
             }
@@ -101,13 +110,14 @@ pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
         .args
         .iter()
         .enumerate()
-        .filter(|(i, _)| dom(spec, *i) != Domain::Any)
+        .filter(|(i, _)| *dom(spec, *i) != Domain::Any)
         .map(|(i, t)| {
-            let d = match dom(spec, i) {
-                Domain::IntRange(lo, hi) => format!("[{lo}..{hi}]"),
-                Domain::Ascii => "[ascii]".into(),
-                Domain::OneChar => "[1]".into(),
-                Domain::Any => String::new(),
+            let (d, count) = match dom(spec, i) {
+                Domain::IntRange(lo, hi) => (format!("[{lo}..{hi}]"), String::new()),
+                Domain::Ascii => ("[ascii]".into(), String::new()),
+                Domain::OneChar => ("[1]".into(), String::new()),
+                Domain::OneOf { source, values } => (format!("[in {source}]"), format!(" ({} values)", values.len())),
+                Domain::Any => (String::new(), String::new()),
             };
             let label = match t {
                 ArgType::Int => format!("int{d}"),
@@ -116,7 +126,7 @@ pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
                 ArgType::ListStr => format!("list[str{d}]"),
                 other => format!("{other:?}{d}"),
             };
-            format!("arg {} {label}", i + 1)
+            format!("arg {} {label}{count}", i + 1)
         })
         .collect();
     Some(parts.join(", "))
@@ -126,7 +136,7 @@ pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
 /// constrains the elements. Generation, corners, source literals and harvested
 /// inputs all stay inside it; a review under a domain is bound into the
 /// receipt, so it can never be mistaken for a review of the whole type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Domain {
     Any,
     /// Inclusive integer range.
@@ -135,6 +145,12 @@ pub enum Domain {
     Ascii,
     /// Exactly one code point (Python `len(s) == 1`).
     OneChar,
+    /// One of a fixed list of strings from the project's own code (0.24.0):
+    /// `str[in mod.NAME]`, `str[in .constant.NAME]` (relative to the
+    /// candidate's package) or `str[in NAME]` (the candidate module). Parsed
+    /// with `values` empty; resolved by the review before any input is
+    /// generated, and the resolved values are bound into the spec hash.
+    OneOf { source: String, values: Vec<String> },
 }
 
 /// Default step budget per call: how many Python line and jump events one call
@@ -242,6 +258,18 @@ impl ReviewSpec {
                     }
                     Domain::Ascii => v.push(2),
                     Domain::OneChar => v.push(3),
+                    // The source name and every resolved value, so a pass is
+                    // bound to the exact list it was drawn from.
+                    Domain::OneOf { source, values } => {
+                        v.push(4);
+                        v.extend_from_slice(source.as_bytes());
+                        v.push(0);
+                        v.extend_from_slice(&(values.len() as u32).to_le_bytes());
+                        for s in values {
+                            v.extend_from_slice(s.as_bytes());
+                            v.push(0);
+                        }
+                    }
                 }
             }
         }
@@ -1295,8 +1323,9 @@ fn flag_bases(spec: &ReviewSpec) -> Vec<Vec<PyVal>> {
 // the identity on the unconstrained path: same values, same order, no extra
 // random draws, so unconstrained reviews generate byte-identical cases.
 
-fn dom(spec: &ReviewSpec, i: usize) -> Domain {
-    spec.domains.get(i).copied().unwrap_or(Domain::Any)
+fn dom(spec: &ReviewSpec, i: usize) -> &Domain {
+    static ANY: Domain = Domain::Any;
+    spec.domains.get(i).unwrap_or(&ANY)
 }
 
 fn has_domains(spec: &ReviewSpec) -> bool {
@@ -1304,12 +1333,15 @@ fn has_domains(spec: &ReviewSpec) -> bool {
 }
 
 /// Is `v` inside `d`? For a list, every element must be.
-fn in_domain(v: &PyVal, d: Domain) -> bool {
+fn in_domain(v: &PyVal, d: &Domain) -> bool {
     let one = |s: &str| s.chars().count() == 1;
     match (d, v) {
         (Domain::Any, _) => true,
-        (Domain::IntRange(lo, hi), PyVal::Int(x)) => lo <= *x && *x <= hi,
-        (Domain::IntRange(lo, hi), PyVal::ListInt(xs)) => xs.iter().all(|x| lo <= *x && *x <= hi),
+        (Domain::IntRange(lo, hi), PyVal::Int(x)) => lo <= x && x <= hi,
+        (Domain::IntRange(lo, hi), PyVal::ListInt(xs)) => xs.iter().all(|x| lo <= x && x <= hi),
+        (Domain::OneOf { values, .. }, PyVal::Str(s)) => values.iter().any(|x| x == s),
+        (Domain::OneOf { .. }, PyVal::StrUnits(_)) => false,
+        (Domain::OneOf { values, .. }, PyVal::ListStr(xs)) => xs.iter().all(|s| values.iter().any(|x| x == s)),
         (Domain::Ascii, PyVal::Str(s)) => s.is_ascii(),
         (Domain::Ascii, PyVal::StrUnits(u)) => u.iter().all(|c| *c < 0x80),
         (Domain::Ascii, PyVal::ListStr(xs)) => xs.iter().all(|s| s.is_ascii()),
@@ -1329,14 +1361,15 @@ fn case_in_domain(spec: &ReviewSpec, c: &[PyVal]) -> bool {
 /// The default value, moved inside the domain when it falls outside (an int
 /// range that excludes 0 sits at the endpoint nearest 0; one character is
 /// "a"), so one-argument-at-a-time cases are not all dropped for the others.
-fn default_in(ty: ArgType, d: Domain) -> PyVal {
+fn default_in(ty: ArgType, d: &Domain) -> PyVal {
     let v = default_val(ty);
     if in_domain(&v, d) {
         return v;
     }
     match (ty, d) {
-        (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(if lo > 0 { lo } else { hi }),
+        (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(if *lo > 0 { *lo } else { *hi }),
         (ArgType::Str, Domain::OneChar) => PyVal::Str("a".into()),
+        (ArgType::Str, Domain::OneOf { values, .. }) if !values.is_empty() => PyVal::Str(values[0].clone()),
         _ => v,
     }
 }
@@ -1349,8 +1382,8 @@ fn base_vals(spec: &ReviewSpec) -> Vec<PyVal> {
 /// domain, then corners of the domain itself (its endpoints and their
 /// neighbours, 0 and ±1 when inside; for strings, in-domain characters that
 /// separate implementations).
-fn domain_corners(ty: ArgType, d: Domain) -> Vec<PyVal> {
-    if d == Domain::Any {
+fn domain_corners(ty: ArgType, d: &Domain) -> Vec<PyVal> {
+    if *d == Domain::Any {
         return boundary_cases(ty);
     }
     let mut v: Vec<PyVal> = boundary_cases(ty).into_iter().filter(|x| in_domain(x, d)).collect();
@@ -1358,11 +1391,11 @@ fn domain_corners(ty: ArgType, d: Domain) -> Vec<PyVal> {
     const ASCII: &[&str] = &["a", "A", "0", " ", "\t", "\n", "\x7f", "Hello, World!", "  x  ", "-12"];
     const ONE: &[&str] = &["a", "A", "z", "0", " ", "\n", "é", "ß", "İ", "ǅ", "\u{3000}", "٣", "ﬁ", "😀"];
     match (ty, d) {
-        (ArgType::Int, Domain::IntRange(lo, hi)) => {
+        (ArgType::Int, &Domain::IntRange(lo, hi)) => {
             let near = [Some(lo), lo.checked_add(1), hi.checked_sub(1), Some(hi), Some(0), Some(1), Some(-1)];
             v.extend(near.into_iter().flatten().filter(|x| lo <= *x && *x <= hi).map(PyVal::Int));
         }
-        (ArgType::ListInt, Domain::IntRange(lo, hi)) => {
+        (ArgType::ListInt, &Domain::IntRange(lo, hi)) => {
             for xs in [vec![lo], vec![hi], vec![lo, hi], vec![hi, lo], vec![lo, lo]] {
                 v.push(PyVal::ListInt(xs));
             }
@@ -1379,14 +1412,37 @@ fn domain_corners(ty: ArgType, d: Domain) -> Vec<PyVal> {
                 v.push(PyVal::ListStr(strs(xs)));
             }
         }
+        (ArgType::Str, Domain::OneOf { values, .. }) => {
+            // A finite list is checked completely: every name is a corner, up
+            // to VALUE_SET_ALL names. A longer list gets that many spread
+            // across it (first and last included) plus random draws.
+            let n = values.len();
+            if n <= VALUE_SET_ALL {
+                v.extend(values.iter().map(|s| PyVal::Str(s.clone())));
+            } else {
+                v.extend((0..VALUE_SET_ALL).map(|k| PyVal::Str(values[k * (n - 1) / (VALUE_SET_ALL - 1)].clone())));
+            }
+        }
+        (ArgType::ListStr, Domain::OneOf { values, .. }) if !values.is_empty() => {
+            let a = values[0].clone();
+            let b = values[values.len() - 1].clone();
+            for xs in [vec![a.clone()], vec![a.clone(), b.clone()], vec![b.clone(), a.clone()], vec![a.clone(), a]] {
+                v.push(PyVal::ListStr(xs));
+            }
+        }
         _ => {}
     }
     v.retain(|x| in_domain(x, d));
     v
 }
 
+/// Lists of up to this many strings (`str[in ...]`) have every value judged
+/// for each argument, one argument at a time. Pairs across two such arguments
+/// are sampled.
+const VALUE_SET_ALL: usize = 4096;
+
 /// A random value inside the domain, drawn from the same seeded stream.
-fn gen_in(rng: &mut Rng, ty: ArgType, d: Domain) -> PyVal {
+fn gen_in(rng: &mut Rng, ty: ArgType, d: &Domain) -> PyVal {
     fn int_in(rng: &mut Rng, lo: i64, hi: i64) -> i64 {
         let span = (hi as i128 - lo as i128 + 1) as u128;
         let pick = |rng: &mut Rng, w: u128| (rng.next() as u128 % w) as i128;
@@ -1409,7 +1465,12 @@ fn gen_in(rng: &mut Rng, ty: ArgType, d: Domain) -> PyVal {
         };
         x as i64
     }
-    fn str_in(rng: &mut Rng, d: Domain) -> String {
+    fn str_in(rng: &mut Rng, d: &Domain) -> String {
+        if let Domain::OneOf { values, .. } = d {
+            if !values.is_empty() {
+                return values[(rng.next() % values.len() as u64) as usize].clone();
+            }
+        }
         let s = match gen_arg(rng, ArgType::Str) {
             PyVal::Str(s) => s,
             _ => unreachable!(),
@@ -1429,8 +1490,8 @@ fn gen_in(rng: &mut Rng, ty: ArgType, d: Domain) -> PyVal {
     }
     match (ty, d) {
         (_, Domain::Any) => gen_arg(rng, ty),
-        (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(int_in(rng, lo, hi)),
-        (ArgType::ListInt, Domain::IntRange(lo, hi)) => {
+        (ArgType::Int, &Domain::IntRange(lo, hi)) => PyVal::Int(int_in(rng, lo, hi)),
+        (ArgType::ListInt, &Domain::IntRange(lo, hi)) => {
             let len = (rng.next() % 7) as usize;
             PyVal::ListInt((0..len).map(|_| int_in(rng, lo, hi)).collect())
         }
@@ -1971,6 +2032,125 @@ pub fn review_limited(
     review_with_inputs(candidate_path, reference_path, spec, &[], safety_secs)
 }
 
+
+/// Resolve every `str[in ...]` domain in `spec` from the candidate's own code
+/// (0.24.0), in a separate evaluator run with the same package context the
+/// review uses. A name that cannot be resolved, or that is not a non-empty
+/// list, tuple, set or dict of strings, is an error naming the source: never a
+/// silent fallback to unconstrained inputs.
+fn resolve_value_sets(cand: &Path, spec: &ReviewSpec, safety_secs: u64) -> Result<ReviewSpec, String> {
+    let sources: Vec<String> = spec
+        .domains
+        .iter()
+        .filter_map(|d| match d {
+            Domain::OneOf { source, values } if values.is_empty() => Some(source.clone()),
+            _ => None,
+        })
+        .collect();
+    if sources.is_empty() {
+        return Ok(spec.clone());
+    }
+    const SCRIPT: &str = r#"
+import sys, os, importlib, importlib.util as u
+cand = sys.argv[1]
+def _pkg_of(p):
+    d = os.path.dirname(os.path.abspath(p)); parts = []
+    while os.path.exists(os.path.join(d, '__init__.py')):
+        parts.insert(0, os.path.basename(d)); d = os.path.dirname(d)
+    return d, '.'.join(parts)
+root, pkg = _pkg_of(cand)
+sys.path.insert(0, root if pkg else os.path.dirname(os.path.abspath(cand)))
+_cand_mod = []
+def cand_module():
+    if not _cand_mod:
+        full = (pkg + '.cand') if pkg else 'cand'
+        s = u.spec_from_file_location(full, cand); m = u.module_from_spec(s)
+        if pkg: m.__package__ = pkg
+        sys.modules[full] = m; s.loader.exec_module(m); _cand_mod.append(m)
+    return _cand_mod[0]
+for i, src in enumerate(sys.argv[2:]):
+    try:
+        mod, _, name = src.rpartition('.')
+        if mod == '':
+            m = cand_module()
+        elif mod.startswith('.'):
+            if not pkg: raise ImportError('a relative name needs the function to be inside a package')
+            m = importlib.import_module(mod, pkg)
+        else:
+            m = importlib.import_module(mod)
+        if not hasattr(m, name): raise AttributeError(f'{mod or "the module"} has no {name}')
+        obj = getattr(m, name)
+        if isinstance(obj, dict): vals = list(obj)
+        elif isinstance(obj, (set, frozenset)): vals = sorted(obj) if all(isinstance(v, str) for v in obj) else list(obj)
+        elif isinstance(obj, (list, tuple)): vals = list(obj)
+        else: raise TypeError(f'is a {type(obj).__name__}, not a list, tuple, set or dict')
+        if not vals: raise ValueError('is empty')
+        bad = [v for v in vals if not isinstance(v, str)]
+        if bad: raise TypeError(f'holds a {type(bad[0]).__name__}, not only strings')
+        seen = set(); out = []
+        for v in vals:
+            if v not in seen: seen.add(v); out.append(v)
+        print('__VS__\t%d\tOK\t%s' % (i, ','.join(v.encode('utf-8', 'surrogatepass').hex() for v in out)))
+    except Exception as e:
+        print('__VS__\t%d\tERR\t%s: %s' % (i, type(e).__name__, str(e).replace('\n', ' ')))
+"#;
+    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("equiv_vs_{}_{call}.py", std::process::id()));
+    std::fs::write(&path, SCRIPT).map_err(|e| format!("value-set resolver: {e}"))?;
+    let mut cmd = evaluator_command();
+    cmd.arg(&path).arg(cand).args(&sources).env("PYTHONHASHSEED", "0").env("PYTHONDONTWRITEBYTECODE", "1");
+    let out = run_watched(cmd, std::time::Duration::from_secs(safety_secs));
+    let _ = std::fs::remove_file(&path);
+    let out = out
+        .map_err(|e| format!("python3 not runnable: {e}"))?
+        .ok_or_else(|| format!("resolving the input domains {} ran past {safety_secs}s", sources.join(", ")))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut resolved: Vec<Option<Vec<String>>> = vec![None; sources.len()];
+    for line in stdout.lines() {
+        let Some(rest) = line.strip_prefix("__VS__\t") else { continue };
+        let mut f = rest.splitn(3, '\t');
+        let (Some(i), Some(kind), Some(body)) = (f.next(), f.next(), f.next()) else { continue };
+        let Ok(i) = i.parse::<usize>() else { continue };
+        if i >= sources.len() {
+            continue;
+        }
+        match kind {
+            "OK" => {
+                let mut vals = Vec::new();
+                for h in body.split(',') {
+                    let bytes: Option<Vec<u8>> =
+                        (0..h.len()).step_by(2).map(|k| h.get(k..k + 2).and_then(|b| u8::from_str_radix(b, 16).ok())).collect();
+                    match bytes.and_then(|b| String::from_utf8(b).ok()) {
+                        Some(v) => vals.push(v),
+                        None => return Err(format!("input domain str[in {}]: a value is not valid Unicode text", sources[i])),
+                    }
+                }
+                resolved[i] = Some(vals);
+            }
+            _ => return Err(format!("could not resolve the input domain str[in {}]: {body}", sources[i])),
+        }
+    }
+    let mut out_spec = spec.clone();
+    let mut k = 0;
+    for d in out_spec.domains.iter_mut() {
+        if let Domain::OneOf { source, values } = d {
+            if values.is_empty() {
+                match resolved.get(k).cloned().flatten() {
+                    Some(v) => *values = v,
+                    None => {
+                        let err = String::from_utf8_lossy(&out.stderr);
+                        let last = err.lines().last().unwrap_or("no output").to_string();
+                        return Err(format!("could not resolve the input domain str[in {source}]: {last}"));
+                    }
+                }
+                k += 1;
+            }
+        }
+    }
+    Ok(out_spec)
+}
+
 /// `review_limited` plus inputs harvested from the project's own code (see
 /// `harvest`). They are bound into `spec_sha256` and counted in the receipt;
 /// with none, the receipt is byte-identical to `review_limited`'s.
@@ -1987,9 +2167,22 @@ pub fn review_with_inputs(
     let ref_text = String::from_utf8_lossy(&ref_src);
     let harvested: Vec<Slots> =
         harvested.iter().filter(|h| h.len() == spec.args.len()).cloned().collect();
-    let (cases, large_from, inputs, soft) = gen_cases_soft(spec, &[&cand_text, &ref_text], &harvested);
+    // Value-set domains are resolved first; a list that cannot be resolved is
+    // "could not check", with the reason, and no input is generated.
+    let (resolved, unresolved) = match resolve_value_sets(candidate_path, spec, safety_secs) {
+        Ok(s) => (s, None),
+        Err(reason) => (spec.clone(), Some(reason)),
+    };
+    let spec = &resolved;
+    let (cases, large_from, inputs, soft) = if unresolved.is_some() {
+        (Vec::new(), 0, InputCounts::default(), Vec::new())
+    } else {
+        gen_cases_soft(spec, &[&cand_text, &ref_text], &harvested)
+    };
 
-    let ev = match run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs) {
+    let ev = match unresolved.map(|r| Err(PyFail::Msg(r))).unwrap_or_else(|| {
+        run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs)
+    }) {
         Ok(v) => v,
         Err(PyFail::Msg(reason)) => Evaluated { verdict: ReviewVerdict::Error { reason }, python: String::new(), exceptions: 0, disagreements: Vec::new() },
         Err(PyFail::Stopped) => {
