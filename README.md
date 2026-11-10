@@ -78,7 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - uses: Neelagiri65/equiv@v0.26.0
+      - uses: Neelagiri65/equiv@v0.27.0
         with: { keyless: "true", only-label: "refactor" }
 ```
 
@@ -102,7 +102,7 @@ Other ways to run it:
   divergences in the comment **without blocking**, because in an ordinary PR most
   changes are intended. Set `fail-on-divergence: "true"` to block anyway.
 
-Pin a released tag (`@v0.26.0`), not `@main`, so results do not change under you.
+Pin a released tag (`@v0.27.0`), not `@main`, so results do not change under you.
 
 ## Use it from the command line
 
