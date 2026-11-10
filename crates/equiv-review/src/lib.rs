@@ -1286,6 +1286,14 @@ fn gen_cases_soft(
             }
         }
     }
+    // Value-set domains (0.25.0): every input is drawn from the project's own
+    // list, like a harvested input, so one that runs past the step budget (a
+    // parser on a long real file) is "not judged at this input", counted and
+    // printed, and the review goes on; `--budget` judges it. Unconstrained and
+    // other domains keep "exhaustion ends the review" as before.
+    if spec.domains.iter().any(|d| matches!(d, Domain::OneOf { .. })) {
+        soft = (0..large_from).collect();
+    }
     (cases, large_from, counts, soft)
 }
 
@@ -2985,6 +2993,16 @@ fn run_python(
              a returned value; add inputs the function accepts (literal calls in the project's tests, or --inputs-from)"
         );
         return Ok(done(ReviewVerdict::Refused { reason }, exceptions));
+    }
+    // Inputs existed but every one ran past the step budget: nothing was
+    // compared, so this is "could not check", never "agreed on all 0".
+    if n == 0 && not_judged > 0 {
+        let reason = format!(
+            "no input was judged: all {not_judged} inputs ran past the step budget of {} Python line/jump events; \
+             raise it with --budget",
+            spec.budget
+        );
+        return Ok(done(ReviewVerdict::Error { reason }, exceptions));
     }
     Ok(done(ReviewVerdict::Equivalent { n, not_judged }, exceptions))
 }

@@ -57,6 +57,13 @@ inputs:
       pull_request_target to force it. See docs/signing-model.md.
     required: false
     default: ""
+  budget:
+    description: >
+      Step budget per call, in Python line/jump events (default 4000000).
+      Raise it for heavy functions such as parsers on real files. Bound into
+      every receipt.
+    required: false
+    default: ""
   keyless:
     description: >
       When "true", keyless-sign each in-toto attestation with cosign (Sigstore):
@@ -97,6 +104,7 @@ runs:
         EQUIV_FAIL: ${{ inputs.fail-on-divergence }}
         EQUIV_ONLY_LABEL: ${{ inputs.only-label }}
         EQUIV_FAIL_NOT_CHECKED: ${{ inputs.fail-on-not-checked }}
+        EQUIV_BUDGET: ${{ inputs.budget }}
         # Secret seed, masked by Actions; the entrypoint never echoes it.
         EQUIV_SIGNING_KEY: ${{ inputs.signing-key }}
         EQUIV_KEYLESS: ${{ inputs.keyless }}
