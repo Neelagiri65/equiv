@@ -81,7 +81,16 @@ impl ArgType {
                 let d = match dom {
                     "ascii" => Domain::Ascii,
                     "1" => Domain::OneChar,
-                    _ => return None,
+                    _ => {
+                        let src = dom.strip_prefix("in ")?.trim();
+                        let ok = !src.is_empty()
+                            && !src.ends_with('.')
+                            && src.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
+                        if !ok {
+                            return None;
+                        }
+                        Domain::OneOf { source: src.to_string(), values: Vec::new() }
+                    }
                 };
                 (if outer { ArgType::ListStr } else { ArgType::Str }, d)
             }
@@ -101,13 +110,14 @@ pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
         .args
         .iter()
         .enumerate()
-        .filter(|(i, _)| dom(spec, *i) != Domain::Any)
+        .filter(|(i, _)| *dom(spec, *i) != Domain::Any)
         .map(|(i, t)| {
-            let d = match dom(spec, i) {
-                Domain::IntRange(lo, hi) => format!("[{lo}..{hi}]"),
-                Domain::Ascii => "[ascii]".into(),
-                Domain::OneChar => "[1]".into(),
-                Domain::Any => String::new(),
+            let (d, count) = match dom(spec, i) {
+                Domain::IntRange(lo, hi) => (format!("[{lo}..{hi}]"), String::new()),
+                Domain::Ascii => ("[ascii]".into(), String::new()),
+                Domain::OneChar => ("[1]".into(), String::new()),
+                Domain::OneOf { source, values } => (format!("[in {source}]"), format!(" ({} values)", values.len())),
+                Domain::Any => (String::new(), String::new()),
             };
             let label = match t {
                 ArgType::Int => format!("int{d}"),
@@ -116,7 +126,7 @@ pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
                 ArgType::ListStr => format!("list[str{d}]"),
                 other => format!("{other:?}{d}"),
             };
-            format!("arg {} {label}", i + 1)
+            format!("arg {} {label}{count}", i + 1)
         })
         .collect();
     Some(parts.join(", "))
@@ -126,7 +136,7 @@ pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
 /// constrains the elements. Generation, corners, source literals and harvested
 /// inputs all stay inside it; a review under a domain is bound into the
 /// receipt, so it can never be mistaken for a review of the whole type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Domain {
     Any,
     /// Inclusive integer range.
@@ -135,6 +145,12 @@ pub enum Domain {
     Ascii,
     /// Exactly one code point (Python `len(s) == 1`).
     OneChar,
+    /// One of a fixed list of strings from the project's own code (0.24.0):
+    /// `str[in mod.NAME]`, `str[in .constant.NAME]` (relative to the
+    /// candidate's package) or `str[in NAME]` (the candidate module). Parsed
+    /// with `values` empty; resolved by the review before any input is
+    /// generated, and the resolved values are bound into the spec hash.
+    OneOf { source: String, values: Vec<String> },
 }
 
 /// Default step budget per call: how many Python line and jump events one call
@@ -242,6 +258,18 @@ impl ReviewSpec {
                     }
                     Domain::Ascii => v.push(2),
                     Domain::OneChar => v.push(3),
+                    // The source name and every resolved value, so a pass is
+                    // bound to the exact list it was drawn from.
+                    Domain::OneOf { source, values } => {
+                        v.push(4);
+                        v.extend_from_slice(source.as_bytes());
+                        v.push(0);
+                        v.extend_from_slice(&(values.len() as u32).to_le_bytes());
+                        for s in values {
+                            v.extend_from_slice(s.as_bytes());
+                            v.push(0);
+                        }
+                    }
                 }
             }
         }
@@ -1295,8 +1323,9 @@ fn flag_bases(spec: &ReviewSpec) -> Vec<Vec<PyVal>> {
 // the identity on the unconstrained path: same values, same order, no extra
 // random draws, so unconstrained reviews generate byte-identical cases.
 
-fn dom(spec: &ReviewSpec, i: usize) -> Domain {
-    spec.domains.get(i).copied().unwrap_or(Domain::Any)
+fn dom(spec: &ReviewSpec, i: usize) -> &Domain {
+    static ANY: Domain = Domain::Any;
+    spec.domains.get(i).unwrap_or(&ANY)
 }
 
 fn has_domains(spec: &ReviewSpec) -> bool {
@@ -1304,12 +1333,13 @@ fn has_domains(spec: &ReviewSpec) -> bool {
 }
 
 /// Is `v` inside `d`? For a list, every element must be.
-fn in_domain(v: &PyVal, d: Domain) -> bool {
+fn in_domain(v: &PyVal, d: &Domain) -> bool {
     let one = |s: &str| s.chars().count() == 1;
     match (d, v) {
         (Domain::Any, _) => true,
-        (Domain::IntRange(lo, hi), PyVal::Int(x)) => lo <= *x && *x <= hi,
-        (Domain::IntRange(lo, hi), PyVal::ListInt(xs)) => xs.iter().all(|x| lo <= *x && *x <= hi),
+        (Domain::IntRange(lo, hi), PyVal::Int(x)) => lo <= x && x <= hi,
+        (Domain::IntRange(lo, hi), PyVal::ListInt(xs)) => xs.iter().all(|x| lo <= x && x <= hi),
+        (Domain::OneOf { .. }, _) => true, // STUB: not yet applied
         (Domain::Ascii, PyVal::Str(s)) => s.is_ascii(),
         (Domain::Ascii, PyVal::StrUnits(u)) => u.iter().all(|c| *c < 0x80),
         (Domain::Ascii, PyVal::ListStr(xs)) => xs.iter().all(|s| s.is_ascii()),
@@ -1329,13 +1359,13 @@ fn case_in_domain(spec: &ReviewSpec, c: &[PyVal]) -> bool {
 /// The default value, moved inside the domain when it falls outside (an int
 /// range that excludes 0 sits at the endpoint nearest 0; one character is
 /// "a"), so one-argument-at-a-time cases are not all dropped for the others.
-fn default_in(ty: ArgType, d: Domain) -> PyVal {
+fn default_in(ty: ArgType, d: &Domain) -> PyVal {
     let v = default_val(ty);
     if in_domain(&v, d) {
         return v;
     }
     match (ty, d) {
-        (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(if lo > 0 { lo } else { hi }),
+        (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(if *lo > 0 { *lo } else { *hi }),
         (ArgType::Str, Domain::OneChar) => PyVal::Str("a".into()),
         _ => v,
     }
@@ -1349,8 +1379,8 @@ fn base_vals(spec: &ReviewSpec) -> Vec<PyVal> {
 /// domain, then corners of the domain itself (its endpoints and their
 /// neighbours, 0 and ±1 when inside; for strings, in-domain characters that
 /// separate implementations).
-fn domain_corners(ty: ArgType, d: Domain) -> Vec<PyVal> {
-    if d == Domain::Any {
+fn domain_corners(ty: ArgType, d: &Domain) -> Vec<PyVal> {
+    if *d == Domain::Any {
         return boundary_cases(ty);
     }
     let mut v: Vec<PyVal> = boundary_cases(ty).into_iter().filter(|x| in_domain(x, d)).collect();
@@ -1358,11 +1388,11 @@ fn domain_corners(ty: ArgType, d: Domain) -> Vec<PyVal> {
     const ASCII: &[&str] = &["a", "A", "0", " ", "\t", "\n", "\x7f", "Hello, World!", "  x  ", "-12"];
     const ONE: &[&str] = &["a", "A", "z", "0", " ", "\n", "é", "ß", "İ", "ǅ", "\u{3000}", "٣", "ﬁ", "😀"];
     match (ty, d) {
-        (ArgType::Int, Domain::IntRange(lo, hi)) => {
+        (ArgType::Int, &Domain::IntRange(lo, hi)) => {
             let near = [Some(lo), lo.checked_add(1), hi.checked_sub(1), Some(hi), Some(0), Some(1), Some(-1)];
             v.extend(near.into_iter().flatten().filter(|x| lo <= *x && *x <= hi).map(PyVal::Int));
         }
-        (ArgType::ListInt, Domain::IntRange(lo, hi)) => {
+        (ArgType::ListInt, &Domain::IntRange(lo, hi)) => {
             for xs in [vec![lo], vec![hi], vec![lo, hi], vec![hi, lo], vec![lo, lo]] {
                 v.push(PyVal::ListInt(xs));
             }
@@ -1386,7 +1416,7 @@ fn domain_corners(ty: ArgType, d: Domain) -> Vec<PyVal> {
 }
 
 /// A random value inside the domain, drawn from the same seeded stream.
-fn gen_in(rng: &mut Rng, ty: ArgType, d: Domain) -> PyVal {
+fn gen_in(rng: &mut Rng, ty: ArgType, d: &Domain) -> PyVal {
     fn int_in(rng: &mut Rng, lo: i64, hi: i64) -> i64 {
         let span = (hi as i128 - lo as i128 + 1) as u128;
         let pick = |rng: &mut Rng, w: u128| (rng.next() as u128 % w) as i128;
@@ -1409,7 +1439,7 @@ fn gen_in(rng: &mut Rng, ty: ArgType, d: Domain) -> PyVal {
         };
         x as i64
     }
-    fn str_in(rng: &mut Rng, d: Domain) -> String {
+    fn str_in(rng: &mut Rng, d: &Domain) -> String {
         let s = match gen_arg(rng, ArgType::Str) {
             PyVal::Str(s) => s,
             _ => unreachable!(),
@@ -1429,8 +1459,8 @@ fn gen_in(rng: &mut Rng, ty: ArgType, d: Domain) -> PyVal {
     }
     match (ty, d) {
         (_, Domain::Any) => gen_arg(rng, ty),
-        (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(int_in(rng, lo, hi)),
-        (ArgType::ListInt, Domain::IntRange(lo, hi)) => {
+        (ArgType::Int, &Domain::IntRange(lo, hi)) => PyVal::Int(int_in(rng, lo, hi)),
+        (ArgType::ListInt, &Domain::IntRange(lo, hi)) => {
             let len = (rng.next() % 7) as usize;
             PyVal::ListInt((0..len).map(|_| int_in(rng, lo, hi)).collect())
         }
