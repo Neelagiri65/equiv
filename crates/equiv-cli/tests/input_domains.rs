@@ -91,3 +91,35 @@ fn pr_manifest_accepts_a_domain() {
     assert_eq!(code, Some(0), "{out}");
     assert!(out.contains("int[1..9999]"), "the PR comment names the domain: {out}");
 }
+
+#[test]
+fn pr_manifest_accepts_a_value_set_from_the_package() {
+    // The charset_normalizer shape: a function inside a package takes one of
+    // the names listed in a sibling constants module.
+    let d = dir("pr_vs");
+    std::fs::create_dir_all(d.join("pkg")).unwrap();
+    std::fs::write(d.join("pkg/__init__.py"), "").unwrap();
+    std::fs::write(d.join("pkg/constant.py"), "NAMES = ['utf_8', 'cp1252', 'latin_1']\n").unwrap();
+    std::fs::write(d.join("pkg/m.py"), "from .constant import NAMES\n\ndef f(s):\n    return {'utf_8': 1, 'cp1252': 2, 'latin_1': 3}.get(s, 0)\n").unwrap();
+    git(&d, &["init", "-q"]);
+    git(&d, &["add", "."]);
+    git(&d, &["commit", "-q", "-m", "base"]);
+    std::fs::write(d.join("pkg/m.py"), "from .constant import NAMES\n\ndef f(s):\n    return {'utf_8': 1, 'cp1252': 2, 'latin_1': 3}[s]\n").unwrap();
+    let run = |manifest: &str| {
+        std::fs::write(d.join(".equiv-review"), manifest).unwrap();
+        let out = Command::new(BIN)
+            .args(["review-pr", ".equiv-review", "--base", "HEAD"])
+            .current_dir(&d)
+            .env("EQUIV_METRICS", "off")
+            .output()
+            .unwrap();
+        (out.status.code(), format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)))
+    };
+    let (plain, out) = run("pkg/m.py : f : str\n");
+    assert_eq!(plain, Some(1), "{out}");
+    let (code, out) = run("pkg/m.py : f : str[in .constant.NAMES]\n");
+    assert_eq!(code, Some(0), "{out}");
+    assert!(out.contains("str[in .constant.NAMES] (3 values)"), "{out}");
+    let (bad, out) = run("pkg/m.py : f : str[in .constant.MISSING]\n");
+    assert_eq!(bad, Some(2), "an unresolvable list is could-not-check, never green: {out}");
+}

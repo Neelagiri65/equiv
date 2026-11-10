@@ -1339,7 +1339,9 @@ fn in_domain(v: &PyVal, d: &Domain) -> bool {
         (Domain::Any, _) => true,
         (Domain::IntRange(lo, hi), PyVal::Int(x)) => lo <= x && x <= hi,
         (Domain::IntRange(lo, hi), PyVal::ListInt(xs)) => xs.iter().all(|x| lo <= x && x <= hi),
-        (Domain::OneOf { .. }, _) => true, // STUB: not yet applied
+        (Domain::OneOf { values, .. }, PyVal::Str(s)) => values.iter().any(|x| x == s),
+        (Domain::OneOf { .. }, PyVal::StrUnits(_)) => false,
+        (Domain::OneOf { values, .. }, PyVal::ListStr(xs)) => xs.iter().all(|s| values.iter().any(|x| x == s)),
         (Domain::Ascii, PyVal::Str(s)) => s.is_ascii(),
         (Domain::Ascii, PyVal::StrUnits(u)) => u.iter().all(|c| *c < 0x80),
         (Domain::Ascii, PyVal::ListStr(xs)) => xs.iter().all(|s| s.is_ascii()),
@@ -1367,6 +1369,7 @@ fn default_in(ty: ArgType, d: &Domain) -> PyVal {
     match (ty, d) {
         (ArgType::Int, Domain::IntRange(lo, hi)) => PyVal::Int(if *lo > 0 { *lo } else { *hi }),
         (ArgType::Str, Domain::OneChar) => PyVal::Str("a".into()),
+        (ArgType::Str, Domain::OneOf { values, .. }) if !values.is_empty() => PyVal::Str(values[0].clone()),
         _ => v,
     }
 }
@@ -1409,6 +1412,23 @@ fn domain_corners(ty: ArgType, d: &Domain) -> Vec<PyVal> {
                 v.push(PyVal::ListStr(strs(xs)));
             }
         }
+        (ArgType::Str, Domain::OneOf { values, .. }) => {
+            // Every name when the list is short; else 64 spread across it,
+            // first and last included (the rest come from random draws).
+            let n = values.len();
+            if n <= 64 {
+                v.extend(values.iter().map(|s| PyVal::Str(s.clone())));
+            } else {
+                v.extend((0..64).map(|k| PyVal::Str(values[k * (n - 1) / 63].clone())));
+            }
+        }
+        (ArgType::ListStr, Domain::OneOf { values, .. }) if !values.is_empty() => {
+            let a = values[0].clone();
+            let b = values[values.len() - 1].clone();
+            for xs in [vec![a.clone()], vec![a.clone(), b.clone()], vec![b.clone(), a.clone()], vec![a.clone(), a]] {
+                v.push(PyVal::ListStr(xs));
+            }
+        }
         _ => {}
     }
     v.retain(|x| in_domain(x, d));
@@ -1440,6 +1460,11 @@ fn gen_in(rng: &mut Rng, ty: ArgType, d: &Domain) -> PyVal {
         x as i64
     }
     fn str_in(rng: &mut Rng, d: &Domain) -> String {
+        if let Domain::OneOf { values, .. } = d {
+            if !values.is_empty() {
+                return values[(rng.next() % values.len() as u64) as usize].clone();
+            }
+        }
         let s = match gen_arg(rng, ArgType::Str) {
             PyVal::Str(s) => s,
             _ => unreachable!(),
@@ -2001,6 +2026,125 @@ pub fn review_limited(
     review_with_inputs(candidate_path, reference_path, spec, &[], safety_secs)
 }
 
+
+/// Resolve every `str[in ...]` domain in `spec` from the candidate's own code
+/// (0.24.0), in a separate evaluator run with the same package context the
+/// review uses. A name that cannot be resolved, or that is not a non-empty
+/// list, tuple, set or dict of strings, is an error naming the source: never a
+/// silent fallback to unconstrained inputs.
+fn resolve_value_sets(cand: &Path, spec: &ReviewSpec, safety_secs: u64) -> Result<ReviewSpec, String> {
+    let sources: Vec<String> = spec
+        .domains
+        .iter()
+        .filter_map(|d| match d {
+            Domain::OneOf { source, values } if values.is_empty() => Some(source.clone()),
+            _ => None,
+        })
+        .collect();
+    if sources.is_empty() {
+        return Ok(spec.clone());
+    }
+    const SCRIPT: &str = r#"
+import sys, os, importlib, importlib.util as u
+cand = sys.argv[1]
+def _pkg_of(p):
+    d = os.path.dirname(os.path.abspath(p)); parts = []
+    while os.path.exists(os.path.join(d, '__init__.py')):
+        parts.insert(0, os.path.basename(d)); d = os.path.dirname(d)
+    return d, '.'.join(parts)
+root, pkg = _pkg_of(cand)
+sys.path.insert(0, root if pkg else os.path.dirname(os.path.abspath(cand)))
+_cand_mod = []
+def cand_module():
+    if not _cand_mod:
+        full = (pkg + '.cand') if pkg else 'cand'
+        s = u.spec_from_file_location(full, cand); m = u.module_from_spec(s)
+        if pkg: m.__package__ = pkg
+        sys.modules[full] = m; s.loader.exec_module(m); _cand_mod.append(m)
+    return _cand_mod[0]
+for i, src in enumerate(sys.argv[2:]):
+    try:
+        mod, _, name = src.rpartition('.')
+        if mod == '':
+            m = cand_module()
+        elif mod.startswith('.'):
+            if not pkg: raise ImportError('a relative name needs the function to be inside a package')
+            m = importlib.import_module(mod, pkg)
+        else:
+            m = importlib.import_module(mod)
+        if not hasattr(m, name): raise AttributeError(f'{mod or "the module"} has no {name}')
+        obj = getattr(m, name)
+        if isinstance(obj, dict): vals = list(obj)
+        elif isinstance(obj, (set, frozenset)): vals = sorted(obj) if all(isinstance(v, str) for v in obj) else list(obj)
+        elif isinstance(obj, (list, tuple)): vals = list(obj)
+        else: raise TypeError(f'is a {type(obj).__name__}, not a list, tuple, set or dict')
+        if not vals: raise ValueError('is empty')
+        bad = [v for v in vals if not isinstance(v, str)]
+        if bad: raise TypeError(f'holds a {type(bad[0]).__name__}, not only strings')
+        seen = set(); out = []
+        for v in vals:
+            if v not in seen: seen.add(v); out.append(v)
+        print('__VS__\t%d\tOK\t%s' % (i, ','.join(v.encode('utf-8', 'surrogatepass').hex() for v in out)))
+    except Exception as e:
+        print('__VS__\t%d\tERR\t%s: %s' % (i, type(e).__name__, str(e).replace('\n', ' ')))
+"#;
+    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("equiv_vs_{}_{call}.py", std::process::id()));
+    std::fs::write(&path, SCRIPT).map_err(|e| format!("value-set resolver: {e}"))?;
+    let mut cmd = evaluator_command();
+    cmd.arg(&path).arg(cand).args(&sources).env("PYTHONHASHSEED", "0").env("PYTHONDONTWRITEBYTECODE", "1");
+    let out = run_watched(cmd, std::time::Duration::from_secs(safety_secs));
+    let _ = std::fs::remove_file(&path);
+    let out = out
+        .map_err(|e| format!("python3 not runnable: {e}"))?
+        .ok_or_else(|| format!("resolving the input domains {} ran past {safety_secs}s", sources.join(", ")))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut resolved: Vec<Option<Vec<String>>> = vec![None; sources.len()];
+    for line in stdout.lines() {
+        let Some(rest) = line.strip_prefix("__VS__\t") else { continue };
+        let mut f = rest.splitn(3, '\t');
+        let (Some(i), Some(kind), Some(body)) = (f.next(), f.next(), f.next()) else { continue };
+        let Ok(i) = i.parse::<usize>() else { continue };
+        if i >= sources.len() {
+            continue;
+        }
+        match kind {
+            "OK" => {
+                let mut vals = Vec::new();
+                for h in body.split(',') {
+                    let bytes: Option<Vec<u8>> =
+                        (0..h.len()).step_by(2).map(|k| h.get(k..k + 2).and_then(|b| u8::from_str_radix(b, 16).ok())).collect();
+                    match bytes.and_then(|b| String::from_utf8(b).ok()) {
+                        Some(v) => vals.push(v),
+                        None => return Err(format!("input domain str[in {}]: a value is not valid Unicode text", sources[i])),
+                    }
+                }
+                resolved[i] = Some(vals);
+            }
+            _ => return Err(format!("could not resolve the input domain str[in {}]: {body}", sources[i])),
+        }
+    }
+    let mut out_spec = spec.clone();
+    let mut k = 0;
+    for d in out_spec.domains.iter_mut() {
+        if let Domain::OneOf { source, values } = d {
+            if values.is_empty() {
+                match resolved.get(k).cloned().flatten() {
+                    Some(v) => *values = v,
+                    None => {
+                        let err = String::from_utf8_lossy(&out.stderr);
+                        let last = err.lines().last().unwrap_or("no output").to_string();
+                        return Err(format!("could not resolve the input domain str[in {source}]: {last}"));
+                    }
+                }
+                k += 1;
+            }
+        }
+    }
+    Ok(out_spec)
+}
+
 /// `review_limited` plus inputs harvested from the project's own code (see
 /// `harvest`). They are bound into `spec_sha256` and counted in the receipt;
 /// with none, the receipt is byte-identical to `review_limited`'s.
@@ -2017,9 +2161,22 @@ pub fn review_with_inputs(
     let ref_text = String::from_utf8_lossy(&ref_src);
     let harvested: Vec<Slots> =
         harvested.iter().filter(|h| h.len() == spec.args.len()).cloned().collect();
-    let (cases, large_from, inputs, soft) = gen_cases_soft(spec, &[&cand_text, &ref_text], &harvested);
+    // Value-set domains are resolved first; a list that cannot be resolved is
+    // "could not check", with the reason, and no input is generated.
+    let (resolved, unresolved) = match resolve_value_sets(candidate_path, spec, safety_secs) {
+        Ok(s) => (s, None),
+        Err(reason) => (spec.clone(), Some(reason)),
+    };
+    let spec = &resolved;
+    let (cases, large_from, inputs, soft) = if unresolved.is_some() {
+        (Vec::new(), 0, InputCounts::default(), Vec::new())
+    } else {
+        gen_cases_soft(spec, &[&cand_text, &ref_text], &harvested)
+    };
 
-    let ev = match run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs) {
+    let ev = match unresolved.map(|r| Err(PyFail::Msg(r))).unwrap_or_else(|| {
+        run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs)
+    }) {
         Ok(v) => v,
         Err(PyFail::Msg(reason)) => Evaluated { verdict: ReviewVerdict::Error { reason }, python: String::new(), exceptions: 0, disagreements: Vec::new() },
         Err(PyFail::Stopped) => {
