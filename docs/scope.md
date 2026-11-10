@@ -130,6 +130,20 @@ across a PR in a manifest at the repository root. The format of each line is
 src/math.py : total : int
 ```
 
+A **twin** line checks two files of the PR's own tree against each other on every
+PR, not a function against its base-branch version. Use it for a port and its
+reference (a Rust or C binding and the pure-Python version):
+
+```
+twin : src/fast.py : src/slow.py : parse : str[in .corpus.SQL]
+twin : src/fast.py : src/slow.py : ratio : float : same-host errors-agree
+```
+
+The first file is the candidate and the second the reference. The optional last field
+takes `errors-agree` (both raising counts as agreement, whatever the class) and
+`same-host` (the same-host float tier), separated by spaces. A difference blocks the
+merge like any listed function, and the comment names both files.
+
 ### Input domains (parity checks)
 
 A compiled twin (Rust, C, Cython) often rejects inputs that its Python reference

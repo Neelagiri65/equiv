@@ -89,8 +89,8 @@ fn pr_markdown_reports_divergence_and_equivalence() {
     let bug_head = tmp("pr_bug_head.py", "def clamp(x):\n    return min(x, 100)\n");
     let bug_base = tmp("pr_bug_base.py", "def clamp(x):\n    return min(x, 99)\n");
     let checks = vec![
-        PrCheck { name: "total".into(), head_path: eq_head, base_path: eq_base, spec: spec("total", vec![ArgType::Int]) },
-        PrCheck { name: "clamp".into(), head_path: bug_head, base_path: bug_base, spec: spec("clamp", vec![ArgType::Int]) },
+        PrCheck { name: "total".into(), head_path: eq_head, base_path: eq_base, spec: spec("total", vec![ArgType::Int]), twin: None },
+        PrCheck { name: "clamp".into(), head_path: bug_head, base_path: bug_base, spec: spec("clamp", vec![ArgType::Int]), twin: None },
     ];
     let (items, code) = run_pr(&checks);
     assert_eq!(items.len(), 2);
@@ -123,11 +123,11 @@ fn pr_markdown_reports_divergence_and_equivalence() {
 fn pr_all_equivalent_passes_gate() {
     let h = tmp("pr_ok_head.py", "def f(a,b):\n    return a-b if a>=b else b-a\n");
     let b = tmp("pr_ok_base.py", "def f(a,b):\n    return abs(a-b)\n");
-    let checks = vec![PrCheck { name: "f".into(), head_path: h, base_path: b, spec: spec("f", vec![ArgType::Int, ArgType::Int]) }];
+    let checks = vec![PrCheck { name: "f".into(), head_path: h, base_path: b, spec: spec("f", vec![ArgType::Int, ArgType::Int]), twin: None }];
     let (items, code) = run_pr(&checks);
     assert_eq!(code, 0);
     assert!(render_markdown(&items, None).contains("behaviour preserved"));
-    let _ = ReviewItem { name: "x".into(), outcome: items.into_iter().next().unwrap().outcome };
+    let _ = ReviewItem { name: "x".into(), outcome: items.into_iter().next().unwrap().outcome, twin: None };
 }
 
 // A function that cannot be imported is an Error item: the headline counts it
@@ -140,8 +140,8 @@ fn pr_markdown_counts_errors_in_the_headline() {
     let bad_h = tmp("pr_err_bad_head.py", "def g(a:\n    return a\n");
     let bad_b = tmp("pr_err_bad_base.py", "def g(a):\n    return a\n");
     let checks = vec![
-        PrCheck { name: "f".into(), head_path: ok_h, base_path: ok_b, spec: spec("f", vec![ArgType::Int]) },
-        PrCheck { name: "g".into(), head_path: bad_h, base_path: bad_b, spec: spec("g", vec![ArgType::Int]) },
+        PrCheck { name: "f".into(), head_path: ok_h, base_path: ok_b, spec: spec("f", vec![ArgType::Int]), twin: None },
+        PrCheck { name: "g".into(), head_path: bad_h, base_path: bad_b, spec: spec("g", vec![ArgType::Int]), twin: None },
     ];
     let (items, code) = run_pr(&checks);
     assert_eq!(items.len(), 2);

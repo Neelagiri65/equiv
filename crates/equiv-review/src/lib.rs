@@ -2375,12 +2375,17 @@ pub struct PrCheck {
     pub head_path: std::path::PathBuf,
     pub base_path: std::path::PathBuf,
     pub spec: ReviewSpec,
+    /// A twin check (0.28.0): `head_path` and `base_path` are two files of the
+    /// PR's own tree (candidate, reference), named here for the comment.
+    pub twin: Option<(String, String)>,
 }
 
 pub struct ReviewItem {
     pub name: String,
     /// The receipt, or the safety stop that prevented one (no receipt exists).
     pub outcome: Result<ReviewReceipt, SafetyStop>,
+    /// Set for a twin check: (candidate file, reference file).
+    pub twin: Option<(String, String)>,
 }
 
 /// Run every check (head = candidate, base = reference). Returns the items
@@ -2416,7 +2421,7 @@ pub fn run_pr_with_inputs(checks: &[PrCheck], harvested: &[Vec<Slots>], safety_s
             },
             Err(_) => any_err = true,
         }
-        items.push(ReviewItem { name: c.name.clone(), outcome });
+        items.push(ReviewItem { name: c.name.clone(), outcome, twin: c.twin.clone() });
     }
     let code = if any_cex {
         1
@@ -2778,11 +2783,18 @@ fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecke
             }
             ReviewVerdict::Counterexample { input, candidate, reference, .. } => (
                 "DIVERGES".to_string(),
-                format!(
-                    "input `{input}`: this PR returns `{candidate}`, base returns `{reference}`; {} ({})",
-                    disagreements_note(&r.verdict).replace('`', ""),
-                    provenance_note(r)
-                ),
+                match &it.twin {
+                    Some((a, b)) => format!(
+                        "input `{input}`: `{a}` returns `{candidate}`, `{b}` returns `{reference}`; {} ({})",
+                        disagreements_note(&r.verdict).replace('`', ""),
+                        provenance_note(r)
+                    ),
+                    None => format!(
+                        "input `{input}`: this PR returns `{candidate}`, base returns `{reference}`; {} ({})",
+                        disagreements_note(&r.verdict).replace('`', ""),
+                        provenance_note(r)
+                    ),
+                },
             ),
             ReviewVerdict::Error { reason } => {
                 ("not checked".to_string(), format!("`{}`", reason.replace('`', "")))
@@ -2791,7 +2803,12 @@ fn render_markdown_counting(items: &[ReviewItem], signer: Option<&str>, unchecke
                 ("refused".to_string(), reason.replace('`', ""))
             }
         };
-        s.push_str(&format!("| `{}` | {} | {} |\n", it.name, v, detail));
+        // A twin check names both files of the PR's tree it compared.
+        let name = match &it.twin {
+            Some((a, b)) => format!("`{}` (`{a}` vs `{b}`)", it.name),
+            None => format!("`{}`", it.name),
+        };
+        s.push_str(&format!("| {name} | {} | {} |\n", v, detail));
     }
 
     let summary = if signer.is_some() {

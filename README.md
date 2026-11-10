@@ -98,6 +98,11 @@ Other ways to run it:
 - **List the functions that must not change** in `.equiv-review` at the repo root,
   one per line: `src/math.py : total : int`. A divergence in a listed function
   blocks the merge on every PR. Good for ports and parity code.
+- **Keep a port and its reference in step**: in the same file, add
+  `twin : fast.py : slow.py : parse : str` to check a function in two files of the
+  PR (for example a Rust binding and the pure-Python version) against each other
+  on every PR. Add `: errors-agree` or `: same-host` at the end of the line when
+  needed (see [docs/scope.md](docs/scope.md)).
 - **No label, no manifest**: `equiv` reviews every changed function and reports
   divergences in the comment **without blocking**, because in an ordinary PR most
   changes are intended. Set `fail-on-divergence: "true"` to block anyway.

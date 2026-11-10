@@ -111,7 +111,7 @@ fn refused_and_error_receipts_carry_the_python_version() {
 fn pr_markdown_states_python_seed_and_input_sources() {
     let head = tmp("md_h", "def f(n):\n    return n * 2\n");
     let base = tmp("md_b", "def f(n):\n    return n + n\n");
-    let checks = vec![PrCheck { name: "f".into(), head_path: head, base_path: base, spec: spec("f", vec![ArgType::Int]) }];
+    let checks = vec![PrCheck { name: "f".into(), head_path: head, base_path: base, spec: spec("f", vec![ArgType::Int]), twin: None }];
     let (items, code) = run_pr(&checks);
     assert_eq!(code, 0);
     let md = render_markdown(&items, None);

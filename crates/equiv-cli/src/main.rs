@@ -238,8 +238,7 @@ fn run() -> Result<u8, String> {
                                     name: d.name.clone(),
                                     head_path: std::path::PathBuf::from(file),
                                     base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget, errors_agree: false, domains: vec![], same_host },
-                                });
+                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget, errors_agree: false, domains: vec![], same_host }, twin: None });
                             }
                             DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
                         }
@@ -253,8 +252,51 @@ fn run() -> Result<u8, String> {
                     if line.is_empty() || line.starts_with('#') {
                         continue;
                     }
-                    // file : function : sig[ : n[ : seed]]
                     let parts: Vec<&str> = line.split(':').map(|s| s.trim()).collect();
+                    // twin : cand.py : ref.py : function : sig[ : flags] (0.28.0):
+                    // two files of the PR's own tree, checked on every PR.
+                    if parts[0] == "twin" {
+                        let usage = "expected `twin : cand.py : ref.py : fn : sig [: errors-agree same-host]`";
+                        if parts.len() < 5 || parts.len() > 6 {
+                            return Err(format!("{manifest}:{}: {usage}", lineno + 1));
+                        }
+                        let (cand, refr, func, sig) = (parts[1], parts[2], parts[3], parts[4]);
+                        let mut ea = false;
+                        let mut sh = same_host;
+                        for flag in parts.get(5).map(|f| f.split_whitespace().collect::<Vec<_>>()).unwrap_or_default() {
+                            match flag {
+                                "errors-agree" => ea = true,
+                                "same-host" => sh = true,
+                                other => {
+                                    return Err(format!("{manifest}:{}: unknown twin flag `{other}`; {usage}", lineno + 1))
+                                }
+                            }
+                        }
+                        let arg_types = sig
+                            .split(',')
+                            .filter(|s| !s.trim().is_empty())
+                            .map(|s| ArgType::parse_domain(s).ok_or_else(|| format!("bad arg type `{}`", s.trim())))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let (arg_types, domains): (Vec<ArgType>, Vec<equiv_review::Domain>) = arg_types.into_iter().unzip();
+                        checks.push(PrCheck {
+                            name: func.to_string(),
+                            head_path: std::path::PathBuf::from(cand),
+                            base_path: std::path::PathBuf::from(refr),
+                            spec: ReviewSpec {
+                                func: func.to_string(),
+                                args: arg_types,
+                                n: equiv_review::DEFAULT_N,
+                                seed: 1,
+                                budget,
+                                errors_agree: ea,
+                                domains,
+                                same_host: sh,
+                            },
+                            twin: Some((cand.to_string(), refr.to_string())),
+                        });
+                        continue;
+                    }
+                    // file : function : sig[ : n[ : seed]]
                     if parts.len() < 3 {
                         return Err(format!("{manifest}:{}: expected `file : fn : sig`", lineno + 1));
                     }
@@ -279,8 +321,7 @@ fn run() -> Result<u8, String> {
                         name: func.to_string(),
                         head_path: std::path::PathBuf::from(file),
                         base_path,
-                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree: false, domains, same_host },
-                    });
+                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree: false, domains, same_host }, twin: None });
                 }
             }
 
