@@ -50,7 +50,17 @@ non-string keys) is refused. Float
 reviews are admitted only inside the IEEE-754
 correctly rounded operations, where the result is identical on every machine. A
 function that reaches a transcendental (sin, exp, log, pow) is refused by name
-rather than judged. Its last bit is not reproducible across maths libraries.
+rather than judged. Its last bit is not reproducible across maths libraries. The
+same holds for a float function that calls something equiv cannot analyse, such
+as a compiled or sandboxed twin.
+
+`--same-host` (on `review` and `review-pr`) lifts only those two float refusals and
+judges the function on this machine. The receipt tier is then `tested-same-host`,
+the mode is bound into the receipt id, and every output says "same host only": the
+verdict holds on this machine and this maths library, and another machine may give
+a different one. Use it for a twin whose float behaviour you want compared at all,
+for example a Rust reimplementation of Python's `round`. Every other refusal still
+applies.
 
 Each call of either version, and each module load, runs under a step budget:
 4,000,000 Python line and jump events by default (enough for a loop with a one-line body over any int in the random range), counted through
