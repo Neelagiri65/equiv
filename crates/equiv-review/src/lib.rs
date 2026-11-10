@@ -103,6 +103,12 @@ impl ArgType {
 /// The declared domains, readable: "arg 1 int[1..9999], arg 3 str[1]".
 /// None when every argument is unconstrained.
 pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
+    domains_note_tried(spec, &[])
+}
+
+/// As `domains_note`, plus "X tried" for a value-set argument whose list was
+/// not judged completely (`tried[i]` = distinct list values among the inputs).
+fn domains_note_tried(spec: &ReviewSpec, tried: &[Option<usize>]) -> Option<String> {
     if !has_domains(spec) {
         return None;
     }
@@ -116,7 +122,14 @@ pub fn domains_note(spec: &ReviewSpec) -> Option<String> {
                 Domain::IntRange(lo, hi) => (format!("[{lo}..{hi}]"), String::new()),
                 Domain::Ascii => ("[ascii]".into(), String::new()),
                 Domain::OneChar => ("[1]".into(), String::new()),
-                Domain::OneOf { source, values } => (format!("[in {source}]"), format!(" ({} values)", values.len())),
+                Domain::OneOf { source, values } => {
+                    let n = values.len();
+                    let cov = match tried.get(i).copied().flatten() {
+                        Some(t) if t < n => format!("; only {t} tried"),
+                        _ => String::new(),
+                    };
+                    (format!("[in {source}]"), format!(" ({n} values{cov})"))
+                }
                 Domain::Any => (String::new(), String::new()),
             };
             let label = match t {
@@ -1026,6 +1039,7 @@ fn gen_cases_soft(
     sources: &[&str],
     harvested: &[Slots],
 ) -> (Vec<Vec<PyVal>>, usize, InputCounts, Vec<usize>) {
+    let look = Lookup::new(spec);
     let mut soft: Vec<usize> = Vec::new();
     let mut cases: Vec<Vec<PyVal>> = Vec::new();
     let mut counts = InputCounts::default();
@@ -1048,7 +1062,7 @@ fn gen_cases_soft(
         for h in harvested {
             if h.iter().all(Option::is_some) && h.iter().flatten().all(harvest::inside_envelope) {
                 let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
-                if !case_in_domain(spec, &c) {
+                if !look.case(&c) {
                     counts.out_of_domain += 1;
                 } else if seen.insert(key(&c)) {
                     soft.push(cases.len());
@@ -1060,7 +1074,7 @@ fn gen_cases_soft(
         for h in harvested {
             for (i, v) in h.iter().enumerate() {
                 if let Some(v) = v.as_ref().filter(|v| harvest::inside_envelope(v)) {
-                    if !in_domain(v, dom(spec, i)) {
+                    if !look.one(v, i) {
                         counts.out_of_domain += 1;
                         continue;
                     }
@@ -1085,7 +1099,7 @@ fn gen_cases_soft(
             for (k, v) in vals.into_iter().enumerate() {
                 let mut c = base.clone();
                 c[i] = v;
-                if !case_in_domain(spec, &c) {
+                if !look.case(&c) {
                     counts.out_of_domain += 1;
                     continue;
                 }
@@ -1119,7 +1133,7 @@ fn gen_cases_soft(
                 for (k, v) in vals.into_iter().enumerate() {
                     let mut c = fb.clone();
                     c[i] = v;
-                    if case_in_domain(spec, &c) && seen.insert(key(&c)) {
+                    if look.case(&c) && seen.insert(key(&c)) {
                         cases.push(c);
                         if k < n_corner {
                             counts.corner += 1;
@@ -1149,7 +1163,7 @@ fn gen_cases_soft(
                         let mut c = base.clone();
                         c[i] = PyVal::Str(l);
                         c[j] = PyVal::Str(r);
-                        if case_in_domain(spec, &c) && seen.insert(key(&c)) {
+                        if look.case(&c) && seen.insert(key(&c)) {
                             cases.push(c);
                             counts.corner += 1;
                         }
@@ -1196,7 +1210,7 @@ fn gen_cases_soft(
                         let mut c = base.clone();
                         c[i] = l.clone();
                         c[j] = r.clone();
-                        if case_in_domain(spec, &c) && seen.insert(key(&c)) {
+                        if look.case(&c) && seen.insert(key(&c)) {
                             cases.push(c);
                             counts.corner += 1;
                         }
@@ -1231,7 +1245,7 @@ fn gen_cases_soft(
                 for u in SURROGATE_CORNERS {
                     let mut c = base.clone();
                     c[i] = PyVal::StrUnits(u.to_vec());
-                    if case_in_domain(spec, &c) && seen.insert(key(&c)) {
+                    if look.case(&c) && seen.insert(key(&c)) {
                         cases.push(c);
                         counts.corner += 1;
                     }
@@ -1258,7 +1272,7 @@ fn gen_cases_soft(
                 for &n in LARGE_INT_CORNERS {
                     let mut c = base.clone();
                     c[i] = PyVal::Int(n);
-                    if case_in_domain(spec, &c) && seen.insert(key(&c)) {
+                    if look.case(&c) && seen.insert(key(&c)) {
                         cases.push(c);
                         counts.corner += 1;
                     }
@@ -1271,7 +1285,7 @@ fn gen_cases_soft(
         for h in harvested {
             if h.iter().all(Option::is_some) && !h.iter().flatten().all(harvest::inside_envelope) {
                 let c: Vec<PyVal> = h.iter().flatten().cloned().collect();
-                if !case_in_domain(spec, &c) {
+                if !look.case(&c) {
                     counts.out_of_domain += 1;
                 } else if seen.insert(key(&c)) {
                     cases.push(c);
@@ -1280,7 +1294,7 @@ fn gen_cases_soft(
             }
             for (i, v) in h.iter().enumerate() {
                 if let Some(v) = v.as_ref().filter(|v| !harvest::inside_envelope(v)) {
-                    if !in_domain(v, dom(spec, i)) {
+                    if !look.one(v, i) {
                         counts.out_of_domain += 1;
                         continue;
                     }
@@ -1370,8 +1384,41 @@ fn in_domain(v: &PyVal, d: &Domain) -> bool {
     }
 }
 
-fn case_in_domain(spec: &ReviewSpec, c: &[PyVal]) -> bool {
-    c.iter().enumerate().all(|(i, v)| in_domain(v, dom(spec, i)))
+/// Domain membership for one review, with value-set lists in hash sets so a
+/// 100,000-name list costs O(1) per check instead of a linear scan.
+struct Lookup<'a> {
+    spec: &'a ReviewSpec,
+    sets: Vec<Option<std::collections::HashSet<&'a str>>>,
+}
+
+impl<'a> Lookup<'a> {
+    fn new(spec: &'a ReviewSpec) -> Self {
+        let sets = (0..spec.args.len())
+            .map(|i| match dom(spec, i) {
+                Domain::OneOf { values, .. } => Some(values.iter().map(|s| s.as_str()).collect()),
+                _ => None,
+            })
+            .collect();
+        Lookup { spec, sets }
+    }
+    fn one(&self, v: &PyVal, i: usize) -> bool {
+        match self.sets.get(i).and_then(|s| s.as_ref()) {
+            Some(set) => one_of(set, v),
+            None => in_domain(v, dom(self.spec, i)),
+        }
+    }
+    fn case(&self, c: &[PyVal]) -> bool {
+        c.iter().enumerate().all(|(i, v)| self.one(v, i))
+    }
+}
+
+fn one_of(set: &std::collections::HashSet<&str>, v: &PyVal) -> bool {
+    match v {
+        PyVal::Str(s) => set.contains(s.as_str()),
+        PyVal::ListStr(xs) => xs.iter().all(|s| set.contains(s.as_str())),
+        PyVal::StrUnits(_) => false,
+        _ => true,
+    }
 }
 
 /// The default value, moved inside the domain when it falls outside (an int
@@ -1448,14 +1495,22 @@ fn domain_corners(ty: ArgType, d: &Domain) -> Vec<PyVal> {
         }
         _ => {}
     }
-    v.retain(|x| in_domain(x, d));
+    match d {
+        Domain::OneOf { values, .. } => {
+            let set: std::collections::HashSet<&str> = values.iter().map(|s| s.as_str()).collect();
+            v.retain(|x| one_of(&set, x));
+        }
+        _ => v.retain(|x| in_domain(x, d)),
+    }
     v
 }
 
 /// Lists of up to this many strings (`str[in ...]`) have every value judged
-/// for each argument, one argument at a time. Pairs across two such arguments
-/// are sampled.
-const VALUE_SET_ALL: usize = 4096;
+/// for each argument, one argument at a time (0.27.0: raised from 4,096, which
+/// sampled real lists such as SQL corpora silently). Pairs across two such
+/// arguments are sampled. Above the cap, the receipt says how many values of
+/// the list were tried.
+const VALUE_SET_ALL: usize = 100_000;
 
 /// A random value inside the domain, drawn from the same seeded stream.
 fn gen_in(rng: &mut Rng, ty: ArgType, d: &Domain) -> PyVal {
@@ -1904,17 +1959,24 @@ _ERRORS_AGREE = {errors_agree}
 # Harvested inputs before the tail: also 'not judged' on budget exhaustion.
 _SOFT = {{{soft}}}
 _left = [0]
+# Counting is switched by a flag, with the events set once: set_events itself
+# costs time in proportion to the live objects, so toggling it around every
+# call made large reviews quadratic (0.27.0). The same events are counted
+# inside each call as before; this file's own lines are disabled outright.
+_on = [False]
 class _Budget(BaseException): pass
 def _tick(code, *_a):
-    if code.co_filename == __file__: return
+    if code.co_filename == __file__: return _M.DISABLE
+    if not _on[0]: return
     _left[0] -= 1
     if _left[0] < 0: raise _Budget()
 _M.use_tool_id(_TOOL, 'equiv-budget')
 _M.register_callback(_TOOL, _M.events.LINE, _tick)
 _M.register_callback(_TOOL, _M.events.JUMP, _tick)
+_M.set_events(_TOOL, _EV)
 def _metered(fn, *args):
     # (value, exception name or None, budget exhausted?)
-    _left[0] = _BUDGET; _M.set_events(_TOOL, _EV)
+    _left[0] = _BUDGET; _on[0] = True
     try:
         v = fn(*args); e = None
     except BaseException as x:
@@ -1926,7 +1988,7 @@ def _metered(fn, *args):
         if not isinstance(x, Exception) and type(x).__name__ != 'PanicException': raise
         v = None; e = x
     finally:
-        _M.set_events(_TOOL, 0)
+        _on[0] = False
     if _left[0] < 0: return None, None, True
     return v, e, False
 def _pkg_of(_p):
@@ -1987,32 +2049,38 @@ def _load(p, n, side):
     return m
 cand = _load({cand:?}, "cand", 'candidate'); ref = _load({refr:?}, "ref", 'reference')
 cf = getattr(cand, {fn:?}); rf = getattr(ref, {fn:?})
-cases = [{cases}]
-for i, args in enumerate(cases):
-    _cv, _ce, _oc = _metered(cf, *args)
-    _rv, _re, _or = _metered(rf, *args)
-    if _oc or _or:
-        if i >= _LARGE or i in _SOFT:
-            print(f"{{i}}\tSKIP"); continue
-        _side = 'candidate and reference' if (_oc and _or) else ('candidate' if _oc else 'reference')
-        print(f"__BUDGET__\t{{i}}\t{{_side}}"); _sys.exit(0)
-    try: cv = canon(_cv) if _ce is None else None; ce = None if _ce is None else type(_ce).__name__
-    except Exception as e: cv = None; ce = type(e).__name__
-    try: rv = canon(_rv) if _re is None else None; re_ = None if _re is None else type(_re).__name__
-    except Exception as e: rv = None; re_ = type(e).__name__
-    if (cv is not None and '__NONCANON__' in cv) or (rv is not None and '__NONCANON__' in rv):
-        print('__REFUSED__\treturns a value that is not JSON-structural (no stable cross-host form)'); _sys.exit(0)
-    if ce is not None or re_ is not None:
-        ok = (ce == re_) or (_ERRORS_AGREE and ce is not None and re_ is not None)
-        # Show each side's outcome: its exception name if it raised, else its
-        # actual value. (Previously printed ce/re_ for both, so the non-raising
-        # side reported None instead of its real value.)
-        dc = ce if ce is not None else cv
-        dr = re_ if re_ is not None else rv
-        # EQX: agreed, and a side raised (counted as an exception observed).
-        print(f"{{i}}\t{{'EQX' if ok else 'NE'}}\t{{dc}}\t{{dr}}")
-    else:
-        print(f"{{i}}\t{{'EQ' if cv == rv else 'NE'}}\t{{cv}}\t{{rv}}")
+# The cases are evaluated once from text rather than kept as a module-level
+# literal in this file's code (keeps the driver's own code small for large
+# value sets). The text is hex so any case source (quotes, escapes,
+# lone-surrogate escapes) survives unchanged.
+cases = eval(bytes.fromhex('{cases_hex}').decode('utf-8'))
+def _judge_all():
+    for i, args in enumerate(cases):
+        _cv, _ce, _oc = _metered(cf, *args)
+        _rv, _re, _or = _metered(rf, *args)
+        if _oc or _or:
+            if i >= _LARGE or i in _SOFT:
+                print(f"{{i}}\tSKIP"); continue
+            _side = 'candidate and reference' if (_oc and _or) else ('candidate' if _oc else 'reference')
+            print(f"__BUDGET__\t{{i}}\t{{_side}}"); _sys.exit(0)
+        try: cv = canon(_cv) if _ce is None else None; ce = None if _ce is None else type(_ce).__name__
+        except Exception as e: cv = None; ce = type(e).__name__
+        try: rv = canon(_rv) if _re is None else None; re_ = None if _re is None else type(_re).__name__
+        except Exception as e: rv = None; re_ = type(e).__name__
+        if (cv is not None and '__NONCANON__' in cv) or (rv is not None and '__NONCANON__' in rv):
+            print('__REFUSED__\treturns a value that is not JSON-structural (no stable cross-host form)'); _sys.exit(0)
+        if ce is not None or re_ is not None:
+            ok = (ce == re_) or (_ERRORS_AGREE and ce is not None and re_ is not None)
+            # Show each side's outcome: its exception name if it raised, else its
+            # actual value. (Previously printed ce/re_ for both, so the non-raising
+            # side reported None instead of its real value.)
+            dc = ce if ce is not None else cv
+            dr = re_ if re_ is not None else rv
+            # EQX: agreed, and a side raised (counted as an exception observed).
+            print(f"{{i}}\t{{'EQX' if ok else 'NE'}}\t{{dc}}\t{{dr}}")
+        else:
+            print(f"{{i}}\t{{'EQ' if cv == rv else 'NE'}}\t{{cv}}\t{{rv}}")
+_judge_all()
 "#,
         libm = libm,
         errors_agree = if spec.errors_agree { "True" } else { "False" },
@@ -2020,7 +2088,7 @@ for i, args in enumerate(cases):
         cand = cand,
         refr = refr,
         fn = spec.func,
-        cases = cases_py.join(", "),
+        cases_hex = hex(format!("[{}]", cases_py.join(", ")).as_bytes()),
         budget = spec.budget,
         large_from = large_from,
         soft = if soft.is_empty() { "-1".to_string() } else { soft.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ") },
@@ -2169,6 +2237,33 @@ for i, src in enumerate(sys.argv[2:]):
     Ok(out_spec)
 }
 
+
+/// Distinct list values present among the inputs, per value-set argument.
+fn value_set_tried(spec: &ReviewSpec, cases: &[Vec<PyVal>]) -> Vec<Option<usize>> {
+    (0..spec.args.len())
+        .map(|i| match dom(spec, i) {
+            Domain::OneOf { .. } => {
+                let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+                for c in cases {
+                    match c.get(i) {
+                        Some(PyVal::Str(s)) => {
+                            seen.insert(s.as_str());
+                        }
+                        Some(PyVal::ListStr(xs)) => {
+                            for s in xs {
+                                seen.insert(s.as_str());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Some(seen.len())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// `review_limited` plus inputs harvested from the project's own code (see
 /// `harvest`). They are bound into `spec_sha256` and counted in the receipt;
 /// with none, the receipt is byte-identical to `review_limited`'s.
@@ -2223,7 +2318,7 @@ pub fn review_with_inputs(
         python: ev.python,
         seed: spec.seed,
         inputs,
-        domains: domains_note(spec).unwrap_or_default(),
+        domains: domains_note_tried(spec, &value_set_tried(spec, &cases)).unwrap_or_default(),
         exceptions: ev.exceptions,
         // The receipt itself carries the evidence level, so a thin verdict
         // cannot be re-read as a full one later (same frozen field, new value).

@@ -154,8 +154,9 @@ src/pkg/utils.py : is_multi_byte_encoding : str[in .constant.IANA_SUPPORTED]
 
 A value-set list is read from the PR's own version of the code (the head), so a PR that
 edits the list also changes its own domain. Every value in it is bound into the receipt,
-so a pass is tied to that exact list. Each value of a list of up to 4,096 names is
+so a pass is tied to that exact list. Each value of a list of up to 100,000 names is
 judged (one argument at a time); combinations across two such arguments are sampled.
+A longer list is sampled, and the result says so: "(N values; only X tried)".
 
 Random inputs, corners (including both ends of a range), source literals and harvested
 inputs all stay inside the domain. Literal and harvested values outside it are skipped,
