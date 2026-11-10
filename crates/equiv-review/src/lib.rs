@@ -217,6 +217,11 @@ pub struct ReviewSpec {
     /// Per-argument input domains, by position (0.23.0). Empty, short, or
     /// all-`Any` means unconstrained, and then the spec hash is unchanged.
     pub domains: Vec<Domain>,
+    /// Same-host float tier (0.26.0; reopens DECISIONS #17 as an opt-in):
+    /// lift the cross-host float refusals (libm functions, calls equiv cannot
+    /// analyse) and judge on this machine only. Bound into the spec hash only
+    /// when on; the receipt tier is then `tested-same-host`.
+    pub same_host: bool,
 }
 
 impl ReviewSpec {
@@ -242,6 +247,9 @@ impl ReviewSpec {
         v.extend_from_slice(&self.budget.to_le_bytes());
         if self.errors_agree {
             v.extend_from_slice(b"\0errors-agree");
+        }
+        if self.same_host {
+            v.extend_from_slice(b"\0same-host");
         }
         // Input domains (0.23.0): only when some argument has one, so every
         // unconstrained receipt keeps its id. One tag per argument position,
@@ -1783,7 +1791,7 @@ fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal
     // follows `import math as m` / `from math import x as y`; a libm call
     // hidden in a helper or `(n / 2) ** 2` without a float literal is not
     // seen (DECISIONS #17).
-    let libm = format!(
+    let libm = if spec.same_host { String::new() } else { format!(
         r#"import ast as _ast, sys as _sys
 _EXACT = {{'sqrt', 'fabs', 'floor', 'ceil', 'trunc', 'copysign', 'fmod', 'modf', 'frexp', 'ldexp', 'fsum',
           'isqrt', 'gcd', 'lcm', 'factorial', 'comb', 'perm', 'isfinite', 'isnan', 'isinf'}}
@@ -1825,8 +1833,10 @@ for _p in ({cand:?}, {refr:?}):
         fn = spec.func,
         cand = cand,
         refr = refr,
-    );
-    let admis = if spec.args.iter().any(|a| *a == ArgType::Float) {
+    ) };
+    // Same-host tier: both cross-host float refusals (libm above, the closure
+    // check here) are lifted; nothing else is.
+    let admis = if !spec.same_host && spec.args.iter().any(|a| *a == ArgType::Float) {
         format!(
             r#"import ast as _ast, sys as _sys
 def _bad(_path):
@@ -2217,9 +2227,12 @@ pub fn review_with_inputs(
         exceptions: ev.exceptions,
         // The receipt itself carries the evidence level, so a thin verdict
         // cannot be re-read as a full one later (same frozen field, new value).
-        tier: match ev.verdict {
-            ReviewVerdict::Equivalent { n, .. } if thin_evidence(n, ev.exceptions).is_some() => "tested-thin".into(),
-            _ => "tested".into(),
+        tier: {
+            let base = if spec.same_host { "tested-same-host" } else { "tested" };
+            match ev.verdict {
+                ReviewVerdict::Equivalent { n, .. } if thin_evidence(n, ev.exceptions).is_some() => format!("{base}-thin"),
+                _ => base.into(),
+            }
         },
         verdict: ev.verdict,
         disagreements: ev.disagreements,
@@ -2251,7 +2264,11 @@ pub fn provenance_note(r: &ReviewReceipt) -> String {
             )
         },
         r.exceptions,
-        r.tier
+        if r.tier.starts_with("tested-same-host") {
+            format!("{} (SAME HOST ONLY: floats compared bit-exactly on this machine; another machine or maths library may give a different verdict)", r.tier)
+        } else {
+            r.tier.clone()
+        }
     )
 }
 
@@ -3023,7 +3040,7 @@ mod generator_tests {
     use super::*;
 
     fn spec(args: Vec<ArgType>, seed: u64) -> ReviewSpec {
-        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![] }
+        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false }
     }
 
     #[test]

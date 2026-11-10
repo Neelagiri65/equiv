@@ -26,6 +26,7 @@ fn spec(func: &str, sig: &[&str]) -> ReviewSpec {
         budget: equiv_review::DEFAULT_BUDGET,
         errors_agree: false,
         domains,
+        same_host: false,
     }
 }
 

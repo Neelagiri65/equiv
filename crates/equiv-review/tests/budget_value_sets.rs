@@ -22,7 +22,7 @@ fn write(d: &Path, f: &str, body: &str) -> PathBuf {
 
 fn spec(sig: &str, budget: u64) -> ReviewSpec {
     let (t, dm) = ArgType::parse_domain(sig).unwrap();
-    ReviewSpec { func: "f".into(), args: vec![t], n: 50, seed: 1, budget, errors_agree: false, domains: vec![dm] }
+    ReviewSpec { func: "f".into(), args: vec![t], n: 50, seed: 1, budget, errors_agree: false, domains: vec![dm], same_host: false }
 }
 
 // The 4-character name never finishes; every other name is cheap. No literal

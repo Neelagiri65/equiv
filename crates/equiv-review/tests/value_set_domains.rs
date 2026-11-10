@@ -26,7 +26,7 @@ fn write(d: &Path, f: &str, body: &str) -> PathBuf {
 fn spec(func: &str, sig: &[&str]) -> ReviewSpec {
     let (args, domains): (Vec<ArgType>, Vec<Domain>) =
         sig.iter().map(|s| ArgType::parse_domain(s).unwrap_or_else(|| panic!("parses: {s}"))).unzip();
-    ReviewSpec { func: func.into(), args, n: 300, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains }
+    ReviewSpec { func: func.into(), args, n: 300, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains, same_host: false }
 }
 
 const NAMES: &str = "NAMES = ['Basic Latin', 'Latin-1 Supplement', 'Cyrillic', 'Greek and Coptic']\n";
