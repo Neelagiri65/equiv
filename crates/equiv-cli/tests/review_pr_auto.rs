@@ -98,9 +98,10 @@ fn auto_without_a_usable_git_base_is_an_error() {
     let d = dir("no_git");
     std::fs::write(d.join("m.py"), "def f(x: int):\n    return x\n").unwrap();
     let (code, stdout, stderr) = run_auto(&d);
-    assert_eq!(code, Some(3), "{stdout}\n{stderr}");
+    // Exit 4: the base ref could not be read, so nothing was compared.
+    assert_eq!(code, Some(4), "{stdout}\n{stderr}");
     assert!(!stdout.contains("preserved"), "{stdout}");
-    assert!(stderr.contains("git diff failed"), "{stderr}");
+    assert!(stderr.contains("cannot read the base ref"), "{stderr}");
 }
 
 /// A renamed file is still the same functions: the base version is read from
