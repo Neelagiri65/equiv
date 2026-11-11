@@ -2207,14 +2207,14 @@ for i, src in enumerate(sys.argv[2:]):
     except Exception as e:
         print('__VS__\t%d\tERR\t%s: %s' % (i, type(e).__name__, str(e).replace('\n', ' ')))
 "#;
-    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let path = std::env::temp_dir().join(format!("equiv_vs_{}_{call}.py", std::process::id()));
+    // A private directory, removed when this function returns.
+    let dir = PrivateDir::new().map_err(|e| format!("value-set resolver: {e}"))?;
+    let path = dir.0.join("equiv_vs.py");
     std::fs::write(&path, SCRIPT).map_err(|e| format!("value-set resolver: {e}"))?;
     let mut cmd = evaluator_command();
     cmd.arg(&path).arg(cand).args(&sources).env("PYTHONHASHSEED", "0").env("PYTHONDONTWRITEBYTECODE", "1");
     let out = run_watched(cmd, std::time::Duration::from_secs(safety_secs));
-    let _ = std::fs::remove_file(&path);
+    drop(dir);
     let out = out
         .map_err(|e| format!("python3 not runnable: {e}"))?
         .ok_or_else(|| format!("resolving the input domains {} ran past {safety_secs}s", sources.join(", ")))?;
@@ -2595,19 +2595,12 @@ fn evaluator_command() -> Command {
 /// invariant: a changed function is never silently dropped. Unchanged functions
 /// are simply absent.
 pub fn detect_changed_functions(base_src: &str, head_src: &str) -> Result<Vec<Detected>, String> {
-    // Unique per call (process id + counter), not per content: concurrent runs
-    // on the same diff must not truncate and rewrite each other's files.
-    static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tag = format!(
-        "{}_{}_{call}",
-        &hex(&sha256(format!("{base_src}\u{0}{head_src}").as_bytes()))[..16],
-        std::process::id()
-    );
-    let dir = std::env::temp_dir();
-    let bpath = dir.join(format!("equiv_detb_{tag}.py"));
-    let hpath = dir.join(format!("equiv_deth_{tag}.py"));
-    let spath = dir.join(format!("equiv_dets_{tag}.py"));
+    // A private directory per call, removed when this function returns.
+    let private = PrivateDir::new()?;
+    let dir = &private.0;
+    let bpath = dir.join("equiv_detb.py");
+    let hpath = dir.join("equiv_deth.py");
+    let spath = dir.join("equiv_dets.py");
     std::fs::write(&bpath, base_src).map_err(|e| e.to_string())?;
     std::fs::write(&hpath, head_src).map_err(|e| e.to_string())?;
     std::fs::write(&spath, DETECTOR_PY).map_err(|e| e.to_string())?;
@@ -2618,11 +2611,7 @@ pub fn detect_changed_functions(base_src: &str, head_src: &str) -> Result<Vec<De
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .output()
         .map_err(|e| format!("python3 not runnable: {e}"));
-    // The names are unique per call now, so remove them rather than leave one
-    // set behind per review.
-    for p in [&bpath, &hpath, &spath] {
-        let _ = std::fs::remove_file(p);
-    }
+    drop(private);
     let out = out?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("detector error").to_string());
