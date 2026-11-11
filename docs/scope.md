@@ -46,7 +46,22 @@ structurally: a dict is a map (key order ignored); a tuple is compared element
 by element and is never equal to a list with the same items; a namedtuple is
 compared by class name, field names and values (so `(1, 2)` and `Point(x=1, y=2)`
 differ). Anything else (a set, a custom object, a subclass of a namedtuple,
-non-string keys) is refused. Float
+non-string keys) is refused. A subclass of `int`, `float`, `str`, `list` or
+`dict` (an enum, a `Counter`, an `OrderedDict`, a numpy scalar) is compared by
+its class name and its content: it agrees with the same class on the other side
+and never with the plain type. A value that cannot be read (for example a list
+that contains itself) is refused.
+
+Each side runs in its own Python process, the reference first. The two never
+share arguments, loaded modules or global state, and what the function prints is
+ignored. Only the returned value or the raised error class is compared: a change
+a function makes to its own arguments is not compared, and neither is the error
+message. Each side must report an outcome for every input; a run that ends early
+(the function exits the interpreter, or the process dies) is could not check,
+never a pass. Imports resolve from the machine's Python environment
+(`PYTHONPATH` included), and the receipt does not record installed packages.
+`PYTHONOPTIMIZE`, `PYTHONWARNINGS`, `PYTHONDEVMODE` and `PYTHONINTMAXSTRDIGITS`
+are not passed to the reviewed code. Float
 reviews are admitted only inside the IEEE-754
 correctly rounded operations, where the result is identical on every machine. A
 function that reaches a transcendental (sin, exp, log, pow) is refused by name
