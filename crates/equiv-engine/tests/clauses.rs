@@ -295,11 +295,38 @@ fn too_few_inputs_passing_the_precondition_is_could_not_check() {
 fn tested_n_always_reports_the_requested_count() {
     let c = r#"(contract eqc/0 (target (func "f" (param $x i32) (result i32)))
       (pre (c32 1)) (post (eq result $x)) (frame (range (c32 0) (c32 4))))"#;
+    // Asking for no cases is not a pass.
+    let none = DiffConfig { n_cases: 0, ..DiffConfig::default() };
+    assert_eq!(diff(VIA_MEMORY, c, &none).0, Verdict::Unknown(UnknownReason::BudgetExceeded));
     for n in [1u64, 4, 8, 64, 200] {
         let cfg = DiffConfig { n_cases: n, max_attempts: n * 50, ..DiffConfig::default() };
         let (v, _) = diff(VIA_MEMORY, c, &cfg);
         assert!(matches!(v, Verdict::TestedN { n_cases, .. } if n_cases == n), "n={n}: {v:?}");
     }
+}
+
+#[test]
+fn a_pass_that_skipped_inputs_says_how_many() {
+    let c = r#"(contract eqc/0 (target (func "f" (param $x i32) (result i32)))
+      (pre (gt_u $x (c32 255))) (post (eq result $x)) (frame (range (c32 0) (c32 4))))"#;
+    let (v, note) = diff(VIA_MEMORY, c, &DiffConfig::default());
+    assert!(matches!(v, Verdict::TestedN { n_cases: 64, .. }));
+    assert!(note.unwrap().contains("did not satisfy the precondition"));
+    // Nothing skipped, nothing to say.
+    let all = r#"(contract eqc/0 (target (func "f" (param $x i32) (result i32)))
+      (pre (c32 1)) (post (eq result $x)) (frame (range (c32 0) (c32 4))))"#;
+    assert_eq!(diff(VIA_MEMORY, all, &DiffConfig::default()).1, None);
+}
+
+#[test]
+fn the_sampling_path_called_directly_refuses_a_wrong_signature() {
+    let m = r#"(module (memory (export "memory") 1)
+        (func (export "f") (param i32) (result i64) i64.const 0x100000000))"#;
+    let c = r#"(contract eqc/0 (target (func "f" (param $x i32) (result i32)))
+      (pre (c32 1)) (post (eq result (c32 0))) (frame))"#;
+    let (v, note) = diff(m, c, &DiffConfig::default());
+    assert_eq!(v, Verdict::Unknown(UnknownReason::IllFormedExpr));
+    assert!(note.unwrap().contains("(result i64)"));
 }
 
 #[test]

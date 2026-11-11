@@ -21,9 +21,9 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
     h.finalize().into()
 }
 
-/// A receipt plus, when the verdict is `Unknown`, a sentence saying what
-/// could not be checked. The sentence is for people; it is not hashed into
-/// the receipt.
+/// A receipt plus, when there is something to add, a sentence for people:
+/// what could not be checked (verdict `Unknown`), or how many drawn inputs
+/// the precondition excluded (tested-N). It is not hashed into the receipt.
 pub struct Checked {
     pub receipt: Receipt,
     pub note: Option<String>,
@@ -65,12 +65,12 @@ pub fn check_explained(artifact: &[u8], contract: &Contract, cfg: &DiffConfig) -
             )
         }
     };
-    let Some(sig) = facts.export_sig(&target.name) else {
+    if facts.export_sig(&target.name).is_none() {
         return unknown(
             UnknownReason::IllFormedExpr,
             format!("the artifact exports no function named `{}`", target.name),
         );
-    };
+    }
     // Spec §10 Q4 (provisional v0 answer): a module that statically violates
     // its assume-flags yields `unknown`, not `counterexample`: the caller
     // lied about the artifact, the property was never tested.
@@ -91,40 +91,8 @@ pub fn check_explained(artifact: &[u8], contract: &Contract, cfg: &DiffConfig) -
                 .into(),
         );
     }
-    // The declared signature must be the export's own. Calling with other
-    // types either fails outright or reads a truncated result.
-    let declared = wasm::sig_text(&target.params, &target.results);
-    match sig {
-        Some(s) if s.params == target.params && s.results == target.results => {}
-        Some(s) => {
-            return unknown(
-                UnknownReason::IllFormedExpr,
-                format!(
-                    "the contract declares `{}` as {declared} but the artifact exports it as {}",
-                    target.name,
-                    wasm::sig_text(&s.params, &s.results)
-                ),
-            )
-        }
-        None => {
-            return unknown(
-                UnknownReason::IllFormedExpr,
-                format!(
-                    "the contract declares `{}` as {declared} but the artifact's export uses types a contract cannot name",
-                    target.name
-                ),
-            )
-        }
-    }
-    let integer = |ts: &[equiv_core::ast::ValType]| {
-        ts.iter()
-            .all(|t| matches!(t, equiv_core::ast::ValType::I32 | equiv_core::ast::ValType::I64))
-    };
-    if !integer(&target.params) || !integer(&target.results) {
-        return unknown(
-            UnknownReason::UnsupportedFeature,
-            format!("`{}` is {declared}: only i32 and i64 parameters and results are checked by this version", target.name),
-        );
+    if let Some((reason, why)) = wasm::signature_problem(&facts, target) {
+        return unknown(reason, why);
     }
 
     // Symbolic path first (loop-free scalar envelope; floats never reach it

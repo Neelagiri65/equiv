@@ -273,7 +273,8 @@ pub fn difftest(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) -> Verdict {
     difftest_explained(wasm, contract, cfg).0
 }
 
-/// `difftest`, plus a sentence saying why when the verdict is `Unknown`.
+/// `difftest`, plus a sentence saying why when the verdict is `Unknown`, or
+/// how many drawn inputs the precondition excluded when it is tested-N.
 /// The sentence is not part of the receipt.
 pub fn difftest_explained(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) -> (Verdict, Option<String>) {
     let unknown = |r: UnknownReason, why: String| (Verdict::Unknown(r), Some(why));
@@ -285,6 +286,10 @@ pub fn difftest_explained(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) ->
     // instruction at all is known not to need the comparison.
     match crate::wasm::analyze(wasm) {
         Ok(facts) => {
+            // Direct callers get the same signature gate as `check`.
+            if let Some((reason, why)) = crate::wasm::signature_problem(&facts, target) {
+                return unknown(reason, why);
+            }
             if facts.memories > 0
                 && !facts.memory_exported
                 && !crate::bmc::touches_no_memory(wasm, &target.name)
@@ -398,7 +403,7 @@ pub fn difftest_explained(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) ->
         passed += 1;
     }
 
-    if passed < cfg.n_cases {
+    if passed == 0 || passed < cfg.n_cases {
         // Fewer inputs than asked for reached the artifact: either the pre
         // is (nearly) vacuous or the sampler is too weak for it. Reporting
         // the handful that did run as tested-N would overstate the run.
@@ -410,11 +415,19 @@ pub fn difftest_explained(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) ->
             ),
         );
     }
+    // A pass that skipped inputs says so: the count of cases is exact, but
+    // the reader should know how much of what was drawn the pre excluded.
+    let note = (pre_false + pre_error > 0).then(|| {
+        format!(
+            "{passed} inputs ran; {pre_false} more were drawn but did not satisfy the precondition and \
+             {pre_error} more could not have it evaluated"
+        )
+    });
     (
         Verdict::TestedN {
             n_cases: passed,
             seed: cfg.seed,
         },
-        None,
+        note,
     )
 }

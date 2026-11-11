@@ -105,3 +105,42 @@ fn div_s_of_min_by_minus_one_is_an_overflow_not_a_zero_divisor() {
     assert_eq!(contract_side(BvOp::DivS, 32, 5, 0), Err(EvalError::DivByZero));
     assert_eq!(contract_side(BvOp::RemS, 64, 5, 0), Err(EvalError::DivByZero));
 }
+
+/// The solver's shifts take the amount modulo the width, as WASM and the
+/// evaluator do. A claim that an over-wide shift clears the value must be
+/// refuted with a reproduced counterexample; the true claim must hold.
+#[test]
+fn solver_shifts_take_the_amount_modulo_the_width() {
+    use equiv_core::verdict::Verdict;
+    for (t, c, bits) in [("i32", "c32", 32u32), ("i64", "c64", 64)] {
+        for op in ["shl", "shr_u", "shr_s"] {
+            let module = format!(
+                "(module (func (export \"f\") (param {t} {t}) (result {t}) local.get 0 local.get 1 {t}.{op}))"
+            );
+            let wasm = wat::parse_str(&module).unwrap();
+            for amount in [bits, bits + 1, 2 * bits - 1] {
+                let contract = |post: &str| {
+                    let src = format!(
+                        "(contract eqc/0 (target (func \"f\" (param $x {t}) (param $n {t}) (result {t}))) \
+                         (pre (eq $n ({c} {amount}))) (post {post}) (frame))"
+                    );
+                    equiv_core::parse_contract(&src).unwrap()
+                };
+                let cfg = equiv_engine::DiffConfig::default();
+                let wrong = equiv_engine::check(&wasm, &contract(&format!("(eq result ({c} 0))")), &cfg).verdict;
+                assert!(
+                    matches!(wrong, Verdict::Counterexample { trap: false, .. }),
+                    "{t}.{op} by {amount}: {wrong:?}"
+                );
+                let right = format!("(eq result ({op} $x ({c} {})))", amount % bits);
+                let ok = equiv_engine::check(&wasm, &contract(&right), &cfg).verdict;
+                #[cfg(feature = "uncertified-proofs")]
+                assert!(matches!(ok, Verdict::Proved(_)), "{t}.{op} by {amount}: {ok:?}");
+                // Without the feature the solver's UNSAT is not reported and
+                // sampling cannot hit the one permitted amount.
+                #[cfg(not(feature = "uncertified-proofs"))]
+                assert!(matches!(ok, Verdict::Unknown(_) | Verdict::TestedN { .. }), "{t}.{op} by {amount}: {ok:?}");
+            }
+        }
+    }
+}

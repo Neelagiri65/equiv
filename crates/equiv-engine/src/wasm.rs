@@ -184,3 +184,47 @@ pub fn violated_flags(
         })
         .collect()
 }
+
+/// Why the target cannot be called as the contract declares it, if it
+/// cannot: no such export, a declared signature that is not the export's
+/// own (calling with other types fails outright or reads a truncated
+/// result), or types this version does not run.
+pub fn signature_problem(
+    facts: &ModuleFacts,
+    target: &equiv_core::ast::Target,
+) -> Option<(equiv_core::UnknownReason, String)> {
+    use equiv_core::ast::ValType as V;
+    use equiv_core::UnknownReason as R;
+    let declared = sig_text(&target.params, &target.results);
+    let name = &target.name;
+    match facts.export_sig(name) {
+        None => return Some((R::IllFormedExpr, format!("the artifact exports no function named `{name}`"))),
+        Some(None) => {
+            return Some((
+                R::IllFormedExpr,
+                format!(
+                    "the contract declares `{name}` as {declared} but the artifact's export uses types a \
+                     contract cannot name"
+                ),
+            ))
+        }
+        Some(Some(s)) if s.params != target.params || s.results != target.results => {
+            return Some((
+                R::IllFormedExpr,
+                format!(
+                    "the contract declares `{name}` as {declared} but the artifact exports it as {}",
+                    sig_text(&s.params, &s.results)
+                ),
+            ))
+        }
+        Some(Some(_)) => {}
+    }
+    let integer = |ts: &[V]| ts.iter().all(|t| matches!(t, V::I32 | V::I64));
+    if !integer(&target.params) || !integer(&target.results) {
+        return Some((
+            R::UnsupportedFeature,
+            format!("`{name}` is {declared}: only i32 and i64 parameters and results are checked by this version"),
+        ));
+    }
+    None
+}
