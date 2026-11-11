@@ -89,14 +89,42 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.21.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.28.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 115 (76 diverges, 39 equivalent) |
-| Catch rate | 73 / 76 = 96.1% |
-| False-alarm rate | 0 / 39 = 0% |
+| Cases | 131 (88 diverges, 43 equivalent) |
+| Catch rate | 81 / 88 = 92.0% |
+| False-alarm rate | 0 / 43 = 0% |
 | Could not check | 4 |
+
+Cases 116-131 (class `holdout`) were written on 2026-11-12, before any
+generator code changed, and recorded against 0.27.0 first: 0.27.0 catches
+0 / 12 of their diverging pairs and passes 4 / 4 of their equivalent pairs.
+They test four changes in 0.28.0, each with a correct rewrite that must stay
+equivalent and one case written off the planned input list on purpose:
+
+- list elements and dict values aimed at the source's literals and drawn from
+  wider ranges (116, 117 caught; 118 equivalent; 119 off the list: the
+  threshold is `ord("d")`, not a number in the source, and stays missed);
+- numeric literals read with both signs, int literals and exponent forms
+  offered to float arguments, each with the next float below and above (120,
+  121, 122 caught; 123 equivalent; 124 off the list: the threshold is
+  `0.1 + 0.2`, the sum of two literals, and stays missed);
+- string literals decoded as Python decodes them, with the whole prefix read
+  (125 octal escape and 128 `Rf` raw prefix caught; 127 equivalent; 126 off
+  the list: a `\N{...}` escape, which is skipped, not guessed, and stays
+  missed);
+- cross cases, each argument's corners and literals paired with a few
+  non-degenerate values of the others (129 caught at `('\U0001f600', 2)`;
+  130 equivalent; 131 off the list: it needs the 16-digit corner with the int
+  16, which is not one of the fixed partner values, and stays missed).
+
+0.28.0 catches 8 / 12, with 0 / 4 false alarms; the four off-list cases are
+missed and written off below with their reasons. No earlier case changed
+outcome. The four off-list misses are what the off-list cases are for: aiming
+at literals does not generalise to constants that are computed, and the cross
+cases do not generalise beyond their fixed partner values.
 
 Cases 108-111 (class `holdout`) were written on 2026-11-06, before the
 int()-grammar string corners, to test that class rather than the witnesses of
@@ -206,11 +234,13 @@ By class (diverges caught / total, equivalent passed / total):
 | ordering | 3/3 | 2/2 |
 | check-digit | 5/5 | 3/3 |
 | rare-input | 3/3 | - |
-| holdout | 33/36 | 18/19 |
+| holdout | 41/48 | 22/23 |
 
 ### Misses, write-offs and the completeness gate
 
-There are no misses as of 0.20.0. Every case equiv does not catch (or, if
+There were no misses from 0.20.0 to 0.27.0. As of 0.28.0 there are four
+(119, 124, 126, 131: equiv says `EQUIVALENT` and the versions differ), all
+written off the planned input list on purpose and listed below. Every case equiv does not catch (or, if
 equivalent, does not pass) carries a `writeoff` in its `case.toml` with the
 reason it is out of reach by design. The runner fails on a case that is not
 caught and has no write-off (`OPEN`), and on a write-off left on a case that is
@@ -223,6 +253,10 @@ scope, everything is caught or written off with its reason.
 | 086-holdout-digit-count-via-log-base | could not check | reaches `math.log` (same reason) |
 | 088-holdout-list-bit-length-via-log2 | could not check | reaches `math.log2` (same reason) |
 | 099-holdout-four-line-loop-body-scope-edge | could not check | the reference passes the default step budget at input 1000002; a run past the budget is not judged (DECISIONS #16, #22) |
+| 119-holdout-list-element-computed-threshold | missed | the threshold is computed at import time (`ord` of a character) and is not a number in the source; the literal scan reads tokens and does not evaluate |
+| 124-holdout-float-computed-threshold | missed | the threshold is the sum of two float literals; the scan folds only int literal-op-literal |
+| 126-holdout-named-escape-literal | missed | the character is written as `\N{...}`; equiv has no Unicode name table, and a literal it cannot decode exactly is skipped, never guessed |
+| 131-holdout-str-int-corner-with-unlisted-int | missed | needs a string corner paired with an int that is neither a fixed partner value (1, 2) nor a literal; cross cases are a capped set, not a cartesian product |
 
 Closed in 0.20.0 (path A step 3):
 

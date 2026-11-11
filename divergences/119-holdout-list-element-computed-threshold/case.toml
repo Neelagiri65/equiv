@@ -4,3 +4,4 @@ expected = "diverges"
 class = "holdout"
 pattern = '''a list filter on a threshold that is computed (`ord` of a character), not written as a number: written off the planned input list on purpose, to test whether aiming list elements at source literals reaches a threshold that is not a literal. Written 2026-11-12 before the generator change it tests.'''
 witness = '''([100],)'''
+writeoff = "the threshold is computed at import time and never appears as a number in the source; the literal scan is a token scan by design, not an evaluator, so no element is aimed at it, and random elements do not land on it"
