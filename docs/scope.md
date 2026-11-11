@@ -114,7 +114,16 @@ changed behaviour, `2` nothing diverged but at least one changed function was
 not checked (safety stop, refused type, error, or no supported type hints; each
 is listed in the comment, never shown as green). The Action fails the PR check
 on `1` by default and on `2` only with `fail-on-not-checked: "true"`; a review
-that did not run at all (`3`) always fails it.
+that did not run at all always fails it, whatever the inputs say: `3` (bad
+manifest, bad arguments, bad key) or `4` (`review-pr` could not read the base
+ref, so nothing was compared; this is not "could not check").
+
+A function that the base manifest lists and that existed at base but no longer
+exists in the PR (removed or renamed) is reported as a behaviour change and
+counts as `1`. A listed function that never existed at base is `2`, as before.
+
+`equiv --help` exits `0`. An unknown flag, a case count or seed that is not a
+number, or an extra argument is `3`, and names what was wrong; nothing is run.
 
 ## The manifest
 
@@ -138,6 +147,18 @@ reference (a Rust or C binding and the pure-Python version):
 twin : src/fast.py : src/slow.py : parse : str[in .corpus.SQL]
 twin : src/fast.py : src/slow.py : ratio : float : same-host errors-agree
 ```
+
+**Which manifest is read.** `review-pr` reads the manifest from the base ref,
+not from the PR. Every line listed at base runs exactly as written at base,
+even if the PR edited, removed or narrowed it, or deleted the file; this
+applies to twin lines too. Lines that exist only in the PR's copy run as well
+and are named in the comment as new in this PR. When the two copies differ
+the comment says so and lists the lines. If there is no manifest at base, the
+PR's copy is used and the comment says the manifest is new in this PR. Without
+this, a PR could switch its own check off by editing the file. What this does
+not cover: on `pull_request` events GitHub runs the workflow file from the PR
+itself, so a PR from someone with write access can still change the workflow;
+protect `.github/workflows` with a ruleset or CODEOWNERS if that matters.
 
 The first file is the candidate and the second the reference. The optional last field
 takes `errors-agree` (both raising counts as agreement, whatever the class) and
