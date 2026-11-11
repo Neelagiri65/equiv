@@ -19,6 +19,8 @@ pub enum CVal {
 pub enum EvalError {
     TypeMismatch(&'static str),
     DivByZero,
+    /// Signed division of the minimum value by -1: WASM traps.
+    Overflow,
     OutOfBounds,
     ArgMissing(u8),
     NoResult,
@@ -96,9 +98,21 @@ fn bv32(op: BvOp, x: u32, y: u32) -> Result<u32, EvalError> {
         BvOp::Sub => x.wrapping_sub(y),
         BvOp::Mul => x.wrapping_mul(y),
         BvOp::DivU => x.checked_div(y).ok_or(EvalError::DivByZero)?,
-        BvOp::DivS => (x as i32).checked_div(y as i32).ok_or(EvalError::DivByZero)? as u32,
+        BvOp::DivS => {
+            if y == 0 {
+                return Err(EvalError::DivByZero);
+            }
+            // MIN / -1 is not representable: WASM traps, so do we.
+            (x as i32).checked_div(y as i32).ok_or(EvalError::Overflow)? as u32
+        }
         BvOp::RemU => x.checked_rem(y).ok_or(EvalError::DivByZero)?,
-        BvOp::RemS => (x as i32).checked_rem(y as i32).ok_or(EvalError::DivByZero)? as u32,
+        BvOp::RemS => {
+            if y == 0 {
+                return Err(EvalError::DivByZero);
+            }
+            // WASM defines MIN rem -1 as 0; only a zero divisor traps.
+            (x as i32).wrapping_rem(y as i32) as u32
+        }
         BvOp::And => x & y,
         BvOp::Or => x | y,
         BvOp::Xor => x ^ y,
@@ -114,9 +128,21 @@ fn bv64(op: BvOp, x: u64, y: u64) -> Result<u64, EvalError> {
         BvOp::Sub => x.wrapping_sub(y),
         BvOp::Mul => x.wrapping_mul(y),
         BvOp::DivU => x.checked_div(y).ok_or(EvalError::DivByZero)?,
-        BvOp::DivS => (x as i64).checked_div(y as i64).ok_or(EvalError::DivByZero)? as u64,
+        BvOp::DivS => {
+            if y == 0 {
+                return Err(EvalError::DivByZero);
+            }
+            // MIN / -1 is not representable: WASM traps, so do we.
+            (x as i64).checked_div(y as i64).ok_or(EvalError::Overflow)? as u64
+        }
         BvOp::RemU => x.checked_rem(y).ok_or(EvalError::DivByZero)?,
-        BvOp::RemS => (x as i64).checked_rem(y as i64).ok_or(EvalError::DivByZero)? as u64,
+        BvOp::RemS => {
+            if y == 0 {
+                return Err(EvalError::DivByZero);
+            }
+            // WASM defines MIN rem -1 as 0; only a zero divisor traps.
+            (x as i64).wrapping_rem(y as i64) as u64
+        }
         BvOp::And => x & y,
         BvOp::Or => x | y,
         BvOp::Xor => x ^ y,
