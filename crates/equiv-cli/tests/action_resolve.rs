@@ -37,23 +37,39 @@ fn action_checkout(d: &Path, version: Option<&str>) -> PathBuf {
     a
 }
 
-/// `gh` stand-in: logs its arguments; when `ok`, writes the requested asset
-/// (a tar.xz holding an `equiv` file) into --dir, like `gh release download`.
-fn fake_gh(bin: &Path, log: &Path, ok: bool) {
-    let body = format!(
-        r#"echo "$@" >> "{log}"
-{tail}"#,
-        log = log.display(),
-        tail = if ok {
+/// What the `gh` stand-in does for `gh release download`.
+#[derive(Clone, Copy, PartialEq)]
+enum Gh {
+    /// No such release: nothing is written, exit 1.
+    Missing,
+    /// The archive and a matching `.sha256` (cargo-dist's `<hash> *<name>`).
+    Good,
+    /// The archive, with a `.sha256` for different bytes.
+    WrongChecksum,
+    /// The archive only.
+    NoChecksum,
+}
+
+/// `gh` stand-in: logs its arguments, then writes the first requested asset (a
+/// tar.xz holding an `equiv` file) and its checksum file into --dir.
+fn fake_gh(bin: &Path, log: &Path, mode: Gh) {
+    let tail = match mode {
+        Gh::Missing => "exit 1".to_string(),
+        _ => format!(
             r#"dir=""; pat=""
-while [[ $# -gt 0 ]]; do case "$1" in --dir) dir="$2"; shift 2;; --pattern) pat="$2"; shift 2;; *) shift;; esac; done
+while [[ $# -gt 0 ]]; do case "$1" in --dir) dir="$2"; shift 2;; --pattern) [[ -z "$pat" ]] && pat="$2"; shift 2;; *) shift;; esac; done
 mkdir -p "$dir/pkg" && printf '#!/bin/sh\necho fake-equiv\n' > "$dir/pkg/equiv"
-tar -cJf "$dir/$pat" -C "$dir" pkg && rm -rf "$dir/pkg""#
-        } else {
-            "exit 1"
-        }
-    );
-    stub(bin, "gh", &body);
+tar -cJf "$dir/$pat" -C "$dir" pkg && rm -r "$dir/pkg"
+sum() {{ if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }}
+{sha}"#,
+            sha = match mode {
+                Gh::Good => r#"echo "$(sum "$dir/$pat") *$pat" > "$dir/$pat.sha256""#,
+                Gh::WrongChecksum => r#"echo "0000000000000000000000000000000000000000000000000000000000000000 *$pat" > "$dir/$pat.sha256""#,
+                _ => "exit 1",
+            }
+        ),
+    };
+    stub(bin, "gh", &format!("echo \"$@\" >> \"{}\"\n{tail}", log.display()));
 }
 
 /// `cargo` stand-in: logs its arguments and working directory, then produces
@@ -94,7 +110,7 @@ fn pinned_version_is_downloaded_never_latest() {
     let bin = d.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let gh_log = d.join("gh.log");
-    fake_gh(&bin, &gh_log, true);
+    fake_gh(&bin, &gh_log, Gh::Good);
     fake_cargo(&bin, &d.join("cargo.log"));
     let action = action_checkout(&d, Some("9.8.7"));
     let (code, env, log) = run(&d, &action);
@@ -106,6 +122,29 @@ fn pinned_version_is_downloaded_never_latest() {
     let p = PathBuf::from(line.trim_start_matches("EQUIV_BIN="));
     assert!(p.is_file(), "EQUIV_BIN points at the extracted binary: {line}");
     assert!(!d.join("cargo.log").exists(), "no build when the pinned release exists");
+    assert!(calls.contains(".tar.xz.sha256"), "the release's checksum file is fetched with the archive: {calls}");
+    assert!(log.contains("sha256"), "the log says the checksum was compared: {log}");
+}
+
+/// A downloaded archive is run only if it matches the checksum the release
+/// publishes for it. No match, or no checksum: stop. Building instead would
+/// hide that the release is not what it says it is.
+#[test]
+fn an_archive_that_fails_its_checksum_is_never_run_or_replaced_by_a_build() {
+    for (name, mode) in [("wrongsum", Gh::WrongChecksum), ("nosum", Gh::NoChecksum)] {
+        let d = dir(name);
+        let bin = d.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let gh_log = d.join("gh.log");
+        fake_gh(&bin, &gh_log, mode);
+        fake_cargo(&bin, &d.join("cargo.log"));
+        let action = action_checkout(&d, Some("9.8.7"));
+        let (code, env, log) = run(&d, &action);
+        assert_ne!(code, Some(0), "{name}: must fail closed: {log}");
+        assert!(!env.contains("EQUIV_BIN="), "{name}: no binary is handed to the next step: {env}");
+        assert!(!d.join("cargo.log").exists(), "{name}: no silent fallback to a build");
+        assert!(log.contains("::error::"), "{name}: {log}");
+    }
 }
 
 #[test]
@@ -115,7 +154,7 @@ fn missing_release_builds_the_pinned_source_not_latest() {
     std::fs::create_dir_all(&bin).unwrap();
     let gh_log = d.join("gh.log");
     let cargo_log = d.join("cargo.log");
-    fake_gh(&bin, &gh_log, false);
+    fake_gh(&bin, &gh_log, Gh::Missing);
     fake_cargo(&bin, &cargo_log);
     let action = action_checkout(&d, Some("9.8.8"));
     let (code, env, log) = run(&d, &action);
@@ -125,6 +164,7 @@ fn missing_release_builds_the_pinned_source_not_latest() {
     let built = std::fs::read_to_string(&cargo_log).expect("falls back to building the pinned source");
     assert!(built.contains(&format!("{} ::", action.display())), "builds inside the Action checkout: {built}");
     assert!(env.contains(&format!("EQUIV_BIN={}", action.join("target/release/equiv").display())), "{env}");
+    assert!(built.contains("--locked"), "the build uses the pinned Cargo.lock: {built}");
 }
 
 #[test]
@@ -133,7 +173,7 @@ fn unreadable_version_fails_loudly() {
     let bin = d.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     let gh_log = d.join("gh.log");
-    fake_gh(&bin, &gh_log, true);
+    fake_gh(&bin, &gh_log, Gh::Good);
     fake_cargo(&bin, &d.join("cargo.log"));
     let action = action_checkout(&d, None);
     let (code, env, log) = run(&d, &action);
@@ -147,4 +187,38 @@ fn action_uses_the_tested_resolver() {
     let yml = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../action.yml")).unwrap();
     assert!(yml.contains("scripts/resolve-equiv-binary.sh"), "action.yml must call the tested resolver");
     assert!(!yml.contains("gh release download"), "no untested download logic inline in action.yml");
+}
+
+/// A tag can be moved to different code; a commit SHA cannot. Every action
+/// that is not this repo's own is pinned by full SHA, in the Action and in the
+/// repo's workflows (release.yml is generated by cargo-dist and not ours to edit).
+#[test]
+fn third_party_actions_are_pinned_by_commit_sha() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut files = vec![root.join("action.yml")];
+    for e in std::fs::read_dir(root.join(".github/workflows")).unwrap() {
+        let p = e.unwrap().path();
+        if p.file_name().and_then(|n| n.to_str()) != Some("release.yml") {
+            files.push(p);
+        }
+    }
+    let mut seen = 0;
+    for f in files {
+        for line in std::fs::read_to_string(&f).unwrap().lines() {
+            let Some(target) = line.trim().trim_start_matches("- ").strip_prefix("uses:") else { continue };
+            let target = target.split('#').next().unwrap().trim();
+            if target.starts_with("./") {
+                continue;
+            }
+            seen += 1;
+            let rev = target.rsplit('@').next().unwrap();
+            assert!(
+                rev.len() == 40 && rev.bytes().all(|b| b.is_ascii_hexdigit()),
+                "{}: `{target}` is not pinned by a full commit SHA",
+                f.display()
+            );
+            assert!(line.contains("# v"), "{}: keep the tag in a trailing comment: {line}", f.display());
+        }
+    }
+    assert!(seen >= 6, "expected to find the uses: lines, found {seen}");
 }
