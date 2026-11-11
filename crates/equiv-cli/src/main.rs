@@ -144,10 +144,13 @@ EVALUATOR ENVIRONMENT:
   The Python process that runs the functions gets only PATH, HOME, temp dirs,
   locale, PYTHON*, virtualenv/conda and Windows system variables. Credentials
   such as $EQUIV_SIGNING_KEY or $GH_TOKEN are not passed. Not a sandbox.
+  PYTHONOPTIMIZE, PYTHONWARNINGS, PYTHONDEVMODE and PYTHONINTMAXSTRDIGITS are
+  not passed either: they change what code does and are not in the receipt.
+  The candidate and the reference each run in their own Python process.
 
 EVIDENCE:
-  If every generated input (10 or more) makes both versions raise, only errors
-  were compared: could not check (exit 2), never EQUIVALENT. If fewer than 10
+  If every generated input makes both versions raise, only errors were
+  compared: could not check (exit 2), never EQUIVALENT. If fewer than 10
   inputs returned a value, EQUIVALENT is labelled thin evidence, in the output
   and in the receipt (tier tested-thin). Functions with fewer than 10 possible
   inputs (no arguments, a bool) are checked completely and exempt.
@@ -394,8 +397,14 @@ fn run() -> Result<u8, String> {
             let artifact =
                 std::fs::read(artifact_path).map_err(|e| format!("{artifact_path}: {e}"))?;
             let c = load_contract(contract_path)?;
-            let receipt = equiv_engine::check(&artifact, &c, &equiv_engine::DiffConfig::default());
+            let checked = equiv_engine::check_explained(&artifact, &c, &equiv_engine::DiffConfig::default());
+            let receipt = checked.receipt;
             println!("verdict: {:?}", receipt.verdict);
+            // The reason for a could-not-check result: text for the reader,
+            // not part of the receipt bytes.
+            if let Some(note) = &checked.note {
+                println!("reason: {note}");
+            }
             println!("receipt: {}", hex(&receipt.to_bytes()));
             Ok(receipt.verdict.exit_code() as u8)
         }
