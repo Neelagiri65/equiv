@@ -268,3 +268,31 @@ fn base_files_live_in_a_private_directory_that_is_removed() {
         .collect();
     assert!(left.is_empty(), "the base files and their directory are removed: {left:?}");
 }
+
+#[test]
+fn a_manifest_path_outside_the_tree_is_an_error_not_a_new_manifest() {
+    let d = repo("abs", &[("m.py", BASE_PY), (".equiv-review", "m.py : f : int\n")]);
+    let abs = d.join(".equiv-review");
+    let out = Command::new(BIN)
+        .args(["review-pr", abs.to_str().unwrap(), "--base", "HEAD"])
+        .current_dir(&d)
+        .env("EQUIV_METRICS", "off")
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+#[test]
+fn run_from_a_subdirectory_the_base_and_head_copies_are_the_same_files() {
+    let d = repo("subdir", &[("m.py", BASE_PY)]);
+    std::fs::create_dir_all(d.join("pkg")).unwrap();
+    std::fs::write(d.join("pkg/n.py"), "def f(x):\n    return x * 2\n").unwrap();
+    std::fs::write(d.join("pkg/.equiv-review"), "n.py : f : int\n").unwrap();
+    git(&d, &["add", "."]);
+    git(&d, &["commit", "-q", "-m", "pkg"]);
+    std::fs::write(d.join("pkg/n.py"), "def f(x):\n    return x * 2 + (1 if x == 7 else 0)\n").unwrap();
+    std::fs::write(d.join("pkg/.equiv-review"), "").unwrap();
+    let (code, out, err) = review_pr(&d.join("pkg"), &[]);
+    assert_eq!(code, Some(1), "{out}{err}");
+    assert!(out.contains("DIVERGES") && out.contains("differs from base"), "{out}");
+}

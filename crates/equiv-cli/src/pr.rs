@@ -130,13 +130,24 @@ fn resolve_base(base: &str) -> Result<String, String> {
 
 /// The file's content at the (already resolved) base commit; None when the
 /// path does not exist there. The commit is known to be readable, so a
-/// failure here is about the path, not the ref.
-fn show_at(sha: &str, path: &str) -> Option<Vec<u8>> {
-    let path = path.strip_prefix("./").unwrap_or(path);
-    match git(&["show", &format!("{sha}:{path}")]) {
+/// failure here is about the path, not the ref. `spec` is git's path syntax:
+/// `dir/file` from the repository root, `./dir/file` from the current directory.
+fn show_at(sha: &str, spec: &str) -> Option<Vec<u8>> {
+    match git(&["show", &format!("{sha}:{spec}")]) {
         Ok(o) if o.status.success() => Some(o.stdout),
         _ => None,
     }
+}
+
+/// A manifest path (the manifest itself, or a file it names) as git sees it
+/// from the current directory, so the base copy and the working-tree copy are
+/// always the same file. A path git cannot place in the tree is an error:
+/// treating it as "not at base" would quietly drop the base manifest.
+fn tree_spec(path: &str) -> Result<String, String> {
+    if std::path::Path::new(path).is_absolute() || path.split(['/', '\\']).any(|p| p == "..") {
+        return Err(format!("`{path}`: give a path inside the repository, relative to the current directory"));
+    }
+    Ok(format!("./{}", path.strip_prefix("./").unwrap_or(path)))
 }
 
 #[derive(Clone)]
@@ -375,7 +386,7 @@ pub fn run(argv: &[String], safety: u64, budget: u64) -> Result<u8, String> {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => return Err(format!("{manifest}: {e}")),
         };
-        let base_text = show_at(&base_sha, manifest).map(|b| String::from_utf8_lossy(&b).into_owned());
+        let base_text = show_at(&base_sha, &tree_spec(manifest)?).map(|b| String::from_utf8_lossy(&b).into_owned());
         let head_lines = match &head_text {
             Some(t) => parse_manifest(manifest, t).map_err(|e| format!("{e} (the manifest in this PR)"))?,
             None => Vec::new(),
@@ -454,7 +465,7 @@ pub fn run(argv: &[String], safety: u64, budget: u64) -> Result<u8, String> {
                     let mut any_gone = false;
                     if listed_at_base {
                         for path in [&cand, &refr] {
-                            if let Some(b) = show_at(&base_sha, path) {
+                            if let Some(b) = show_at(&base_sha, &tree_spec(path)?) {
                                 if is_removed(path, &func, &b) {
                                     removed.push((func.clone(), path.clone()));
                                     any_gone = true;
@@ -487,7 +498,7 @@ pub fn run(argv: &[String], safety: u64, budget: u64) -> Result<u8, String> {
                     // itself is readable). The check then runs against an
                     // empty base and reports that there is nothing to
                     // compare with, as before.
-                    let base_bytes = show_at(&base_sha, &file);
+                    let base_bytes = show_at(&base_sha, &tree_spec(&file)?);
                     if let Some(b) = &base_bytes {
                         if listed_at_base && is_removed(&file, &func, b) {
                             removed.push((func, file));
