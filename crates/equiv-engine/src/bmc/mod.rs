@@ -14,7 +14,7 @@ use term::{Arena, TId, Term};
 pub enum Outcome {
     Proved(ProofEvidence),
     /// SAT model, already replayed and confirmed against the interpreter.
-    Counterexample { args: Vec<u64> },
+    Counterexample { args: Vec<u64>, trap: bool },
     /// Model failed concrete replay: solver/encoder disagreement, a bug
     /// surfaced honestly, never reported as a counterexample.
     Disagreement,
@@ -63,6 +63,13 @@ pub fn coverage_probe(wasm_bytes: &[u8], export_name: &str) -> Coverage {
         Ok(_) => Coverage::Provable,
         Err(_) => Coverage::OutOfEnvelope,
     }
+}
+
+/// True when the exported function is inside the scalar envelope: no
+/// memory, call or global instruction, so it cannot read or write linear
+/// memory whatever its inputs.
+pub(crate) fn touches_no_memory(wasm_bytes: &[u8], export_name: &str) -> bool {
+    sym::extract(wasm_bytes, export_name).is_some()
 }
 
 /// Translate a scalar contract expression to a term. Any memory/region
@@ -241,7 +248,7 @@ pub fn try_prove(wasm_bytes: &[u8], contract: &Contract) -> Outcome {
             Outcome::Proved(ProofEvidence::mint_unsat(unroll_used, blaster.clauses))
         }
         Ok(Some(args)) => match crate::difftest::replay_scalar(wasm_bytes, contract, &args) {
-            Some(true) => Outcome::Counterexample { args },
+            Some(r) if r.violates => Outcome::Counterexample { args, trap: r.trapped },
             // Model doesn't violate concretely. With loops in play the
             // SAT witness may be a bound overflow, not a bug. Honest
             // fallback. Loop-free, it's an encoder/solver bug.
@@ -260,7 +267,7 @@ pub fn outcome_verdict(o: Outcome) -> Option<Verdict> {
         // reports what was actually executed (tested-N), never a bare UNSAT.
         #[cfg(not(feature = "uncertified-proofs"))]
         Outcome::Proved(_) => None,
-        Outcome::Counterexample { args } => Some(Verdict::Counterexample { args, trap: false }),
+        Outcome::Counterexample { args, trap } => Some(Verdict::Counterexample { args, trap }),
         Outcome::Disagreement => Some(Verdict::Unknown(
             equiv_core::UnknownReason::SolverDisagreement,
         )),
