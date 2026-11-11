@@ -95,3 +95,23 @@ fn receipt_id_is_sha256_of_unsigned_receipt_bytes() {
     let signed_diff = SignedReceipt::sign(different.to_bytes(), &SigningKey::from_seed(&[7u8; 32]));
     assert_ne!(signed_diff.receipt_id(), expected);
 }
+
+#[test]
+fn a_non_ascii_seed_of_the_right_byte_length_is_an_error_not_a_panic() {
+    let s = format!("{}\u{e9}", "a".repeat(62));
+    assert_eq!(s.len(), 64);
+    assert!(SigningKey::from_hex(&s).is_err());
+}
+
+#[test]
+fn an_envelope_without_the_version_key_is_rejected() {
+    use equiv_core::cbor::{self, Value};
+    let key = SigningKey::from_seed(&[7u8; 32]);
+    let signed = SignedReceipt::sign(sample_receipt().to_bytes(), &key);
+    let Value::Map(entries) = cbor::from_bytes(&signed.to_bytes()).unwrap() else { panic!("envelope is a map") };
+    let without: Vec<(u64, Value)> = entries.into_iter().filter(|(k, _)| *k != 0).collect();
+    assert_eq!(without.len(), 3);
+    assert!(SignedReceipt::from_bytes(&cbor::to_bytes(&Value::Map(without))).is_err());
+    // The complete envelope still parses.
+    assert!(SignedReceipt::from_bytes(&signed.to_bytes()).is_ok());
+}
