@@ -244,6 +244,41 @@ fn removed_names(base_src: &str, head_src: &str) -> HashSet<String> {
         .collect()
 }
 
+/// Does the module at `path` still give `name` a value at module level some
+/// other way than a plain top-level `def`? The detector only sees top-level
+/// `def`s, but a port typically keeps the name and changes where it comes from
+/// (`from ._native import f`, `f = impl.f`, a `def` inside `try/except
+/// ImportError`). Such a function still exists and must be checked, not
+/// reported as removed. The file is parsed, never run. If it cannot be parsed
+/// or Python cannot be started, the answer is "yes": the check then runs and
+/// reports what it finds, and nothing false is said about a removal.
+const BOUND_PY: &str = r#"import ast, sys
+try:
+    tree = ast.parse(open(sys.argv[1], encoding='utf-8').read())
+except Exception:
+    print('unknown'); sys.exit(0)
+name = sys.argv[2]
+def binds(node):
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return node.name == name          # the name only; never its body
+    if isinstance(node, ast.Lambda):
+        return False
+    if isinstance(node, ast.alias):
+        return node.name == '*' or (node.asname or node.name.split('.')[0]) == name
+    if isinstance(node, ast.Name):
+        return node.id == name and isinstance(node.ctx, ast.Store)
+    return any(binds(c) for c in ast.iter_child_nodes(node))
+print('bound' if any(binds(s) for s in tree.body) else 'absent')
+"#;
+
+fn still_bound(path: &str, name: &str) -> bool {
+    if !std::path::Path::new(path).is_file() {
+        return false;
+    }
+    let out = Command::new("python3").args(["-I", "-c", BOUND_PY, path, name]).output();
+    !matches!(out, Ok(o) if o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "absent")
+}
+
 /// Put `top` above the renderer's headline and `after` below it. The renderer
 /// (equiv-review) owns the comment; this only adds the gate's own statements
 /// to it. With `drop_headline`, the headline is removed: used when nothing
@@ -455,6 +490,7 @@ pub fn run(argv: &[String], safety: u64, budget: u64) -> Result<u8, String> {
                     removed_names(&String::from_utf8_lossy(base_src), &head_src)
                 })
                 .contains(func)
+                && !still_bound(path, func)
         };
         for (l, listed_at_base) in lines {
             match l.line {

@@ -222,3 +222,18 @@ fn third_party_actions_are_pinned_by_commit_sha() {
     }
     assert!(seen >= 6, "expected to find the uses: lines, found {seen}");
 }
+
+/// The review runs the PR's Python as the job's user. The checkout token must
+/// not be left in .git/config for it: the repo's own workflow and the snippet
+/// users copy from the README both switch that off.
+#[test]
+fn the_review_workflow_and_the_readme_snippet_do_not_persist_the_checkout_token() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let wf = std::fs::read_to_string(root.join(".github/workflows/equiv-review.yml")).unwrap();
+    assert!(wf.contains("persist-credentials: false"), "equiv-review.yml");
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    let snippet = readme.split("```yaml").nth(1).and_then(|s| s.split("```").next()).expect("the Action snippet");
+    assert!(snippet.contains("Neelagiri65/equiv@") && snippet.contains("persist-credentials: false"), "{snippet}");
+    assert!(!readme.contains("Credentials are withheld from the code being checked"), "the old claim is gone");
+    assert!(readme.contains("not a\n  sandbox") || readme.contains("not a sandbox"), "the limit is stated");
+}

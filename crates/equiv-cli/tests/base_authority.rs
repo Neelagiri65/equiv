@@ -296,3 +296,65 @@ fn run_from_a_subdirectory_the_base_and_head_copies_are_the_same_files() {
     assert_eq!(code, Some(1), "{out}{err}");
     assert!(out.contains("DIVERGES") && out.contains("differs from base"), "{out}");
 }
+
+/// A port keeps the name and changes where it comes from. That is not a
+/// removal: the function still exists and gets a real verdict.
+#[test]
+fn a_function_now_imported_or_assigned_under_the_same_name_is_checked_not_called_removed() {
+    let impl_same = "def f(x):\n    return x + x\n";
+    let impl_diff = "def f(x):\n    return x + x + (1 if x == 7 else 0)\n";
+    for (name, head, imp, want) in [
+        ("imp", "from .impl import f\n", impl_same, 0),
+        ("impdiff", "from .impl import f\n", impl_diff, 1),
+        ("assign", "from . import impl\nf = impl.f\n", impl_same, 0),
+        ("tryimp", "try:\n    from nowhere import f\nexcept ImportError:\n    def f(x):\n        return x + x\n", impl_same, 0),
+    ] {
+        let d = repo(name, &[(".equiv-review", "pkg/m.py : f : int\n")]);
+        std::fs::create_dir_all(d.join("pkg")).unwrap();
+        std::fs::write(d.join("pkg/__init__.py"), "").unwrap();
+        std::fs::write(d.join("pkg/impl.py"), imp).unwrap();
+        std::fs::write(d.join("pkg/m.py"), BASE_PY).unwrap();
+        git(&d, &["add", "."]);
+        git(&d, &["commit", "-q", "-m", "pkg"]);
+        std::fs::write(d.join("pkg/m.py"), head).unwrap();
+        let (code, out, err) = review_pr(&d, &[]);
+        assert_eq!(code, Some(want), "{name}: {out}{err}");
+        assert!(!out.contains("no longer exists"), "{name}: {out}");
+        assert!(out.contains("| `f` |"), "{name}: a real row for f: {out}");
+    }
+    // A local variable of that name inside another function is not the function.
+    let d = repo("local", &[("m.py", BASE_PY), (".equiv-review", "m.py : f : int\n")]);
+    std::fs::write(d.join("m.py"), "def g(x):\n    f = x + 1\n    return f\n").unwrap();
+    let (code, out, err) = review_pr(&d, &[]);
+    assert_eq!(code, Some(1), "{out}{err}");
+    assert!(out.contains("`f` no longer exists in `m.py`"), "{out}");
+}
+
+/// The base copy lives outside the tree; a module that imports its siblings
+/// relatively must still load on both sides.
+#[test]
+fn a_package_module_with_relative_imports_is_still_checked_against_base() {
+    let d = repo("pkg", &[(".equiv-review", "pkg/m.py : f : int\n")]);
+    std::fs::create_dir_all(d.join("pkg")).unwrap();
+    std::fs::write(d.join("pkg/__init__.py"), "").unwrap();
+    std::fs::write(d.join("pkg/helper.py"), "def twice(x):\n    return x * 2\n").unwrap();
+    std::fs::write(d.join("pkg/m.py"), "from . import helper\n\ndef f(x):\n    return helper.twice(x)\n").unwrap();
+    git(&d, &["add", "."]);
+    git(&d, &["commit", "-q", "-m", "pkg"]);
+    std::fs::write(d.join("pkg/m.py"), "from .helper import twice\n\ndef f(x):\n    return twice(x) + 0\n").unwrap();
+    let (code, out, err) = review_pr(&d, &["--base", "HEAD"]);
+    assert_eq!(code, Some(0), "{out}{err}");
+    assert!(out.contains("| `f` | equivalent |"), "{out}");
+}
+
+/// The detector's wording for a removed function is what the removal check
+/// keys on. If it changes, this fails instead of removals turning quiet.
+#[test]
+fn the_detector_still_reports_a_removed_function_in_the_words_the_gate_expects() {
+    let d = equiv_review::detect_changed_functions("def f(x):\n    return x\n", "def g(x):\n    return x\n").unwrap();
+    assert!(
+        d.iter().any(|x| x.name == "f"
+            && x.status == equiv_review::DetectedStatus::NotChecked { reason: "removed in this change".into() }),
+        "{d:?}"
+    );
+}
