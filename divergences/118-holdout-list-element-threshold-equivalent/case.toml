@@ -1,0 +1,5 @@
+function = "keep_large"
+args = "list[int]"
+expected = "equivalent"
+class = "holdout"
+pattern = '''a list filter `x >= 250` rewritten as a loop with `not x < 250`: the same for every int, including elements on and next to the threshold. Written 2026-11-12 before the generator change it tests.'''

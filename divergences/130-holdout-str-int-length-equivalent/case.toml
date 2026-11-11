@@ -1,0 +1,5 @@
+function = "long_enough"
+args = "str,int"
+expected = "equivalent"
+class = "holdout"
+pattern = '''a two-argument length check `len(s) >= n` rewritten as `not len(s) < n`: the same for every string and int, so string corners paired with non-default ints must still agree. Written 2026-11-12 before the generator change it tests.'''

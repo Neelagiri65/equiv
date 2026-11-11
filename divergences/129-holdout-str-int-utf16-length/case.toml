@@ -1,0 +1,6 @@
+function = "long_enough"
+args = "str,int"
+expected = "diverges"
+class = "holdout"
+pattern = '''a length check counted in UTF-16 code units instead of characters: diverges only when a string holding an astral character meets a non-zero length. Needs a string corner and a non-default int together. Written 2026-11-12 before the generator change it tests.'''
+witness = '''('\U0001f600', 2)'''

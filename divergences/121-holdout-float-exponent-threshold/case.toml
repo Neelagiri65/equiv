@@ -1,0 +1,6 @@
+function = "above_eps"
+args = "float"
+expected = "diverges"
+class = "holdout"
+pattern = '''`x >= eps` rewritten as `x > eps` with the tolerance written in exponent form. A source-scan case on purpose: the threshold is a literal in the source. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(1e-9,)'''

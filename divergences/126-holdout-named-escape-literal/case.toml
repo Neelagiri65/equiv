@@ -1,0 +1,6 @@
+function = "is_bullet_item"
+args = "str"
+expected = "diverges"
+class = "holdout"
+pattern = '''a test for a character written as a named escape: written off the planned input list on purpose, to test whether the string scan reaches a literal it can only decode with a Unicode name table. Written 2026-11-12 before the generator change it tests.'''
+witness = '''('\u2022',)'''

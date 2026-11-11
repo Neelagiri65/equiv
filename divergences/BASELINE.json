@@ -1,12 +1,12 @@
 {
-  "equiv_version": "0.21.0",
+  "equiv_version": "0.27.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 115,
-    "diverges": 76,
-    "equivalent": 39,
+    "cases": 131,
+    "diverges": 88,
+    "equivalent": 43,
     "caught": 73,
-    "missed": 0,
+    "missed": 12,
     "false_alarms": 0,
     "could_not_check": 4
   },
@@ -815,6 +815,118 @@
       "outcome": "pass",
       "n": 2049,
       "detail": "EQUIVALENT: agreed on all 2049 generated inputs (seed 1)"
+    },
+    "116-holdout-list-element-threshold": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
+    },
+    "117-holdout-dict-value-threshold": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1362,
+      "detail": "EQUIVALENT: agreed on all 1362 generated inputs (seed 1)"
+    },
+    "118-holdout-list-element-threshold-equivalent": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
+    },
+    "119-holdout-list-element-computed-threshold": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1453,
+      "detail": "EQUIVALENT: agreed on all 1453 generated inputs (seed 1)"
+    },
+    "120-holdout-negative-int-sentinel": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 767,
+      "detail": "EQUIVALENT: agreed on all 767 generated inputs (seed 1)"
+    },
+    "121-holdout-float-exponent-threshold": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 533,
+      "detail": "EQUIVALENT: agreed on all 533 generated inputs (seed 1)"
+    },
+    "122-holdout-float-int-literal-threshold": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 533,
+      "detail": "EQUIVALENT: agreed on all 533 generated inputs (seed 1)"
+    },
+    "123-holdout-float-negative-threshold-equivalent": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 533,
+      "detail": "EQUIVALENT: agreed on all 533 generated inputs (seed 1)"
+    },
+    "124-holdout-float-computed-threshold": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 535,
+      "detail": "EQUIVALENT: agreed on all 535 generated inputs (seed 1)"
+    },
+    "125-holdout-octal-escape-literal": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1694,
+      "detail": "EQUIVALENT: agreed on all 1694 generated inputs (seed 1)"
+    },
+    "126-holdout-named-escape-literal": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1688,
+      "detail": "EQUIVALENT: agreed on all 1688 generated inputs (seed 1)"
+    },
+    "127-holdout-bell-escape-equivalent": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 1688,
+      "detail": "EQUIVALENT: agreed on all 1688 generated inputs (seed 1)"
+    },
+    "128-holdout-raw-fstring-prefix-literal": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1687,
+      "detail": "EQUIVALENT: agreed on all 1687 generated inputs (seed 1)"
+    },
+    "129-holdout-str-int-utf16-length": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1990,
+      "detail": "EQUIVALENT: agreed on all 1990 generated inputs (seed 1)"
+    },
+    "130-holdout-str-int-length-equivalent": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 1975,
+      "detail": "EQUIVALENT: agreed on all 1975 generated inputs (seed 1)"
+    },
+    "131-holdout-str-int-corner-with-unlisted-int": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 1976,
+      "detail": "EQUIVALENT: agreed on all 1976 generated inputs (seed 1)"
     }
   }
 }

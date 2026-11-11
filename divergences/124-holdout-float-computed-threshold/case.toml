@@ -1,0 +1,6 @@
+function = "above"
+args = "float"
+expected = "diverges"
+class = "holdout"
+pattern = '''a float threshold written as the sum of two literals: written off the planned input list on purpose, to test whether aiming at float literals and their neighbours reaches a constant that is computed from them. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(0.30000000000000004,)'''
