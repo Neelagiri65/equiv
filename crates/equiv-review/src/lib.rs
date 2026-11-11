@@ -1815,7 +1815,12 @@ impl ReviewReceipt {
 
 // ---------- the oracle ----------
 
-fn driver_source(cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize, soft: &[usize]) -> String {
+/// The evaluator for ONE side (`is_cand`: the candidate, else the reference).
+/// Each side runs in its own interpreter, so neither can see or alter the
+/// other's arguments, return values or loaded modules. The driver loads only
+/// its own side's file and reports one outcome line per input, then an end
+/// line; the comparison is done by the caller, on the reported bytes.
+fn driver_source(is_cand: bool, cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize, soft: &[usize]) -> String {
     let cases_py: Vec<String> = cases
         .iter()
         .map(|c| {
@@ -1883,7 +1888,7 @@ def _libm(_path):
 for _p in ({cand:?}, {refr:?}):
     _w = _libm(_p)
     if _w:
-        print('__REFUSED__\t' + _w); _sys.exit(0)
+        _emit('__REFUSED__\t' + _w); _stop()
 "#,
         fn = spec.func,
         cand = cand,
@@ -1926,7 +1931,7 @@ def _bad(_path):
 for _p in ({cand:?}, {refr:?}):
     _w = _bad(_p)
     if _w:
-        print('__REFUSED__\t' + _w); _sys.exit(0)
+        _emit('__REFUSED__\t' + _w); _stop()
 "#,
             fn = spec.func,
             cand = cand,
@@ -1935,27 +1940,38 @@ for _p in ({cand:?}, {refr:?}):
     } else {
         String::new()
     };
+    let (own, name, side) = if is_cand { (cand, "cand", "candidate") } else { (refr, "ref", "reference") };
     format!(
         r#"import importlib.util as u
 import struct
 import sys as _sys
 import os as _os
-print('__PY__\t' + str(_sys.version_info[0]) + '.' + str(_sys.version_info[1]))
+# Result lines leave on a private copy of the original stdout. File descriptor
+# 1 and sys.stdout are pointed at the null device first, so nothing the
+# reviewed code prints can be read as a result line. Values cross as hex.
+_out = _os.fdopen(_os.dup(1), 'w', encoding='utf-8', errors='backslashreplace', newline='\n')
+_null = open(_os.devnull, 'w')
+_os.dup2(_null.fileno(), 1)
+_sys.stdout = _null
+def _emit(s): _out.write(s + '\n')
+def _stop():
+    _out.flush(); _os._exit(0)
+def _hex(s): return s.encode('utf-8', 'backslashreplace').hex()
+_emit('__PY__\t' + str(_sys.version_info[0]) + '.' + str(_sys.version_info[1]))
 {libm}{admis}# Deterministic step budget (backlog 0.3, gate P3). Every LINE and JUMP event
 # raised by code outside this driver file counts one step; past the budget the
 # callback raises _Budget, and keeps raising on every later event, so user code
 # that swallows it (even a bare except) cannot loop on. No clock is read.
 if _sys.version_info < (3, 12):
-    print('__NOBUDGET__\t' + _sys.version.split()[0]); _sys.exit(0)
+    _emit('__NOBUDGET__\t' + _sys.version.split()[0]); _stop()
 _M = _sys.monitoring
 _TOOL = 4
 _EV = _M.events.LINE | _M.events.JUMP
 _BUDGET = {budget}
 # Cases from index _LARGE on are the large-magnitude int corners (outside
 # the envelope). Exhausting the budget there is 'not judged at this input',
-# printed as SKIP and counted; before it, exhaustion ends the review.
+# reported and counted; before it, exhaustion ends this side's run.
 _LARGE = {large_from}
-_ERRORS_AGREE = {errors_agree}
 # Harvested inputs before the tail: also 'not judged' on budget exhaustion.
 _SOFT = {{{soft}}}
 _left = [0]
@@ -1975,7 +1991,7 @@ _M.register_callback(_TOOL, _M.events.LINE, _tick)
 _M.register_callback(_TOOL, _M.events.JUMP, _tick)
 _M.set_events(_TOOL, _EV)
 def _metered(fn, *args):
-    # (value, exception name or None, budget exhausted?)
+    # (value, exception or None, budget exhausted?)
     _left[0] = _BUDGET; _on[0] = True
     try:
         v = fn(*args); e = None
@@ -1984,7 +2000,8 @@ def _metered(fn, *args):
         # A Rust panic through PyO3 (pyo3_runtime.PanicException) derives from
         # BaseException. It is a deterministic outcome of the function, so it
         # is observed like an exception; anything else non-Exception
-        # (KeyboardInterrupt, SystemExit, ...) still stops the run.
+        # (KeyboardInterrupt, SystemExit, ...) is not an outcome: the caller
+        # reports it and this side's run ends there.
         if not isinstance(x, Exception) and type(x).__name__ != 'PanicException': raise
         v = None; e = x
     finally:
@@ -2009,84 +2026,94 @@ def load(p, n):
     s = u.spec_from_file_location(fullname, p); m = u.module_from_spec(s)
     if _pkg: m.__package__ = _pkg
     _sys.modules[fullname] = m; s.loader.exec_module(m); return m
+class _NonCanon(Exception): pass
 def canon(x):
-    # Canonical, order-independent form. int/str/bool/None reproduce repr (so
-    # existing reviews are unchanged); float -> exact bits (NaN -> one token);
-    # list -> recursive, order preserved (order is observable); dict -> sorted
-    # string keys (a map, order is not observable). tuple -> recursive in
-    # parentheses (distinct from list; a 1-tuple keeps its comma so it differs
-    # from its element). namedtuple -> class name + field names + values, not
-    # identity, so candidate and reference may each define their own class.
-    # Anything else (set, complex, custom object, other tuple subclasses,
-    # non-string keys) -> __NONCANON__, which the driver turns into Refused.
-    if isinstance(x, bool): return repr(x)
-    if isinstance(x, int): return repr(x)
-    if isinstance(x, float): return 'nanq' if x != x else x.hex()
-    if isinstance(x, str): return repr(x)
+    # Canonical, order-independent form. int/str/bool/None reproduce repr;
+    # float -> exact bits (NaN -> one token); list -> recursive, order
+    # preserved (order is observable); dict -> sorted string keys (a map,
+    # order is not observable). tuple -> recursive in parentheses (distinct
+    # from list; a 1-tuple keeps its comma so it differs from its element).
+    # namedtuple -> class name + field names + values, not identity, so
+    # candidate and reference may each define their own class.
+    # The plain types are matched exactly. A subclass of int, float, str,
+    # list or dict (an enum, a Counter, an OrderedDict, ...) is read through
+    # the base type's own methods and written under its class name, so it
+    # agrees with the same class on the other side and never with the plain
+    # type. Anything else (set, complex, custom object, other tuple
+    # subclasses, non-string keys) raises _NonCanon -> Refused.
+    t = type(x)
+    if t is bool: return repr(x)
+    if t is int:
+        # An int past the interpreter's int-to-str digit limit has no decimal
+        # repr; its hex form is exact and has no limit.
+        try: return repr(x)
+        except ValueError: return hex(x)
+    if t is float: return 'nanq' if x != x else x.hex()
+    if t is str: return repr(x)
     if x is None: return 'None'
-    if isinstance(x, list): return '[' + ', '.join(canon(e) for e in x) + ']'
-    if type(x) is tuple:
+    if t is list: return '[' + ', '.join(canon(e) for e in x) + ']'
+    if t is tuple:
         return '(' + ', '.join(canon(e) for e in x) + (',' if len(x) == 1 else '') + ')'
     if isinstance(x, tuple):
         # Only a class made directly by namedtuple()/NamedTuple (bases exactly
         # (tuple,)); a further subclass may override __eq__ etc., so refuse it.
-        _f = getattr(type(x), '_fields', None)
-        if (type(x).__bases__ == (tuple,) and isinstance(_f, tuple) and len(_f) == len(x)
+        _f = getattr(t, '_fields', None)
+        if (t.__bases__ == (tuple,) and isinstance(_f, tuple) and len(_f) == len(x)
                 and all(isinstance(k, str) for k in _f)):
-            return type(x).__name__ + '(' + ', '.join(k + '=' + canon(v) for k, v in zip(_f, x)) + ')'
-        return '__NONCANON__'
-    if isinstance(x, dict):
-        if not all(isinstance(k, str) for k in x): return '__NONCANON__'
+            return t.__name__ + '(' + ', '.join(k + '=' + canon(v) for k, v in zip(_f, x)) + ')'
+        raise _NonCanon()
+    if t is dict:
+        if not all(type(k) is str for k in x): raise _NonCanon()
         return '{{' + ', '.join(repr(k) + ': ' + canon(x[k]) for k in sorted(x)) + '}}'
-    return '__NONCANON__'
-def _load(p, n, side):
-    # Module top-level code runs under the same budget; a load error is
-    # re-raised unchanged so its message still reaches the verdict.
-    m, e, out = _metered(load, p, n)
-    if out:
-        print('__BUDGET__\tload\t' + side); _sys.exit(0)
-    if e is not None: raise e
-    return m
-cand = _load({cand:?}, "cand", 'candidate'); ref = _load({refr:?}, "ref", 'reference')
-cf = getattr(cand, {fn:?}); rf = getattr(ref, {fn:?})
+    if isinstance(x, int): return t.__name__ + ':' + canon(int.__add__(x, 0))
+    if isinstance(x, float): return t.__name__ + ':' + canon(float.__float__(x))
+    if isinstance(x, str): return t.__name__ + ':' + canon(str.__getitem__(x, slice(None)))
+    if isinstance(x, list): return t.__name__ + ':' + canon(list(list.__iter__(x)))
+    if isinstance(x, dict):
+        return t.__name__ + ':' + canon({{k: dict.__getitem__(x, k) for k in dict.keys(x)}})
+    raise _NonCanon()
+_m, _e, _o = _metered(load, {own:?}, {name:?})
+if _o:
+    _emit('__BUDGET__\tload\t{side}'); _stop()
+# A load error is re-raised unchanged so its message still reaches the verdict.
+if _e is not None: raise _e
 # The cases are evaluated once from text rather than kept as a module-level
 # literal in this file's code (keeps the driver's own code small for large
 # value sets). The text is hex so any case source (quotes, escapes,
 # lone-surrogate escapes) survives unchanged.
-cases = eval(bytes.fromhex('{cases_hex}').decode('utf-8'))
-def _judge_all():
+def _run_all(fn, cases):
+    # One line per input, in order: V value, X exception class, B step budget
+    # exhausted, N not a comparable value, U reading the value failed, Q the
+    # function stopped the interpreter. N, U, Q and a B outside the tolerated
+    # inputs end this side's run. The end line states how many inputs were
+    # reported; a run without it did not finish.
     for i, args in enumerate(cases):
-        _cv, _ce, _oc = _metered(cf, *args)
-        _rv, _re, _or = _metered(rf, *args)
-        if _oc or _or:
-            if i >= _LARGE or i in _SOFT:
-                print(f"{{i}}\tSKIP"); continue
-            _side = 'candidate and reference' if (_oc and _or) else ('candidate' if _oc else 'reference')
-            print(f"__BUDGET__\t{{i}}\t{{_side}}"); _sys.exit(0)
-        try: cv = canon(_cv) if _ce is None else None; ce = None if _ce is None else type(_ce).__name__
-        except Exception as e: cv = None; ce = type(e).__name__
-        try: rv = canon(_rv) if _re is None else None; re_ = None if _re is None else type(_re).__name__
-        except Exception as e: rv = None; re_ = type(e).__name__
-        if (cv is not None and '__NONCANON__' in cv) or (rv is not None and '__NONCANON__' in rv):
-            print('__REFUSED__\treturns a value that is not JSON-structural (no stable cross-host form)'); _sys.exit(0)
-        if ce is not None or re_ is not None:
-            ok = (ce == re_) or (_ERRORS_AGREE and ce is not None and re_ is not None)
-            # Show each side's outcome: its exception name if it raised, else its
-            # actual value. (Previously printed ce/re_ for both, so the non-raising
-            # side reported None instead of its real value.)
-            dc = ce if ce is not None else cv
-            dr = re_ if re_ is not None else rv
-            # EQX: agreed, and a side raised (counted as an exception observed).
-            print(f"{{i}}\t{{'EQX' if ok else 'NE'}}\t{{dc}}\t{{dr}}")
-        else:
-            print(f"{{i}}\t{{'EQ' if cv == rv else 'NE'}}\t{{cv}}\t{{rv}}")
-_judge_all()
+        try:
+            v, e, out = _metered(fn, *args)
+        except BaseException as x:
+            _emit(f"{{i}}\tQ\t{{_hex(type(x).__name__)}}"); _emit(f"__END__\t{{i + 1}}"); _stop()
+        if out:
+            _emit(f"{{i}}\tB\t")
+            if i >= _LARGE or i in _SOFT: continue
+            _emit(f"__END__\t{{i + 1}}"); _stop()
+        if e is not None:
+            _emit(f"{{i}}\tX\t{{_hex(type(e).__name__)}}"); continue
+        try: c = canon(v)
+        except _NonCanon:
+            _emit(f"{{i}}\tN\t"); _emit(f"__END__\t{{i + 1}}"); _stop()
+        except Exception as x:
+            _emit(f"{{i}}\tU\t{{_hex(type(x).__name__)}}"); _emit(f"__END__\t{{i + 1}}"); _stop()
+        _emit(f"{{i}}\tV\t{{_hex(c)}}")
+    _emit(f"__END__\t{{len(cases)}}")
+_run_all(getattr(_m, {fn:?}), eval(bytes.fromhex('{cases_hex}').decode('utf-8')))
+_stop()
 "#,
         libm = libm,
-        errors_agree = if spec.errors_agree { "True" } else { "False" },
         admis = admis,
         cand = cand,
-        refr = refr,
+        own = own,
+        name = name,
+        side = side,
         fn = spec.func,
         cases_hex = hex(format!("[{}]", cases_py.join(", ")).as_bytes()),
         budget = spec.budget,
@@ -2540,12 +2567,22 @@ pub const EVALUATOR_ENV_ALLOW: &[&str] = &[
     "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMDRIVE", "HOMEDRIVE", "HOMEPATH",
 ];
 pub const EVALUATOR_ENV_ALLOW_PREFIX: &[&str] = &["PYTHON", "LC_"];
+/// Interpreter switches that change what the reviewed code does (asserts
+/// stripped, warnings raised as errors, a different int-to-str limit) without
+/// being recorded in the receipt. They are not passed on, so the same review
+/// gives the same verdict whatever the caller's shell has set. Import paths
+/// (`PYTHONPATH`, `PYTHONHOME`) are still passed: reviews rely on them.
+pub const EVALUATOR_ENV_DROP: &[&str] =
+    &["PYTHONOPTIMIZE", "PYTHONWARNINGS", "PYTHONDEVMODE", "PYTHONINTMAXSTRDIGITS"];
 
 fn evaluator_command() -> Command {
     let mut cmd = Command::new("python3");
     cmd.env_clear();
     for (k, v) in std::env::vars_os() {
         let Some(name) = k.to_str() else { continue };
+        if EVALUATOR_ENV_DROP.contains(&name) {
+            continue;
+        }
         if EVALUATOR_ENV_ALLOW.contains(&name) || EVALUATOR_ENV_ALLOW_PREFIX.iter().any(|p| name.starts_with(p)) {
             cmd.env(&k, &v);
         }
@@ -2945,6 +2982,168 @@ fn run_watched(
     Ok(result)
 }
 
+/// A directory only this process can use, removed when dropped. The driver
+/// files live here, so nothing else on the machine can pre-create, replace or
+/// shadow them, and nothing is left behind. The name is unpredictable and
+/// never reaches a receipt.
+struct PrivateDir(std::path::PathBuf);
+
+impl PrivateDir {
+    fn new() -> Result<Self, String> {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let mut seed = [0u8; 16];
+        let mut filled = false;
+        #[cfg(unix)]
+        {
+            use std::io::Read;
+            if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+                filled = f.read_exact(&mut seed).is_ok();
+            }
+        }
+        if !filled {
+            let t = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let mix = sha256(format!("{t}:{}:{:p}", std::process::id(), &seed).as_bytes());
+            seed.copy_from_slice(&mix[..16]);
+        }
+        for _ in 0..16 {
+            let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let p = std::env::temp_dir().join(format!("equiv_{}_{n}", hex(&seed)));
+            let mut b = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                b.mode(0o700);
+            }
+            match b.create(&p) {
+                Ok(()) => return Ok(PrivateDir(p)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(format!("could not create a private working directory: {e}")),
+            }
+        }
+        Err("could not create a private working directory".to_string())
+    }
+}
+
+impl Drop for PrivateDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// What one side reported for one input. Values and names stay in the hex
+/// form they crossed in, so two sides are compared on exact bytes.
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum Outcome {
+    Value(String),
+    Raised(String),
+    Budget,
+    NonCanon,
+    Unreadable(String),
+    Quit(String),
+}
+
+/// One side's whole run, as reported.
+#[derive(Default)]
+struct SideRun {
+    python: String,
+    ok: bool,
+    stderr_last: String,
+    refused: Option<String>,
+    nobudget: Option<String>,
+    load_budget: bool,
+    outcomes: Vec<Outcome>,
+    /// The count on the end line; None if the run never wrote one.
+    end: Option<usize>,
+    /// A line that is not part of the protocol: nothing can be concluded.
+    malformed: bool,
+}
+
+fn unhex(h: &str) -> Option<Vec<u8>> {
+    if h.len() % 2 != 0 || !h.is_ascii() {
+        return None;
+    }
+    (0..h.len()).step_by(2).map(|i| u8::from_str_radix(&h[i..i + 2], 16).ok()).collect()
+}
+
+/// The readable form of a hex payload (for the headline only; never compared).
+fn shown(h: &str) -> String {
+    unhex(h).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default()
+}
+
+fn parse_side(out: &std::process::Output) -> SideRun {
+    let mut r = SideRun { ok: out.status.success(), ..Default::default() };
+    r.stderr_last = String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("python error").to_string();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    for line in stdout.lines() {
+        if r.end.is_some() {
+            // Nothing may follow the end line.
+            r.malformed = true;
+            break;
+        }
+        if let Some(v) = line.strip_prefix("__PY__\t") {
+            r.python = v.trim().to_string();
+        } else if let Some(v) = line.strip_prefix("__REFUSED__\t") {
+            r.refused.get_or_insert(v.to_string());
+        } else if let Some(v) = line.strip_prefix("__NOBUDGET__\t") {
+            r.nobudget.get_or_insert(v.to_string());
+        } else if line.starts_with("__BUDGET__\tload\t") {
+            r.load_budget = true;
+        } else if let Some(v) = line.strip_prefix("__END__\t") {
+            match v.parse::<usize>() {
+                Ok(n) if n == r.outcomes.len() => r.end = Some(n),
+                _ => {
+                    r.malformed = true;
+                    break;
+                }
+            }
+        } else {
+            let parts: Vec<&str> = line.split('\t').collect();
+            let idx_ok = parts.len() == 3 && parts[0].parse::<usize>().ok() == Some(r.outcomes.len());
+            let payload_ok = parts.len() == 3 && unhex(parts[2]).is_some();
+            let o = match (idx_ok && payload_ok, parts.get(1).copied()) {
+                (true, Some("V")) => Some(Outcome::Value(parts[2].to_string())),
+                (true, Some("X")) => Some(Outcome::Raised(parts[2].to_string())),
+                (true, Some("B")) => Some(Outcome::Budget),
+                (true, Some("N")) => Some(Outcome::NonCanon),
+                (true, Some("U")) => Some(Outcome::Unreadable(parts[2].to_string())),
+                (true, Some("Q")) => Some(Outcome::Quit(parts[2].to_string())),
+                _ => None,
+            };
+            match o {
+                Some(o) => r.outcomes.push(o),
+                None => {
+                    r.malformed = true;
+                    break;
+                }
+            }
+        }
+    }
+    r
+}
+
+/// The number of possible inputs when every argument has a small closed
+/// domain (a bool, an int range, a value set; no arguments = 1), else None.
+/// Only such a function can be checked completely by a handful of calls.
+fn closed_space(spec: &ReviewSpec) -> Option<u128> {
+    let mut total: u128 = 1;
+    for (i, ty) in spec.args.iter().enumerate() {
+        let size: u128 = match (ty, dom(spec, i)) {
+            (ArgType::Bool, _) => 2,
+            (ArgType::Int, Domain::IntRange(lo, hi)) => {
+                let (lo, hi) = (*lo as i128, *hi as i128);
+                if hi < lo { 0 } else { (hi - lo + 1) as u128 }
+            }
+            (ArgType::Str, Domain::OneOf { values, .. }) => values.len() as u128,
+            _ => return None,
+        };
+        total = total.checked_mul(size)?;
+    }
+    Some(total)
+}
+
 fn run_python(
     cand: &Path,
     refr: &Path,
@@ -2954,50 +3153,57 @@ fn run_python(
     soft: &[usize],
     safety_secs: u64,
 ) -> Result<Evaluated, PyFail> {
-    let src = driver_source(cand, refr, spec, cases, large_from, soft);
-    // Content-addressed driver path: unique per distinct review (no clobber
-    // between concurrent runs), stable for the same review.
-    let tag = hex(&sha256(src.as_bytes()))[..16].to_string();
-    let driver = std::env::temp_dir().join(format!("equiv_review_{tag}.py"));
-    let mut f = std::fs::File::create(&driver).map_err(|e| e.to_string())?;
-    f.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
-    drop(f);
+    use std::time::{Duration, Instant};
+    let dir = PrivateDir::new()?;
+    let started = Instant::now();
+    let limit = Duration::from_secs(safety_secs);
+    // One interpreter per side, the reference first: it has finished before
+    // any candidate code runs. Both runs share the one wall-clock limit.
+    let run_side = |is_cand: bool| -> Result<SideRun, PyFail> {
+        let src = driver_source(is_cand, cand, refr, spec, cases, large_from, soft);
+        let driver = dir.0.join(if is_cand { "equiv_review_candidate.py" } else { "equiv_review_reference.py" });
+        let mut f = std::fs::File::create(&driver).map_err(|e| e.to_string())?;
+        f.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
+        drop(f);
+        let mut cmd = evaluator_command();
+        cmd.arg(&driver)
+            // Harden for determinism: stable hashing, no bytecode files.
+            .env("PYTHONHASHSEED", "0")
+            .env("PYTHONDONTWRITEBYTECODE", "1")
+            .arg("");
+        let left = limit.checked_sub(started.elapsed()).filter(|d| !d.is_zero()).ok_or(PyFail::Stopped)?;
+        let out = run_watched(cmd, left)
+            .map_err(|e| format!("python3 not runnable: {e}"))?
+            .ok_or(PyFail::Stopped)?;
+        Ok(parse_side(&out))
+    };
+    let r = run_side(false)?;
+    let c = run_side(true)?;
+    drop(dir);
 
-    let mut cmd = evaluator_command();
-    cmd.arg(&driver)
-        // Harden for determinism: stable hashing, no user site packages.
-        .env("PYTHONHASHSEED", "0")
-        .env("PYTHONDONTWRITEBYTECODE", "1")
-        .arg("");
-    let out = run_watched(cmd, std::time::Duration::from_secs(safety_secs))
-        .map_err(|e| format!("python3 not runnable: {e}"))?
-        .ok_or(PyFail::Stopped)?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
     // The evaluator names itself on its first line, before the admissibility
     // and budget checks, so every receipt carries it. Empty if it never ran.
-    let python = stdout
-        .lines()
-        .find_map(|l| l.strip_prefix("__PY__\t"))
-        .map(|v| v.trim().to_string())
-        .unwrap_or_default();
+    let python = if c.python.is_empty() { r.python.clone() } else { c.python.clone() };
     let done = |verdict: ReviewVerdict, exceptions: u32| Evaluated {
         verdict,
         python: python.clone(),
         exceptions,
         disagreements: Vec::new(),
     };
-    if !out.status.success() {
-        let err = String::from_utf8_lossy(&out.stderr);
-        let last = err.lines().last().unwrap_or("python error").to_string();
-        return Ok(done(ReviewVerdict::Error { reason: last }, 0));
+    // A side that could not run (load error, missing function): the candidate's
+    // message first, as when both were loaded in that order.
+    for s in [&c, &r] {
+        if !s.ok {
+            return Ok(done(ReviewVerdict::Error { reason: s.stderr_last.clone() }, 0));
+        }
     }
     // The driver's AST allowlist refuses inadmissible float functions before any
     // case runs, signalled on its own line.
-    for line in stdout.lines() {
-        if let Some(reason) = line.strip_prefix("__REFUSED__\t") {
-            return Ok(done(ReviewVerdict::Refused { reason: reason.to_string() }, 0));
+    for s in [&c, &r] {
+        if let Some(reason) = &s.refused {
+            return Ok(done(ReviewVerdict::Refused { reason: reason.clone() }, 0));
         }
-        if let Some(found) = line.strip_prefix("__NOBUDGET__\t") {
+        if let Some(found) = &s.nobudget {
             return Ok(done(
                 ReviewVerdict::Error {
                     reason: format!(
@@ -3009,6 +3215,21 @@ fn run_python(
         }
     }
     let budget = spec.budget;
+    for (s, side) in [(&c, "candidate"), (&r, "reference")] {
+        if s.malformed {
+            let reason = format!(
+                "the {side} run wrote a result line that could not be read; nothing can be concluded from this run"
+            );
+            return Ok(done(ReviewVerdict::Error { reason }, 0));
+        }
+        if s.load_budget {
+            let reason = format!(
+                "loading the {side} module exceeded the step budget of {budget} Python \
+                 line/jump events; a non-terminating or very long run is not judged"
+            );
+            return Ok(done(ReviewVerdict::Error { reason }, 0));
+        }
+    }
     let mut not_judged: u32 = 0;
     let mut exceptions: u32 = 0;
     let mut judged: u32 = 0;
@@ -3031,59 +3252,116 @@ fn run_python(
             disagreements: found,
         }
     };
-    for line in stdout.lines() {
-        // Lines arrive in case order and the driver stops at the first budget
-        // exhaustion. A disagreement found before it still stands as the
-        // verdict, with the stop stated; without one, the stop is the verdict.
-        // The reason states budget, case, input and side, never the number of
-        // events consumed (that may differ between Python versions).
-        if let Some(rest) = line.strip_prefix("__BUDGET__\t") {
-            let (at, side) = rest.split_once('\t').unwrap_or((rest, "candidate"));
-            let (reason, short) = if at == "load" {
-                (
-                    format!(
-                        "loading the {side} module exceeded the step budget of {budget} Python \
-                         line/jump events; a non-terminating or very long run is not judged"
-                    ),
-                    format!("step budget of {budget} exceeded loading the {side}"),
-                )
-            } else {
-                let idx: usize = at.parse().map_err(|_| "bad index".to_string())?;
-                let input: Vec<String> = cases[idx].iter().map(|v| v.display()).collect();
-                (
-                    format!(
-                        "the {side} exceeded the step budget of {budget} Python line/jump events \
-                         at input ({}); a non-terminating or very long run is not judged",
-                        input.join(", ")
-                    ),
-                    format!("the {side} exceeded the step budget of {budget} at input ({})", input.join(", ")),
-                )
-            };
+    let input_at = |i: usize| -> String {
+        cases[i].iter().map(|v| v.display()).collect::<Vec<_>>().join(", ")
+    };
+    // A stop that ends the review at one input: a disagreement found before
+    // it still stands as the verdict, with the stop stated; without one, the
+    // stop is the verdict. The reason states budget, case, input and side,
+    // never the number of events consumed (that may differ between Python
+    // versions).
+    macro_rules! stop_here {
+        ($reason:expr, $short:expr) => {{
             if !found.is_empty() {
-                return Ok(finish(found, judged, exceptions, short));
+                return Ok(finish(found, judged, exceptions, $short));
             }
-            return Ok(done(ReviewVerdict::Error { reason }, exceptions));
+            return Ok(done(ReviewVerdict::Error { reason: $reason }, exceptions));
+        }};
+    }
+    // The two reports are walked in case order. Both sides must have reported
+    // the input being judged: a side whose report stops short (it left the
+    // interpreter, or its result lines never arrived) ends the review there,
+    // and what it did not report is never counted as agreement.
+    for i in 0..cases.len() {
+        let (co, ro) = match (c.outcomes.get(i), r.outcomes.get(i)) {
+            (Some(a), Some(b)) => (a, b),
+            (a, _) => {
+                let side = if a.is_none() { "candidate" } else { "reference" };
+                let input = input_at(i);
+                stop_here!(
+                    format!(
+                        "the {side} run ended before reporting input {} of {} ({input}); a run that ends early is not judged",
+                        i + 1,
+                        cases.len()
+                    ),
+                    format!("the {side} run ended before reporting input ({input})")
+                );
+            }
+        };
+        let (oc, or) = (*co == Outcome::Budget, *ro == Outcome::Budget);
+        if oc || or {
+            if i >= large_from || soft.contains(&i) {
+                not_judged += 1;
+                continue;
+            }
+            let side = if oc && or { "candidate and reference" } else if oc { "candidate" } else { "reference" };
+            let input = input_at(i);
+            stop_here!(
+                format!(
+                    "the {side} exceeded the step budget of {budget} Python line/jump events \
+                     at input ({input}); a non-terminating or very long run is not judged"
+                ),
+                format!("the {side} exceeded the step budget of {budget} at input ({input})")
+            );
         }
-        let parts: Vec<&str> = line.splitn(4, '\t').collect();
-        if parts.len() == 2 && parts[1] == "SKIP" {
-            not_judged += 1;
-            continue;
+        for (o, side) in [(co, "candidate"), (ro, "reference")] {
+            if let Outcome::Quit(name) = o {
+                let (input, name) = (input_at(i), shown(name));
+                stop_here!(
+                    format!(
+                        "the {side} stopped the interpreter at input ({input}) ({name}); a function that exits is not judged"
+                    ),
+                    format!("the {side} stopped the interpreter at input ({input})")
+                );
+            }
         }
-        if parts.len() < 4 {
-            continue;
+        if *co == Outcome::NonCanon || *ro == Outcome::NonCanon {
+            let reason = "returns a value that is not JSON-structural (no stable cross-host form)".to_string();
+            return Ok(done(ReviewVerdict::Refused { reason }, 0));
+        }
+        for (o, side) in [(co, "candidate"), (ro, "reference")] {
+            if let Outcome::Unreadable(name) = o {
+                let reason = format!(
+                    "the {side} returns a value that could not be read at input ({}) ({} while reading it)",
+                    input_at(i),
+                    shown(name)
+                );
+                return Ok(done(ReviewVerdict::Refused { reason }, 0));
+            }
         }
         judged += 1;
-        if parts[1] == "EQX" {
-            exceptions += 1;
-        }
-        if parts[1] == "NE" {
-            let idx: usize = parts[0].parse().map_err(|_| "bad index".to_string())?;
-            let input: Vec<String> = cases[idx].iter().map(|v| v.display()).collect();
+        let raised = |o: &Outcome| matches!(o, Outcome::Raised(_));
+        let payload = |o: &Outcome| match o {
+            Outcome::Value(h) | Outcome::Raised(h) => h.clone(),
+            _ => String::new(),
+        };
+        let agree = if raised(co) || raised(ro) {
+            // A side raised: the classes must match, or (parity mode) both
+            // must have raised. Counted as an exception observed.
+            let ok = co == ro || (spec.errors_agree && raised(co) && raised(ro));
+            if ok {
+                exceptions += 1;
+            }
+            ok
+        } else {
+            co == ro
+        };
+        if !agree {
+            // Each side's outcome: its exception class if it raised, else its value.
             found.push(Disagreement {
-                input: format!("({})", input.join(", ")),
-                candidate: parts[2].to_string(),
-                reference: parts[3].to_string(),
+                input: format!("({})", input_at(i)),
+                candidate: shown(&payload(co)),
+                reference: shown(&payload(ro)),
             });
+        }
+    }
+    // Both sides must have finished: the end line, stating every input.
+    for (s, side) in [(&c, "candidate"), (&r, "reference")] {
+        if s.end != Some(cases.len()) {
+            stop_here!(
+                format!("the {side} run did not finish (no end line after {} inputs); a run that ends early is not judged", s.outcomes.len()),
+                format!("the {side} run did not finish")
+            );
         }
     }
     if !found.is_empty() {
@@ -3093,13 +3371,15 @@ fn run_python(
     // the large corners that finished, deduplicated), not the requested random
     // count: an honest tally. not_judged is the number of large-magnitude
     // corners where a side ran out of budget; both are in the receipt.
-    let n = cases.len() as u32 - not_judged;
-    // Never claim more than the evidence shows: if every one of many inputs
-    // made both versions raise, only errors were compared and the function's
-    // normal path was never reached. That is "could not check", not a pass.
-    // A function with fewer than THIN_K possible inputs (no arguments, a bool)
-    // was checked completely by those calls and is exempt.
-    if n >= THIN_K && exceptions >= n {
+    let n = judged;
+    // Never claim more than the evidence shows: if every input made both
+    // versions raise, only errors were compared and the function's normal
+    // path was never reached. That is "could not check", not a pass. The one
+    // exemption is a function whose whole input space is fewer than THIN_K
+    // values (no arguments, a bool, a small range or value set): those calls
+    // checked it completely. A short case list over an open space is not that.
+    let complete = closed_space(spec).is_some_and(|s| s < THIN_K as u128);
+    if n > 0 && exceptions >= n && (n >= THIN_K || !complete) {
         let reason = format!(
             "only errors were compared: all {n} generated inputs made both versions raise, so no input reached \
              a returned value; add inputs the function accepts (literal calls in the project's tests, or --inputs-from)"
