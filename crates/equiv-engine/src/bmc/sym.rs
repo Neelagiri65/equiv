@@ -23,9 +23,10 @@ pub enum MiniOp {
     Select,
     Drop,
     Nop,
-    Block,
+    /// Carries the label's arity: how many values a branch to it keeps.
+    Block(u8),
     Loop,
-    If,
+    If(u8),
     Else,
     End,
     Br(u32),
@@ -106,14 +107,17 @@ fn mini(op: &Operator) -> Option<MiniOp> {
         Operator::Nop => MiniOp::Nop,
         Operator::Block { blockty } | Operator::If { blockty } | Operator::Loop { blockty } => {
             // Only empty or single-result block types in v0.
-            match blockty {
-                wasmparser::BlockType::Empty | wasmparser::BlockType::Type(_) => {}
+            let arity = match blockty {
+                wasmparser::BlockType::Empty => 0,
+                wasmparser::BlockType::Type(_) => 1,
                 wasmparser::BlockType::FuncType(_) => return None,
-            }
+            };
             match op {
-                Operator::Block { .. } => MiniOp::Block,
+                Operator::Block { .. } => MiniOp::Block(arity),
+                // A branch to a loop label carries the loop's parameters,
+                // and these block types have none.
                 Operator::Loop { .. } => MiniOp::Loop,
-                _ => MiniOp::If,
+                _ => MiniOp::If(arity),
             }
         }
         Operator::Else => MiniOp::Else,
@@ -240,7 +244,7 @@ fn skip_region(ops: &[MiniOp], mut i: usize) -> Result<(usize, bool), ()> {
     let mut depth = 0u32;
     while i < ops.len() {
         match ops[i] {
-            MiniOp::Block | MiniOp::Loop | MiniOp::If => depth += 1,
+            MiniOp::Block(_) | MiniOp::Loop | MiniOp::If(_) => depth += 1,
             MiniOp::Else if depth == 0 => return Ok((i + 1, true)),
             MiniOp::End => {
                 if depth == 0 {
@@ -400,7 +404,8 @@ impl Sim<'_> {
                     let ntb = ar.bnot(tb);
                     cond = ar.band(cond, ntb);
                 }
-                MiniOp::Block => {
+                MiniOp::Block(arity) => {
+                    let height = st.stack.len();
                     let sub = self.region(i, st.clone(), cond, ar)?;
                     if sub.was_else {
                         return Err(());
@@ -410,7 +415,16 @@ impl Sim<'_> {
                     if let Some(f) = sub.fall {
                         arrivals.push(f);
                     }
-                    self.absorb(&mut out, sub.exits, sub.rets, sub.traps, sub.incompletes, &mut arrivals);
+                    self.absorb(
+                        &mut out,
+                        sub.exits,
+                        sub.rets,
+                        sub.traps,
+                        sub.incompletes,
+                        &mut arrivals,
+                        height,
+                        arity,
+                    )?;
                     match merge(arrivals, ar)? {
                         Some((c2, s2)) => {
                             cond = c2;
@@ -419,8 +433,9 @@ impl Sim<'_> {
                         None => dead_end!(),
                     }
                 }
-                MiniOp::If => {
+                MiniOp::If(arity) => {
                     let t = st.stack.pop().ok_or(())?;
+                    let height = st.stack.len();
                     let tb = ar.add(Term::NeZero { a: t });
                     let then_cond = ar.band(cond, tb);
                     let ntb = ar.bnot(tb);
@@ -439,7 +454,9 @@ impl Sim<'_> {
                         then_out.traps,
                         then_out.incompletes,
                         &mut arrivals,
-                    );
+                        height,
+                        arity,
+                    )?;
                     let after = if then_out.was_else {
                         let else_out = self.region(then_out.after, base, else_cond, ar)?;
                         if else_out.was_else {
@@ -455,7 +472,9 @@ impl Sim<'_> {
                             else_out.traps,
                             else_out.incompletes,
                             &mut arrivals,
-                        );
+                            height,
+                            arity,
+                        )?;
                         else_out.after
                     } else {
                         arrivals.push((else_cond, base));
@@ -472,6 +491,7 @@ impl Sim<'_> {
                 }
                 MiniOp::Loop => {
                     let body_start = i;
+                    let height = st.stack.len();
                     let mut entry: Option<Arrival> = Some((cond, st.clone()));
                     let mut loop_arrivals: Vec<Arrival> = Vec::new();
                     let mut after = None;
@@ -491,8 +511,9 @@ impl Sim<'_> {
                             loop_arrivals.push(f); // fell off loop bottom: exits loop
                         }
                         let mut backs: Vec<Arrival> = Vec::new();
-                        for (d, c, s) in sub.exits {
+                        for (d, c, mut s) in sub.exits {
                             if d == 0 {
+                                unwind(&mut s, height, 0)?;
                                 backs.push((c, s)); // br to loop header
                             } else {
                                 out.exits.push((d - 1, c, s));
@@ -536,9 +557,12 @@ impl Sim<'_> {
         traps: Vec<TId>,
         incompletes: Vec<TId>,
         arrivals: &mut Vec<Arrival>,
-    ) {
-        for (d, c, s) in exits {
+        height: usize,
+        arity: u8,
+    ) -> Result<(), ()> {
+        for (d, c, mut s) in exits {
             if d == 0 {
+                unwind(&mut s, height, arity)?;
                 arrivals.push((c, s));
             } else {
                 out.exits.push((d - 1, c, s));
@@ -547,7 +571,21 @@ impl Sim<'_> {
         out.rets.extend(rets);
         out.traps.extend(traps);
         out.incompletes.extend(incompletes);
+        Ok(())
     }
+}
+
+/// Apply a taken branch to the operand stack: keep the label's `arity`
+/// values from the top, drop everything else above the height the stack had
+/// when the label's block was entered.
+fn unwind(st: &mut State, height: usize, arity: u8) -> Result<(), ()> {
+    let arity = arity as usize;
+    let have = st.stack.len();
+    if have < height + arity {
+        return Err(());
+    }
+    st.stack.drain(height..have - arity);
+    Ok(())
 }
 
 pub struct SymResult {
