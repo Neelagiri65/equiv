@@ -14,20 +14,41 @@ deterministically generated inputs. Generation has four deterministic layers:
    the declared types are kept, at most 500 calls per function. They are bound
    into the receipt: the provenance line counts them, and the spec hash covers
    them, so a receipt made with them is reproduced only by a run over the same
-   files. `review-pr --no-harvest` turns this off.
+   files. `review-pr --no-harvest` turns this off. Which files are read
+   depends on git: under a directory, only the `*.py` files git tracks are
+   scanned (every `*.py` file below it only outside a git checkout). A test
+   file that is untracked or ignored contributes nothing, and the same review
+   over a checkout with different tracked files harvests different inputs and
+   so has a different receipt id. Stacked `parametrize` decorators are read as
+   their product, cut to its first 10,000 rows per test function.
 2. **Boundary corners per type**: empty, sign and off-by-one values, uppercase,
    whitespace and control characters, strings longer than 8, lists longer than
    6, the float special values, and each string corner placed between two
    ordinary strings in a list.
 3. **The source's own literals**: a constant `== 777` in the code is tested
-   directly, with its neighbours; a string literal is tested by value, with its
-   escapes resolved.
+   directly, with its neighbours. A number is read without its sign, so both
+   signs are tried (777 and -777, each with its neighbours). A float argument
+   gets every float literal (`1.5`, `.5`, `5.`, `1e-9`) and every int literal
+   float64 holds exactly, each with both signs and the next float below and
+   above. A string literal is tested by value, decoded as Python decodes it
+   (octal, `\x`, `\u`, `\U`, `\a \b \f \v`, raw prefixes in any case and
+   order); a literal that cannot be decoded exactly here (`\N{...}`, a lone
+   surrogate escape) and a bytes literal are not offered. For a list or dict
+   argument, the int literals (both signs, with neighbours) are placed inside
+   lists (`[100]`, `[99, 100]`) and under dict keys (`"a"` and the first two
+   string literals), and each string literal inside a three-element list. The
+   scan reads tokens and does not evaluate: a threshold that is computed
+   (`ord("d")`, `0.1 + 0.2`) is not aimed at.
 4. **Seeded random cases.** Random strings come in three shapes: lowercase
    a-z (half), a small mixed alphabet with capitals, digits, punctuation,
    whitespace and control characters (a quarter), and numeric text with
    optional padding, sign and suffix (a quarter). A quarter of random string
    lists also hold a near duplicate of one element (the same text, its upper-
-   or lowercase form, or with a leading space).
+   or lowercase form, or with a leading space). Random list elements and
+   dict values stay in -20..20; when a signature has a list or dict argument,
+   one more seeded case is added for every eight random cases, with elements
+   drawn from the source's literals and their neighbours and from wider
+   ranges (up to the envelope below).
 
 This is still bounded
 testing, not exhaustive verification: a pass means no divergence was found on the
@@ -36,8 +57,21 @@ generated inputs. Two limits are deliberate. Random integers stay inside a magni
 corners (the 32-bit wrap points, the float64 exactness cliff at 2^53 and the
 64-bit limits, each with its negative) are tried after every other input, and
 a version that cannot finish one of them inside the step budget has that input
-recorded in the receipt as not judged rather than failing the review. Arguments are varied one at a time, which
-means a divergence that needs two specific arguments at once may be missed. Methods, async and nested functions are listed as not checked, never judged. A function that did not change is not re-checked when something it calls did. It does not check intent, architecture, security. It
+recorded in the receipt as not judged rather than failing the review. The same
+corners are tried as the only element of a list and as a dict value. Corners and
+literals are tried one argument at a time, with every other argument at its
+default (0, "", an empty list or dict, 1.0, False). On top of that, for every
+ordered pair of non-bool arguments, the corners and literals of the first are
+tried again with the second at a few fixed non-default values (ints 1 and 2,
+strings "a" and "ab", one or two fixed values for the other types, plus the first
+four int literals up to 4,096 or string literals of the source), every bool
+argument is run at True (each alone, and all together), same-type string and
+numeric pairs get a fixed set of related values, and the random cases draw every
+argument at once. The cross cases are capped at 480 per review, shared equally
+between the pairs, so with many arguments only the first corners of each pair are
+crossed. This is not a cartesian product: a divergence that needs two specific
+values at once, where the second is not one of those fixed values, a literal or
+a random draw, may be missed. Methods, async and nested functions are listed as not checked, never judged. A function that did not change is not re-checked when something it calls did. It does not check intent, architecture, security. It
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,
@@ -170,8 +204,13 @@ src/pkg/utils.py : is_multi_byte_encoding : str[in .constant.IANA_SUPPORTED]
 A value-set list is read from the PR's own version of the code (the head), so a PR that
 edits the list also changes its own domain. Every value in it is bound into the receipt,
 so a pass is tied to that exact list. Each value of a list of up to 100,000 names is
-judged (one argument at a time); combinations across two such arguments are sampled.
-A longer list is sampled, and the result says so: "(N values; only X tried)".
+judged (one argument at a time). Combinations across two or more such arguments are
+sampled, and the result says how many were tried: "combinations across value-set
+arguments sampled: only X of Y tried". For a `list[str[in ...]]` argument every value
+is put in at least one list (alone), and lists of several values are sampled: "(N
+values; each tried in at least one list; combinations of values within a list
+sampled)". A longer list is sampled, and the result says so: "(N values; only X
+tried)". These counts are measured on the inputs that ran.
 
 Random inputs, corners (including both ends of a range), source literals and harvested
 inputs all stay inside the domain. Literal and harvested values outside it are skipped,
