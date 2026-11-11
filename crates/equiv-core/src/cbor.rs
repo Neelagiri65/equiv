@@ -29,7 +29,10 @@ pub enum CborError {
     TooDeep,
 }
 
-const MAX_DEPTH: usize = 64;
+/// Deepest nesting the decoder accepts (the top-level value is depth 0).
+/// The contract validator derives its expression limit from this, so that
+/// every contract the encoder emits is one the decoder takes back.
+pub const MAX_DEPTH: usize = 64;
 
 // ---------- encoding ----------
 
