@@ -1,0 +1,7 @@
+function = "above"
+args = "float"
+expected = "diverges"
+class = "holdout"
+pattern = '''a float threshold written as the sum of two literals: written off the planned input list on purpose, to test whether aiming at float literals and their neighbours reaches a constant that is computed from them. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(0.30000000000000004,)'''
+writeoff = "the threshold is the sum of two float literals and is neither of them nor a neighbour of one; the scan folds only int literal-op-literal by design (it is a token scan, not an evaluator), so no input is aimed at the sum"

@@ -1,0 +1,6 @@
+function = "at_least"
+args = "float"
+expected = "diverges"
+class = "holdout"
+pattern = '''`x >= 100` rewritten as `x > 100` on a float argument, with the threshold written as an int. A source-scan case on purpose: the threshold is a literal in the source. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(100.0,)'''

@@ -16,6 +16,12 @@
 //! A call with some non-literal arguments still contributes its literal ones,
 //! one argument at a time.
 //!
+//! Which files are read is decided by the caller. `python_files` lists the
+//! `*.py` files git tracks under a directory (every `*.py` file below it only
+//! outside a git checkout), so an untracked or ignored test file contributes
+//! nothing, and two checkouts with different tracked files harvest different
+//! inputs.
+//!
 //! Harvested inputs are bound into the receipt (`spec_sha256` covers them and
 //! the receipt counts them), so a receipt made with them is reproduced only by
 //! a run over the same files. Extra inputs cannot cause a false alarm: both
@@ -34,8 +40,18 @@ pub const HARVEST_CAP: usize = 500;
 const FILE_CAP_BYTES: u64 = 1_000_000;
 /// Longest list kept from a literal.
 const LIST_CAP: usize = 64;
+/// At most this many parametrize rows are kept per test function. Stacked
+/// `parametrize` decorators multiply: three of 300 rows are 27,000,000
+/// combinations, built before anything else could cap them. The product is
+/// cut to its first rows, in the order it was always built in (the first
+/// decorator's rows outermost), after every decorator, so the work is bounded
+/// by this cap times the rows of one decorator and a product under the cap is
+/// harvested exactly as before.
+pub const PARAMETRIZE_ROWS_CAP: usize = 10_000;
 
 const HARVEST_PY: &str = r#"import ast, struct, sys
+from itertools import islice
+ROWS_CAP = __ROWS_CAP__
 spec_path, files_path = sys.argv[1], sys.argv[2]
 want = {}
 for line in open(spec_path, encoding='utf-8').read().splitlines():
@@ -123,7 +139,7 @@ for path in open(files_path, encoding='utf-8').read().splitlines():
         envs = []
         for d in fn.decorator_list:
             r = rows(d)
-            if r: envs = [dict(a, **b) for a in (envs or [{}]) for b in r]
+            if r: envs = list(islice((dict(a, **b) for a in (envs or [{}]) for b in r), ROWS_CAP))
         if not envs: continue
         for c in ast.walk(fn):
             if isinstance(c, ast.Call) and callee(c) in want:
@@ -211,16 +227,14 @@ pub fn harvest(wanted: &[(String, PathBuf, Vec<ArgType>)], files: &[PathBuf]) ->
     }
     let spec_txt: String = wanted.iter().map(|(n, p, _)| format!("{n}\t{}\n", p.display())).collect();
     let files_txt: String = files.iter().map(|p| format!("{}\n", p.display())).collect();
-    let tag = hex(&sha256(format!("{spec_txt}\u{0}{files_txt}").as_bytes()))[..16].to_string();
-    let dir = std::env::temp_dir();
-    let (sp, fp, pp) = (
-        dir.join(format!("equiv_hvs_{tag}.txt")),
-        dir.join(format!("equiv_hvf_{tag}.txt")),
-        dir.join(format!("equiv_hvp_{tag}.py")),
-    );
+    // The script and its two argument files live in a directory of our own
+    // (see `PrivateDir`), removed when this function returns by any path.
+    let Some(dir) = PrivateDir::create() else { return result };
+    let (sp, fp, pp) = (dir.0.join("spec.txt"), dir.0.join("files.txt"), dir.0.join("harvest.py"));
+    let script = HARVEST_PY.replace("__ROWS_CAP__", &PARAMETRIZE_ROWS_CAP.to_string());
     if std::fs::write(&sp, &spec_txt).is_err()
         || std::fs::write(&fp, &files_txt).is_err()
-        || std::fs::write(&pp, HARVEST_PY).is_err()
+        || std::fs::write(&pp, script).is_err()
     {
         return result;
     }
@@ -251,6 +265,65 @@ pub fn harvest(wanted: &[(String, PathBuf, Vec<ArgType>)], files: &[PathBuf]) ->
         }
     }
     result
+}
+
+/// A directory only this process can enter, for the harvest script and its
+/// argument files. The old files sat in the shared temp directory under names
+/// anyone could compute, one of them a script that is then executed, and
+/// were never removed. This one is created exclusively (an existing path is
+/// never reused), with mode 0700 on unix, under a name taken from the
+/// system's random source, and is removed on drop. The name is never printed
+/// and reaches no receipt.
+struct PrivateDir(PathBuf);
+
+impl PrivateDir {
+    fn create() -> Option<Self> {
+        let base = std::env::temp_dir();
+        for attempt in 0..8u32 {
+            let path = base.join(format!("equiv_hv_{}", hex(&random_name(attempt))));
+            let mut b = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                b.mode(0o700);
+            }
+            match b.create(&path) {
+                Ok(()) => return Some(PrivateDir(path)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+}
+
+impl Drop for PrivateDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Sixteen bytes nobody else can predict: the system's random device on
+/// unix; elsewhere (or if it cannot be read) the process id, a stack address
+/// and the standard library's per-process random hasher keys, hashed.
+fn random_name(attempt: u32) -> [u8; 16] {
+    let mut out = [0u8; 16];
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+            if f.read_exact(&mut out).is_ok() {
+                return out;
+            }
+        }
+    }
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u32(attempt);
+    let local = 0u8;
+    let seed = format!("{}\u{0}{:p}\u{0}{}\u{0}{attempt}", std::process::id(), &local, h.finish());
+    out.copy_from_slice(&sha256(seed.as_bytes())[..16]);
+    out
 }
 
 fn unhex(s: &str) -> Option<String> {
@@ -326,4 +399,38 @@ pub(crate) fn canonical(h: &[Slots]) -> Vec<u8> {
         v.push(b'\n');
     }
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn private_dir_is_exclusive_unpredictable_and_removed() {
+        let a = PrivateDir::create().expect("a private directory");
+        let b = PrivateDir::create().expect("a second private directory");
+        assert_ne!(a.0, b.0, "two calls must not share a directory");
+        assert!(a.0.is_dir() && b.0.is_dir());
+        let name = a.0.file_name().unwrap().to_string_lossy().to_string();
+        assert_eq!(name.len(), "equiv_hv_".len() + 32, "{name}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&a.0).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode & 0o077, 0, "group or others can enter: {mode:o}");
+        }
+        // An existing path is refused, never reused.
+        let mut again = std::fs::DirBuilder::new();
+        assert!(again.create(&a.0).is_err());
+        let (pa, pb) = (a.0.clone(), b.0.clone());
+        std::fs::write(pa.join("x.txt"), "x").unwrap();
+        drop(a);
+        drop(b);
+        assert!(!pa.exists() && !pb.exists(), "the directory outlived its use");
+    }
+
+    #[test]
+    fn random_names_differ() {
+        assert_ne!(random_name(0), random_name(0));
+    }
 }

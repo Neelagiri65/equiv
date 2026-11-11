@@ -1,0 +1,5 @@
+function = "above"
+args = "float"
+expected = "equivalent"
+class = "holdout"
+pattern = '''`x > c` rewritten as `c < x` with a negative float threshold: the same for every float, NaN included. Written 2026-11-12 before the generator change it tests.'''

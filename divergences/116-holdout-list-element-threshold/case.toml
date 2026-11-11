@@ -1,0 +1,6 @@
+function = "keep_large"
+args = "list[int]"
+expected = "diverges"
+class = "holdout"
+pattern = '''a list filter `x >= 100` rewritten as `x > 100`: diverges only when an element equals the threshold. A source-scan case on purpose: the threshold is a literal in the source, but it applies to an element, not to the argument. Written 2026-11-12 before the generator change it tests.'''
+witness = '''([100],)'''
