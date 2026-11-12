@@ -15,7 +15,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(args: Vec<ArgType>) -> ReviewSpec {
-    ReviewSpec { func: "f".into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false }
+    ReviewSpec { func: "f".into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false, hinted: false }
 }
 
 fn verdict(name: &str, cand: &str, refr: &str, s: &ReviewSpec) -> ReviewVerdict {

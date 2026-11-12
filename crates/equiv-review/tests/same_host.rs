@@ -16,7 +16,7 @@ fn tmp(name: &str, body: &str) -> std::path::PathBuf {
 }
 
 fn spec(args: Vec<ArgType>, same_host: bool) -> ReviewSpec {
-    ReviewSpec { func: "f".into(), args, n: 300, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host }
+    ReviewSpec { func: "f".into(), args, n: 300, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host, hinted: false }
 }
 
 // An opaque helper (stands in for a compiled or sandboxed twin).

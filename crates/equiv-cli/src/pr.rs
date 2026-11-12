@@ -406,6 +406,7 @@ pub fn run(argv: &[String], safety: u64, budget: u64) -> Result<u8, String> {
                                 errors_agree: false,
                                 domains: vec![],
                                 same_host,
+                                hinted: false,
                             },
                             twin: None,
                         });
@@ -525,6 +526,7 @@ pub fn run(argv: &[String], safety: u64, budget: u64) -> Result<u8, String> {
                             errors_agree,
                             domains: l.domains,
                             same_host: same_host || line_same_host,
+                            hinted: false,
                         },
                         twin: Some((cand, refr)),
                     });
@@ -546,7 +548,7 @@ pub fn run(argv: &[String], safety: u64, budget: u64) -> Result<u8, String> {
                         name: func.clone(),
                         head_path: PathBuf::from(&file),
                         base_path,
-                        spec: ReviewSpec { func, args: l.args, n, seed, budget, errors_agree: false, domains: l.domains, same_host },
+                        spec: ReviewSpec { func, args: l.args, n, seed, budget, errors_agree: false, domains: l.domains, same_host, hinted: false },
                         twin: None,
                     });
                 }
