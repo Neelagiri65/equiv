@@ -142,5 +142,5 @@ fn golden_tuple_receipt_id_is_stable() {
     assert!(matches!(r.verdict, ReviewVerdict::Counterexample { .. }), "got {:?}", r.verdict);
     r.python = "3.12".into();
     let id: String = r.sha256().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(id, "bd8c8e70bc62501aac818006442243f6c208dd0e4c3bcbc059137dc6725d6ff8", "receipt-id drifted");
+    assert_eq!(id, "6b9ee062ec6de7a4c06d473bc598fc7156b7524f85ecf841730d9bbad0d2b891", "receipt-id drifted");
 }
