@@ -166,6 +166,8 @@ dependencies = [
  "equiv-engine",
  "equiv-review",
  "libc",
+ "sha2",
+ "wat",
 ]
 
 [[package]]

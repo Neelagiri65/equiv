@@ -17,3 +17,7 @@ equiv-review = { path = "../equiv-review" }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[dev-dependencies]
+wat = "1"
+sha2 = "0.10"

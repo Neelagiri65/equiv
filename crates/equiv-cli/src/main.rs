@@ -172,7 +172,14 @@ SAFETY LIMIT:
   equiv fmt  <contract.eqct> [-o out.eqc]   compile contract text to canonical bytes
   equiv hash <contract.{eqct,eqc}>          print the contract's SHA-256 identity
   equiv lint <contract.{eqct,eqc}>          parse + validate, report errors
-  equiv check <artifact.wasm> <contract>    (WASM path) check artifact against contract
+  equiv check <artifact.wasm> <contract> [--reference <ref.wasm>]
+        (WASM path) check an artifact's exported function against a contract:
+        pre, post, frame (bytes it may write) and refines. A refines clause
+        names a reference artifact by sha256; pass that file with
+        --reference and both are run on the same inputs and memory: their
+        results and the bytes inside the frame must agree. By testing (exit 0
+        on a pass); without the reference, or with a file of another hash, the
+        check is could-not-check (exit 2).
 
 EXIT CODES (frozen): 0 pass · 1 counterexample · 2 unknown · 3 invalid input
   review-pr only: 4 the base ref could not be read (nothing was compared)
@@ -392,18 +399,44 @@ fn run() -> Result<u8, String> {
             Ok(0)
         }
         Some("check") => {
-            let artifact_path = args.get(1).ok_or("check: missing artifact path")?;
-            let contract_path = args.get(2).ok_or("check: missing contract path")?;
+            let a = args::parse("check", &args[1..], &[], &["--reference"])?;
+            let [artifact_path, contract_path] = a.pos.as_slice() else {
+                return Err("check: expected <artifact.wasm> <contract> [--reference <ref.wasm>]".into());
+            };
             let artifact =
                 std::fs::read(artifact_path).map_err(|e| format!("{artifact_path}: {e}"))?;
             let c = load_contract(contract_path)?;
-            let checked = equiv_engine::check_explained(&artifact, &c, &equiv_engine::DiffConfig::default());
+            // A reference is only meaningful for a contract that names one; given
+            // anyway, it would be silently ignored.
+            let reference = match a.value("--reference") {
+                Some(p) if c.refines.is_none() => {
+                    return Err(format!(
+                        "check: --reference {p} was given but the contract has no refines clause to compare it against"
+                    ))
+                }
+                Some(p) => Some(std::fs::read(p).map_err(|e| format!("{p}: {e}"))?),
+                None => None,
+            };
+            let checked = equiv_engine::check_with_reference(
+                &artifact,
+                reference.as_deref(),
+                &c,
+                &equiv_engine::DiffConfig::default(),
+            );
             let receipt = checked.receipt;
             println!("verdict: {:?}", receipt.verdict);
-            // The reason for a could-not-check result: text for the reader,
-            // not part of the receipt bytes.
+            // Text for the reader, not part of the receipt bytes: why it could
+            // not be checked, what differed, or what a pass covered.
             if let Some(note) = &checked.note {
-                println!("reason: {note}");
+                let label = match receipt.verdict {
+                    equiv_core::Verdict::Unknown(_) => "reason",
+                    equiv_core::Verdict::Counterexample { .. } => "detail",
+                    _ => "note",
+                };
+                println!("{label}: {note}");
+            }
+            if c.refines.is_some() && reference.is_none() {
+                println!("hint: pass the reference artifact with --reference <ref.wasm>");
             }
             println!("receipt: {}", hex(&receipt.to_bytes()));
             Ok(receipt.verdict.exit_code() as u8)
