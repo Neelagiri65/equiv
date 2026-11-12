@@ -1,12 +1,12 @@
 {
-  "equiv_version": "0.28.0",
+  "equiv_version": "0.29.0",
   "python": "3.14.9",
   "summary": {
     "cases": 137,
     "diverges": 93,
     "equivalent": 44,
-    "caught": 81,
-    "missed": 9,
+    "caught": 85,
+    "missed": 5,
     "false_alarms": 0,
     "could_not_check": 4
   },
@@ -813,8 +813,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 2524,
-      "detail": "EQUIVALENT: agreed on all 2524 generated inputs (seed 1)"
+      "n": 2635,
+      "detail": "EQUIVALENT: agreed on all 2635 generated inputs (seed 1)"
     },
     "116-holdout-list-element-threshold": {
       "expected": "diverges",
@@ -930,45 +930,45 @@
     },
     "132-holdout-three-int-literals-together": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 2526,
-      "detail": "EQUIVALENT: agreed on all 2526 generated inputs (seed 1)"
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (2024, 2, 29) | candidate -> 35 | reference -> 34"
     },
     "133-holdout-three-int-literals-other-order": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 2560,
-      "detail": "EQUIVALENT: agreed on all 2560 generated inputs (seed 1)"
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (12, 250, 44) | candidate -> 2900 | reference -> 3000"
     },
     "134-holdout-str-and-two-int-literals-together": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 2588,
-      "detail": "EQUIVALENT: agreed on all 2588 generated inputs (seed 1)"
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ('PUT', 8443, 3) | candidate -> 'tls' | reference -> 'high'"
     },
     "135-holdout-three-literals-reordered-equivalent": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 2421,
-      "detail": "EQUIVALENT: agreed on all 2421 generated inputs (seed 1)"
+      "n": 2445,
+      "detail": "EQUIVALENT: agreed on all 2445 generated inputs (seed 1)"
     },
     "136-holdout-two-float-literals-together": {
       "expected": "diverges",
-      "exit": 0,
-      "outcome": "missed",
-      "n": 1258,
-      "detail": "EQUIVALENT: agreed on all 1258 generated inputs (seed 1)"
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (0.25, 0.75) | candidate -> 0x1.8000000000000p-1 | reference -> 0x1.0000000000000p-1"
     },
     "137-holdout-computed-thresholds-together": {
       "expected": "diverges",
       "exit": 0,
       "outcome": "missed",
-      "n": 2566,
-      "detail": "EQUIVALENT: agreed on all 2566 generated inputs (seed 1)"
+      "n": 2612,
+      "detail": "EQUIVALENT: agreed on all 2612 generated inputs (seed 1)"
     }
   }
 }
