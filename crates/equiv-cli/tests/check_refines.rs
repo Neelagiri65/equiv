@@ -108,3 +108,16 @@ fn check_arguments_are_strict() {
     let (code, out, err) = run(&d, &["check", "t.wasm", "plain.eqct"]);
     assert_eq!(code, Some(0), "{out}{err}");
 }
+
+/// The checked-in example: FNV-1a compiled from C (clang) and from Rust
+/// (rustc). Real compiler output, not hand-written WebAssembly.
+#[test]
+fn the_c_and_rust_example_agrees_and_its_planted_bug_is_caught() {
+    let d = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/refines-c-rust");
+    let (code, out, err) = run(&d, &["check", "c.wasm", "r.eqct", "--reference", "r.wasm"]);
+    assert_eq!(code, Some(0), "{out}{err}");
+    assert!(out.contains("TestedN { n_cases: 64"), "{out}");
+    let (code, out, err) = run(&d, &["check", "c.wasm", "r_bug.eqct", "--reference", "r_bug.wasm"]);
+    assert_eq!(code, Some(1), "{out}{err}");
+    assert!(out.contains("Counterexample { args: [0, 1]"), "{out}");
+}
