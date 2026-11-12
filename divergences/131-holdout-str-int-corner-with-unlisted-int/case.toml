@@ -1,0 +1,7 @@
+function = "is_code"
+args = "str,int"
+expected = "diverges"
+class = "holdout"
+pattern = '''a digit-code check that gained a length limit computed from a constant string: diverges only at a long digit string paired with its exact length. Written off the planned input list on purpose: it needs a string corner together with an int that is neither a small fixed value nor a literal in the source. Written 2026-11-12 before the generator change it tests.'''
+witness = '''('4111111111111111', 16)'''
+writeoff = "needs the card-length digit corner paired with the int equal to its length, which is neither in the small fixed set that corners are paired with nor a number in the source; cross cases across arguments are a capped set by design, not a cartesian product"

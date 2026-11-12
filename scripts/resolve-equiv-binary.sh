@@ -27,14 +27,41 @@ TAG="v$VERSION"
 ASSET="equiv-cli-${TARGET}.tar.xz"
 TMP="$(mktemp -d)"
 
-if gh release download "$TAG" --repo "$REPO" --pattern "$ASSET" --dir "$TMP" 2>/dev/null; then
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+
+# The archive and its published checksum (cargo-dist uploads `<asset>.sha256`
+# next to every archive) are fetched in one call. The checksum comes from the
+# same release as the archive: it catches a corrupted or partly replaced
+# download, not a release that was replaced as a whole. Pin the Action by commit
+# SHA if that matters to you.
+if gh release download "$TAG" --repo "$REPO" --pattern "$ASSET" --pattern "$ASSET.sha256" --dir "$TMP" 2>/dev/null \
+   || [[ -f "$TMP/$ASSET" ]]; then
+  # An archive without a checksum, or one that does not match, is never run and
+  # never replaced by a build: something is wrong with the release.
+  if [[ ! -f "$TMP/$ASSET" || ! -s "$TMP/$ASSET.sha256" ]]; then
+    echo "::error::equiv: release $TAG of $REPO has no usable $ASSET with its .sha256; refusing to run an unchecked binary." >&2
+    exit 1
+  fi
+  WANT="$(awk '{print tolower($1); exit}' "$TMP/$ASSET.sha256")"
+  GOT="$(sha256_of "$TMP/$ASSET")"
+  if [[ ! "$WANT" =~ ^[0-9a-f]{64}$ || "$WANT" != "$GOT" ]]; then
+    echo "::error::equiv: checksum mismatch for $ASSET from $TAG (published: ${WANT:-none}, downloaded: $GOT); refusing to run it." >&2
+    exit 1
+  fi
   tar -xJf "$TMP/$ASSET" -C "$TMP"
   BIN="$(find "$TMP" -type f -name equiv | head -1)"
+  if [[ -z "$BIN" ]]; then
+    echo "::error::equiv: $ASSET from $TAG holds no equiv binary." >&2
+    exit 1
+  fi
   chmod +x "$BIN"
-  echo "equiv: using the prebuilt $TAG binary from $REPO (matches the pinned Action)."
+  echo "equiv: using the prebuilt $TAG binary from $REPO (matches the pinned Action; sha256 $GOT matches the release's checksum file)."
 else
-  echo "equiv: no prebuilt $TAG release available; building the pinned source (slower)."
-  ( cd "$ACTION_PATH" && cargo build --release --bin equiv )
+  echo "equiv: no prebuilt $TAG release available; building the pinned source with its Cargo.lock (slower)."
+  ( cd "$ACTION_PATH" && cargo build --release --locked --bin equiv )
   BIN="$ACTION_PATH/target/release/equiv"
 fi
 

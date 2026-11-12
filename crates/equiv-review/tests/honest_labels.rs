@@ -68,7 +68,7 @@ fn thin_equivalent_is_labelled_in_the_receipt() {
 fn thin_shows_in_the_pr_comment_headline_and_row() {
     let p = wp("thin_md", THIN);
     let r = review(&p, &p, &spec(vec![ArgType::Str])).expect("no safety stop");
-    let md = render_markdown(&[ReviewItem { name: "f".into(), outcome: Ok(r) }], None);
+    let md = render_markdown(&[ReviewItem { name: "f".into(), outcome: Ok(r), twin: None }], None);
     let headline = md.lines().find(|l| l.contains("checked")).unwrap_or("");
     assert!(headline.contains("thin evidence"), "headline must not read as a plain pass:\n{md}");
     assert!(md.contains("| `f` | equivalent (thin evidence) |"), "row must carry the label:\n{md}");
@@ -80,7 +80,7 @@ fn ordinary_equivalent_is_unchanged() {
     let r = review(&p, &p, &spec(vec![ArgType::Int])).expect("no safety stop");
     assert!(matches!(r.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", r.verdict);
     assert_eq!(r.tier, "tested");
-    let md = render_markdown(&[ReviewItem { name: "f".into(), outcome: Ok(r) }], None);
+    let md = render_markdown(&[ReviewItem { name: "f".into(), outcome: Ok(r), twin: None }], None);
     assert!(!md.contains("thin evidence"), "{md}");
 }
 

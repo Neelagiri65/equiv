@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with: { fetch-depth: 0, persist-credentials: false }
       - uses: Neelagiri65/equiv@v0.27.0
         with: { keyless: "true", only-label: "refactor" }
 ```
@@ -98,6 +98,11 @@ Other ways to run it:
 - **List the functions that must not change** in `.equiv-review` at the repo root,
   one per line: `src/math.py : total : int`. A divergence in a listed function
   blocks the merge on every PR. Good for ports and parity code.
+- **Keep a port and its reference in step**: in the same file, add
+  `twin : fast.py : slow.py : parse : str` to check a function in two files of the
+  PR (for example a Rust binding and the pure-Python version) against each other
+  on every PR. Add `: errors-agree` or `: same-host` at the end of the line when
+  needed (see [docs/scope.md](docs/scope.md)).
 - **No label, no manifest**: `equiv` reviews every changed function and reports
   divergences in the comment **without blocking**, because in an ordinary PR most
   changes are intended. Set `fail-on-divergence: "true"` to block anyway.
@@ -119,11 +124,13 @@ not check.
 
 ## Good to know
 
-- **Credentials are withheld from the code being checked.** Since v0.16.0 it
-  runs with a short allowlist of environment variables, so the signing key,
-  `GH_TOKEN` and the Actions login token are not passed to it. It still runs
-  with normal file and network access, so only review code you would be
-  willing to run. [Details](docs/signing-model.md)
+- **The code being checked gets a short list of environment variables, not a
+  sandbox.** Since v0.16.0 the signing key, `GH_TOKEN` and the Actions login
+  token are not in its environment. It still runs as the same user as the job,
+  with normal file and network access, so it can read what that user can read
+  (for example a token left in `.git/config`; set `persist-credentials: false`
+  on `actions/checkout`, as above). Only review code you would be willing to
+  run. [Details](docs/signing-model.md)
 - **No tracking.** `equiv` sends nothing anywhere. Optional local counts can be
   switched on with `EQUIV_METRICS=on`. [Details](docs/metrics.md)
 - **Same answer everywhere.** Inputs and verdicts are worked out in Rust from a

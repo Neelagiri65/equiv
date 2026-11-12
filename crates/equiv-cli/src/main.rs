@@ -1,9 +1,13 @@
 //! equiv CLI (v0 skeleton). One binary, every channel (DR-1): `check` is the
 //! CLI/hook surface; `fmt`/`hash`/`lint` are the format toolchain. Exit codes
 //! are frozen per DR-7: 0 pass, 1 counterexample, 2 unknown, 3 invalid input.
+//! `review-pr` adds 4: the base ref could not be read, so nothing was compared.
 
 use std::process::ExitCode;
 
+mod args;
+mod pr;
+mod receipt_view;
 mod telemetry;
 
 const EXIT_INVALID: u8 = 3;
@@ -14,6 +18,11 @@ fn hex(bytes: &[u8]) -> String {
 
 fn from_hex(s: &str) -> Result<Vec<u8>, String> {
     let s = s.trim();
+    // ASCII first: the slicing below is by byte, and a multi-byte character
+    // would otherwise split mid-character and panic.
+    if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("not hex: only the characters 0-9 and a-f are allowed".into());
+    }
     if s.len() % 2 != 0 {
         return Err("odd-length hex".into());
     }
@@ -26,9 +35,9 @@ fn from_hex(s: &str) -> Result<Vec<u8>, String> {
 /// library, and never written into a receipt.
 /// Step budget per call: `--budget N`, else $EQUIV_BUDGET (the Action's
 /// `budget` input), else the default. Bound into the receipt either way.
-fn step_budget(args: &[String]) -> Result<u64, String> {
-    let raw = match args.iter().position(|a| a == "--budget") {
-        Some(i) => Some(args.get(i + 1).cloned().ok_or("--budget needs a whole number of Python line/jump events")?),
+fn step_budget(flag: Option<&str>) -> Result<u64, String> {
+    let raw = match flag {
+        Some(v) => Some(v.to_string()),
         None => std::env::var("EQUIV_BUDGET").ok().filter(|v| !v.trim().is_empty()),
     };
     match raw {
@@ -38,6 +47,21 @@ fn step_budget(args: &[String]) -> Result<u64, String> {
             _ => Err(format!("--budget (or EQUIV_BUDGET) must be a whole number of steps above 0, got `{v}`")),
         },
     }
+}
+
+/// The value of `--budget` in raw arguments, before the strict parse (which
+/// then rejects a `--budget` with nothing after it).
+fn budget_flag(args: &[String]) -> Option<&str> {
+    args.iter().position(|a| a == "--budget").and_then(|i| args.get(i + 1)).map(String::as_str)
+}
+
+/// The signing key in $EQUIV_SIGNING_KEY, for a run that was asked to sign.
+fn signing_key() -> Result<equiv_core::SigningKey, String> {
+    let seed = std::env::var("EQUIV_SIGNING_KEY")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or("--sign needs $EQUIV_SIGNING_KEY (64 hex chars); nothing was run")?;
+    equiv_core::SigningKey::from_hex(&seed).map_err(|e| format!("bad EQUIV_SIGNING_KEY: {e:?}; nothing was run"))
 }
 
 fn safety_seconds() -> Result<u64, String> {
@@ -98,8 +122,15 @@ USAGE:
         One raising while the other returns is still a difference. The mode is
         printed and bound into the receipt.
   equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]
-               [--no-harvest]
+               [--no-harvest] [--same-host] [--budget N]
         Check every listed (or auto-detected) changed function against base.
+        The manifest is read from the base ref: every line listed at base runs
+        as written at base, whatever this branch did to the file. Lines only
+        in this branch's copy run too and are named as new. With no manifest
+        at base, this branch's copy is used and the output says so. A listed
+        function that existed at base and is gone here counts as a behaviour
+        change (exit 1). A base ref that cannot be read is exit 4: nothing
+        was compared.
         Literal arguments of calls to each function anywhere in the repo's
         tracked Python files (tests included) are tried as extra inputs,
         unless --no-harvest.
@@ -113,10 +144,13 @@ EVALUATOR ENVIRONMENT:
   The Python process that runs the functions gets only PATH, HOME, temp dirs,
   locale, PYTHON*, virtualenv/conda and Windows system variables. Credentials
   such as $EQUIV_SIGNING_KEY or $GH_TOKEN are not passed. Not a sandbox.
+  PYTHONOPTIMIZE, PYTHONWARNINGS, PYTHONDEVMODE and PYTHONINTMAXSTRDIGITS are
+  not passed either: they change what code does and are not in the receipt.
+  The candidate and the reference each run in their own Python process.
 
 EVIDENCE:
-  If every generated input (10 or more) makes both versions raise, only errors
-  were compared: could not check (exit 2), never EQUIVALENT. If fewer than 10
+  If every generated input makes both versions raise, only errors were
+  compared: could not check (exit 2), never EQUIVALENT. If fewer than 10
   inputs returned a value, EQUIVALENT is labelled thin evidence, in the output
   and in the receipt (tier tested-thin). Functions with fewer than 10 possible
   inputs (no arguments, a bool) are checked completely and exempt.
@@ -129,238 +163,34 @@ SAFETY LIMIT:
   equiv keygen
         Generate an ed25519 keypair; prints the seed and public key. The seed
         is never written to disk; store it in your keychain.
-  equiv verify-receipt <signed-receipt-hex>
-        Verify a signed receipt; prints the receipt id and signer.
+  equiv verify-receipt <signed-receipt-hex> [--signer <public-key-hex>]
+        Check a signed receipt: the payload must be an equiv receipt and the
+        signature must match the public key carried inside it. That alone
+        does not show who signed it (anyone can make a key); pass --signer
+        with the public key you expect and any other signer fails (exit 1).
+        Prints the receipt id, the signer and what the receipt says.
   equiv fmt  <contract.eqct> [-o out.eqc]   compile contract text to canonical bytes
   equiv hash <contract.{eqct,eqc}>          print the contract's SHA-256 identity
   equiv lint <contract.{eqct,eqc}>          parse + validate, report errors
   equiv check <artifact.wasm> <contract>    (WASM path) check artifact against contract
 
-EXIT CODES (frozen): 0 pass · 1 counterexample · 2 unknown · 3 invalid input"
+EXIT CODES (frozen): 0 pass · 1 counterexample · 2 unknown · 3 invalid input
+  review-pr only: 4 the base ref could not be read (nothing was compared)
+  --help / -h print this text and exit 0"
 }
 
 fn run() -> Result<u8, String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // Asked-for help is not an error. (No arguments at all still is.)
+    if args.iter().any(|a| a == "--help" || a == "-h") || args.first().map(String::as_str) == Some("help") {
+        println!("{}", usage());
+        return Ok(0);
+    }
     match args.first().map(String::as_str) {
         Some("review-pr") => {
             let safety = safety_seconds()?;
-            let budget = step_budget(&args)?;
-            let same_host = args.iter().any(|a| a == "--same-host");
-            use equiv_review::{
-                detect_changed_functions, render_markdown_with_unchecked, run_pr_with_inputs, ArgType,
-                DetectedStatus, PrCheck, ReviewSpec,
-            };
-            let base = args
-                .iter()
-                .position(|a| a == "--base")
-                .and_then(|i| args.get(i + 1).cloned())
-                .or_else(|| std::env::var("EQUIV_BASE_REF").ok())
-                .or_else(|| std::env::var("GITHUB_BASE_REF").ok())
-                .unwrap_or_else(|| "origin/main".to_string());
-            let auto = args.iter().any(|a| a == "--auto");
-
-            let mut checks: Vec<PrCheck> = Vec::new();
-            // Functions that changed but could not be checked. Surfaced in the
-            // comment so a green result never hides them (closes issue #1).
-            let mut unchecked: Vec<(String, String)> = Vec::new();
-
-            // The base version of each function goes to a temp file owned by
-            // this process. It used to be named after the function and file
-            // only, so two reviews on one machine overwrote each other's base
-            // and one could judge against the other's code. The process id
-            // makes the path unique per run; (name, file) is unique within it.
-            let pid = std::process::id();
-            let tmp_base = |name: &str, file: &str, src: &[u8]| -> Result<std::path::PathBuf, String> {
-                let slug: String = file.chars().map(|c| if c.is_alphanumeric() { c } else { '_' }).collect();
-                let p = std::env::temp_dir().join(format!("equiv_base_{pid}_{name}_{slug}.py"));
-                std::fs::write(&p, src).map_err(|e| e.to_string())?;
-                Ok(p)
-            };
-
-            if auto {
-                // Detect changed functions from the diff. No manifest needed, so
-                // a refactored function can no longer be silently left out.
-                //
-                // The diff is taken against the merge-base of the base ref and
-                // HEAD when git can find one: a local run from a branch that is
-                // behind its base then reviews only the branch's own changes,
-                // never a function that moved on the base branch after the
-                // branch point (which would otherwise appear with the roles
-                // reversed). In the Action's merge-ref checkout the merge-base
-                // is the base tip itself, so nothing changes there. No
-                // merge-base (no repo, unrelated histories) falls back to the
-                // ref as given, and the diff below reports the failure.
-                let diff_base = std::process::Command::new("git")
-                    .args(["merge-base", &base, "HEAD"])
-                    .output()
-                    .ok()
-                    .filter(|o| o.status.success())
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or_else(|| base.clone());
-                // --name-status with rename detection: a renamed file is the
-                // same functions under a new path, so its base version is read
-                // from the old path and its changed functions are checked
-                // instead of being listed as "new" (plus "removed").
-                let listed = std::process::Command::new("git")
-                    .args(["-c", "core.quotepath=false", "diff", "-M", "--name-status", &diff_base, "--", "*.py"])
-                    .output()
-                    .map_err(|e| format!("git diff: {e}"))?;
-                if !listed.status.success() {
-                    return Err("git diff failed (need a git repo and a valid base ref)".into());
-                }
-                let mut entries: Vec<(String, String)> = Vec::new(); // (head path, base path)
-                for line in String::from_utf8_lossy(&listed.stdout).lines() {
-                    let f: Vec<&str> = line.split('\t').map(str::trim).collect();
-                    match f.as_slice() {
-                        [st, old, new] if st.starts_with('R') || st.starts_with('C') => {
-                            entries.push((new.to_string(), old.to_string()));
-                        }
-                        [_, path] if !path.is_empty() => entries.push((path.to_string(), path.to_string())),
-                        _ => {}
-                    }
-                }
-                for (file, base_file) in &entries {
-                    let file = file.as_str();
-                    let head_src = std::fs::read_to_string(file).unwrap_or_default();
-                    let base_out = std::process::Command::new("git")
-                        .args(["-c", "core.quotepath=false", "show", &format!("{diff_base}:{base_file}")])
-                        .output();
-                    let base_src = match base_out {
-                        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).into_owned(),
-                        _ => String::new(),
-                    };
-                    for d in detect_changed_functions(&base_src, &head_src)? {
-                        match d.status {
-                            DetectedStatus::Checkable { args } => {
-                                let base_path = tmp_base(&d.name, file, base_src.as_bytes())?;
-                                checks.push(PrCheck {
-                                    name: d.name.clone(),
-                                    head_path: std::path::PathBuf::from(file),
-                                    base_path,
-                                    spec: ReviewSpec { func: d.name, args, n: equiv_review::DEFAULT_N, seed: 1, budget, errors_agree: false, domains: vec![], same_host },
-                                });
-                            }
-                            DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
-                        }
-                    }
-                }
-            } else {
-                let manifest = args.get(1).ok_or("review-pr: missing manifest path (or pass --auto)")?;
-                let text = std::fs::read_to_string(manifest).map_err(|e| format!("{manifest}: {e}"))?;
-                for (lineno, line) in text.lines().enumerate() {
-                    let line = line.trim();
-                    if line.is_empty() || line.starts_with('#') {
-                        continue;
-                    }
-                    // file : function : sig[ : n[ : seed]]
-                    let parts: Vec<&str> = line.split(':').map(|s| s.trim()).collect();
-                    if parts.len() < 3 {
-                        return Err(format!("{manifest}:{}: expected `file : fn : sig`", lineno + 1));
-                    }
-                    let (file, func, sig) = (parts[0], parts[1], parts[2]);
-                    let n: u32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(equiv_review::DEFAULT_N);
-                    let seed: u64 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(1);
-                    let arg_types = sig
-                        .split(',')
-                        .filter(|s| !s.trim().is_empty())
-                        .map(|s| ArgType::parse_domain(s).ok_or_else(|| format!("bad arg type `{}`", s.trim())))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    let (arg_types, domains): (Vec<ArgType>, Vec<equiv_review::Domain>) = arg_types.into_iter().unzip();
-                    let base_out = std::process::Command::new("git")
-                        .args(["-c", "core.quotepath=false", "show", &format!("{base}:{file}")])
-                        .output();
-                    let base_bytes = match base_out {
-                        Ok(o) if o.status.success() => o.stdout,
-                        _ => Vec::new(),
-                    };
-                    let base_path = tmp_base(func, file, &base_bytes)?;
-                    checks.push(PrCheck {
-                        name: func.to_string(),
-                        head_path: std::path::PathBuf::from(file),
-                        base_path,
-                        spec: ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree: false, domains, same_host },
-                    });
-                }
-            }
-
-            if checks.is_empty() && unchecked.is_empty() {
-                eprintln!("review-pr: nothing changed to review");
-                return Ok(0);
-            }
-            // Inputs harvested from the repository's own calls and tests
-            // (0.17.0): one pass over every tracked Python file, at head.
-            // `--no-harvest` turns it off.
-            let harvested: Vec<Vec<equiv_review::Slots>> = if args.iter().any(|a| a == "--no-harvest") {
-                Vec::new()
-            } else {
-                let wanted: Vec<(String, std::path::PathBuf, Vec<ArgType>)> =
-                    checks.iter().map(|c| (c.spec.func.clone(), c.head_path.clone(), c.spec.args.clone())).collect();
-                let files = equiv_review::harvest::python_files(std::path::Path::new("."));
-                equiv_review::harvest::harvest(&wanted, &files)
-            };
-            let (items, code) = run_pr_with_inputs(&checks, &harvested, safety);
-            // A changed function that auto-detection could not check is "not
-            // checked" like a safety stop or a refusal: nothing diverged, but
-            // the run is not a clean pass (0). Exit 2 says so; whether that
-            // blocks the merge is the Action's `fail-on-not-checked` input.
-            let code = if code == 0 && !unchecked.is_empty() { 2 } else { code };
-
-            // Local-first verdict-rate metrics (fail-silent, counts only, no
-            // network). This build reviews Python only, so the tag is "python".
-            telemetry::record(&items, &unchecked, "python");
-
-            // Sign if a key is configured (CI secret). Absent key => unsigned,
-            // never an error: fork PRs legitimately have no secret access.
-            let key = match std::env::var("EQUIV_SIGNING_KEY") {
-                Ok(s) if !s.trim().is_empty() => Some(
-                    equiv_core::SigningKey::from_hex(&s)
-                        .map_err(|e| format!("bad EQUIV_SIGNING_KEY: {e:?}"))?,
-                ),
-                _ => None,
-            };
-            let signer_hex = key.as_ref().map(|k| hex(&k.public_key()));
-
-            if let Some(k) = &key {
-                // Durable, signed artifact (one TSV line per function): the
-                // receipt belongs in CI artifact storage, not just the comment.
-                let out = args
-                    .iter()
-                    .position(|a| a == "--receipts-out")
-                    .and_then(|i| args.get(i + 1).cloned());
-                let mut buf = String::new();
-                // A safety stop has no receipt, so nothing is signed for it.
-                for (it, r) in items.iter().filter_map(|it| it.outcome.as_ref().ok().map(|r| (it, r))) {
-                    let signed = equiv_core::SignedReceipt::sign(r.to_bytes(), k);
-                    buf.push_str(&format!(
-                        "{}\t{}\t{}\n",
-                        it.name,
-                        hex(&signed.receipt_id()),
-                        hex(&signed.to_bytes())
-                    ));
-                }
-                if let Some(p) = out {
-                    std::fs::write(&p, &buf).map_err(|e| format!("{p}: {e}"))?;
-                }
-            }
-
-            // in-toto attestations (DR-3): one Statement per function, written
-            // for the keyless Sigstore path (cosign signs them in CI).
-            if let Some(i) = args.iter().position(|a| a == "--attest-out") {
-                let dir = args.get(i + 1).ok_or("--attest-out needs a directory")?;
-                std::fs::create_dir_all(dir).map_err(|e| format!("{dir}: {e}"))?;
-                for (check, item) in checks.iter().zip(items.iter()) {
-                    // No receipt (safety stop) => nothing to attest.
-                    let Ok(receipt) = &item.outcome else { continue };
-                    let file = check.head_path.display().to_string();
-                    let stmt = equiv_review::intoto_statement(&file, &item.name, receipt);
-                    let path = std::path::Path::new(dir).join(format!("{}.intoto.json", item.name));
-                    std::fs::write(&path, stmt).map_err(|e| format!("{}: {e}", path.display()))?;
-                }
-            }
-
-            print!("{}", render_markdown_with_unchecked(&items, signer_hex.as_deref(), &unchecked));
-            Ok(code as u8)
+            let budget = step_budget(budget_flag(&args))?;
+            pr::run(&args[1..], safety, budget)
         }
         Some("keygen") => {
             let key = equiv_core::SigningKey::generate();
@@ -375,59 +205,97 @@ fn run() -> Result<u8, String> {
             Ok(0)
         }
         Some("verify-receipt") => {
-            let hexstr = args.get(1).ok_or("verify-receipt: missing signed-receipt hex")?;
-            let bytes = from_hex(hexstr)?;
+            let a = args::parse("verify-receipt", &args[1..], &[], &["--signer"])?;
+            let hexstr = match a.pos.as_slice() {
+                [h] => h,
+                [] => return Err("verify-receipt: missing signed-receipt hex".into()),
+                [_, extra, ..] => return Err(format!("verify-receipt: unexpected argument `{extra}`")),
+            };
+            let pinned = match a.value("--signer") {
+                Some(s) => Some(
+                    from_hex(s)
+                        .ok()
+                        .filter(|b| b.len() == 32)
+                        .ok_or("verify-receipt: --signer must be a public key of 64 hex characters")?,
+                ),
+                None => None,
+            };
+            let bytes = from_hex(hexstr).map_err(|e| format!("verify-receipt: the signed receipt is {e}"))?;
             let sr = equiv_core::SignedReceipt::from_bytes(&bytes)
                 .map_err(|e| format!("not a signed receipt: {e:?}"))?;
-            if sr.verify() {
-                println!("VALID signature");
-                println!("receipt-id: {}", hex(&sr.receipt_id()));
-                println!("signer:     {}", hex(&sr.public_key));
-                Ok(0)
-            } else {
+            // A signature over bytes that are not a receipt says nothing
+            // about any review, whoever made it.
+            let view = receipt_view::decode(&sr.receipt).map_err(|e| format!("not an equiv receipt: {e}"))?;
+            if !sr.verify() {
                 println!("INVALID signature");
-                Ok(1)
+                return Ok(1);
             }
-        }
-        Some("review") => {
-            use equiv_review::{review_with_inputs, ArgType, ReviewSpec, ReviewVerdict};
-            let safety = safety_seconds()?;
-            let budget = step_budget(&args)?;
-            let same_host = args.iter().any(|a| a == "--same-host");
-            let want_sign = args.iter().any(|a| a == "--sign");
-            let want_all = args.iter().any(|a| a == "--all");
-            let errors_agree = args.iter().any(|a| a == "--errors-agree");
-            // --inputs-from <file|dir>, repeatable: harvest literal call
-            // inputs from those Python files (0.17.0).
-            let mut inputs_from: Vec<std::path::PathBuf> = Vec::new();
-            let mut rest: Vec<&String> = Vec::new();
-            let mut it = args.iter().skip(1);
-            while let Some(a) = it.next() {
-                if a == "--inputs-from" {
-                    let p = it.next().ok_or("--inputs-from needs a file or directory")?;
-                    inputs_from.push(std::path::PathBuf::from(p));
-                } else if a == "--budget" {
-                    it.next(); // read by step_budget
-                } else {
-                    rest.push(a);
+            match &pinned {
+                Some(want) if want.as_slice() != sr.public_key.as_slice() => {
+                    println!("SIGNER MISMATCH: the signature is by a different key than the one given with --signer");
+                    println!("signer:     {}", hex(&sr.public_key));
+                    println!("expected:   {}", hex(want));
+                    return Ok(1);
+                }
+                Some(_) => {
+                    println!("signature:  matches the signer given with --signer");
+                    println!("signer:     {}", hex(&sr.public_key));
+                }
+                None => {
+                    println!("signature:  matches the public key carried inside this receipt");
+                    println!("signer:     {} (not pinned)", hex(&sr.public_key));
                 }
             }
-            let pos: Vec<&String> = rest
-                .into_iter()
-                .filter(|a| *a != "--sign" && *a != "--all" && *a != "--errors-agree" && *a != "--same-host")
-                .collect();
+            println!("receipt-id: {}", hex(&sr.receipt_id()));
+            for line in &view.lines {
+                println!("{line}");
+            }
+            if pinned.is_none() {
+                println!(
+                    "note: this does not show who signed the receipt. Anyone can make a key and sign any \
+                     receipt with it. To accept only a signer you trust, pin its public key:\n  \
+                     equiv verify-receipt <signed-receipt-hex> --signer <public-key-hex>"
+                );
+            }
+            Ok(0)
+        }
+        Some("review") => {
+            use equiv_review::{review_with_inputs, ReviewSpec, ReviewVerdict};
+            let a = args::parse(
+                "review",
+                &args[1..],
+                &["--sign", "--all", "--errors-agree", "--same-host"],
+                &["--inputs-from", "--budget"],
+            )?;
+            let safety = safety_seconds()?;
+            let budget = step_budget(a.value("--budget"))?;
+            let same_host = a.has("--same-host");
+            let want_all = a.has("--all");
+            let errors_agree = a.has("--errors-agree");
+            // --inputs-from <file|dir>, repeatable: harvest literal call
+            // inputs from those Python files (0.17.0).
+            let inputs_from: Vec<std::path::PathBuf> =
+                a.values("--inputs-from").into_iter().map(std::path::PathBuf::from).collect();
+            let pos = &a.pos;
             let cand = pos.first().ok_or("review: missing candidate .py")?;
             let refr = pos.get(1).ok_or("review: missing reference .py")?;
             let func = pos.get(2).ok_or("review: missing function name")?;
             let sig = pos.get(3).ok_or("review: missing signature (e.g. int,int)")?;
-            let n: u32 = pos.get(4).map(|s| s.parse().unwrap_or(equiv_review::DEFAULT_N)).unwrap_or(equiv_review::DEFAULT_N);
-            let seed: u64 = pos.get(5).map(|s| s.parse().unwrap_or(1)).unwrap_or(1);
-            let arg_types = sig
-                .split(',')
-                .filter(|s| !s.trim().is_empty())
-                .map(|s| ArgType::parse_domain(s).ok_or_else(|| format!("bad arg type `{}`", s.trim())))
-                .collect::<Result<Vec<_>, _>>()?;
-            let (arg_types, domains): (Vec<ArgType>, Vec<equiv_review::Domain>) = arg_types.into_iter().unzip();
+            let n: u32 = match pos.get(4) {
+                Some(s) => args::number("review: the case count [n]", s)?,
+                None => equiv_review::DEFAULT_N,
+            };
+            let seed: u64 = match pos.get(5) {
+                Some(s) => args::number("review: the [seed]", s)?,
+                None => 1,
+            };
+            if let Some(extra) = pos.get(6) {
+                return Err(format!("review: unexpected argument `{extra}`"));
+            }
+            // The key is checked before anything runs: a run that is going to
+            // fail must not print a verdict first.
+            let key = if a.has("--sign") { Some(signing_key()?) } else { None };
+            let (arg_types, domains) = pr::parse_sig(sig)?;
             let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains, same_host };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
                 Vec::new()
@@ -484,12 +352,8 @@ fn run() -> Result<u8, String> {
                 println!("mode: errors agree (both sides raising counts as agreement, whatever the exception class)");
             }
             println!("receipt-id: {}", hex(&r.sha256()));
-            if want_sign {
-                let seed = std::env::var("EQUIV_SIGNING_KEY")
-                    .map_err(|_| "--sign needs $EQUIV_SIGNING_KEY (64 hex chars)")?;
-                let key = equiv_core::SigningKey::from_hex(&seed)
-                    .map_err(|e| format!("bad EQUIV_SIGNING_KEY: {e:?}"))?;
-                let signed = equiv_core::SignedReceipt::sign(r.to_bytes(), &key);
+            if let Some(key) = &key {
+                let signed = equiv_core::SignedReceipt::sign(r.to_bytes(), key);
                 println!("signed-receipt: {}", hex(&signed.to_bytes()));
                 println!("signer:         {}", hex(&signed.public_key));
             } else {
@@ -533,8 +397,14 @@ fn run() -> Result<u8, String> {
             let artifact =
                 std::fs::read(artifact_path).map_err(|e| format!("{artifact_path}: {e}"))?;
             let c = load_contract(contract_path)?;
-            let receipt = equiv_engine::check(&artifact, &c, &equiv_engine::DiffConfig::default());
+            let checked = equiv_engine::check_explained(&artifact, &c, &equiv_engine::DiffConfig::default());
+            let receipt = checked.receipt;
             println!("verdict: {:?}", receipt.verdict);
+            // The reason for a could-not-check result: text for the reader,
+            // not part of the receipt bytes.
+            if let Some(note) = &checked.note {
+                println!("reason: {note}");
+            }
             println!("receipt: {}", hex(&receipt.to_bytes()));
             Ok(receipt.verdict.exit_code() as u8)
         }

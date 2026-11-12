@@ -23,6 +23,12 @@ enum SExp {
     List(Vec<SExp>),
 }
 
+/// Deepest parenthesis nesting the lexer builds. An expression can nest at
+/// most `cbor::MAX_DEPTH` levels and sits inside at most three wrapping
+/// forms (contract, refines, over), so anything deeper could never encode;
+/// refusing it here keeps every later pass (parse, validate, drop) shallow.
+const MAX_PARENS: usize = crate::cbor::MAX_DEPTH + 4;
+
 fn lex(src: &str) -> Result<Vec<SExp>, TextError> {
     let mut chars = src.chars().peekable();
     let mut stack: Vec<Vec<SExp>> = vec![Vec::new()];
@@ -40,6 +46,11 @@ fn lex(src: &str) -> Result<Vec<SExp>, TextError> {
             }
             '(' => {
                 chars.next();
+                if stack.len() > MAX_PARENS {
+                    return Err(TextError::Lex(format!(
+                        "nesting deeper than {MAX_PARENS} parentheses: beyond what a contract can encode"
+                    )));
+                }
                 stack.push(Vec::new());
             }
             ')' => {
@@ -99,7 +110,12 @@ struct Ctx<'a> {
 impl Ctx<'_> {
     fn arg(&self, name: &str) -> Result<Expr, TextError> {
         match self.params.iter().position(|p| p == name) {
-            Some(i) => Ok(Expr::Arg(i as u8)),
+            Some(i) => match u8::try_from(i) {
+                Ok(n) => Ok(Expr::Arg(n)),
+                Err(_) => perr(format!(
+                    "parameter `{name}` is number {i}; only the first {MAX_PARAMS} can be referenced"
+                )),
+            },
             None => perr(format!("unknown parameter `{name}`")),
         }
     }
@@ -156,6 +172,15 @@ fn fold_nary(
 ) -> Result<Expr, TextError> {
     if items.len() < 2 {
         return perr(format!("`{what}` needs at least 2 arguments"));
+    }
+    // The left fold nests one level per argument; refuse a chain the
+    // encoding cannot carry before building it.
+    if items.len() > crate::cbor::MAX_DEPTH {
+        return perr(format!(
+            "`{what}` with {} arguments nests deeper than a contract can encode (limit {}); split it",
+            items.len(),
+            crate::cbor::MAX_DEPTH - 1
+        ));
     }
     let mut exprs = items.iter().map(|s| parse_expr(s, ctx));
     let mut acc = exprs.next().unwrap()?;
@@ -338,6 +363,12 @@ fn parse_target(s: &SExp) -> Result<(Target, Vec<String>), TextError> {
         };
         match citems.as_slice() {
             [SExp::Atom(k), SExp::Atom(n), SExp::Atom(t)] if k == "param" && n.starts_with('$') => {
+                if param_names.contains(n) {
+                    return perr(format!("duplicate parameter name `{n}`"));
+                }
+                if param_names.len() == MAX_PARAMS {
+                    return perr(format!("more than {MAX_PARAMS} parameters"));
+                }
                 param_names.push(n.clone());
                 params.push(parse_valtype(t)?);
             }
@@ -413,6 +444,7 @@ fn parse_refines(args: &[SExp], ctx: &Ctx) -> Result<Refines, TextError> {
         _ => return perr("refines needs a quoted function name"),
     };
     let mut over = Vec::new();
+    let mut seen_over = false;
     let mut assuming = None;
     for clause in &args[2..] {
         let citems = match clause {
@@ -421,11 +453,18 @@ fn parse_refines(args: &[SExp], ctx: &Ctx) -> Result<Refines, TextError> {
         };
         match citems.split_first() {
             Some((SExp::Atom(k), rest)) if k == "over" => {
+                if seen_over {
+                    return perr("duplicate (over ...) in refines");
+                }
+                seen_over = true;
                 for r in rest {
                     over.push(parse_expr(r, ctx)?);
                 }
             }
             Some((SExp::Atom(k), rest)) if k == "assuming" && rest.len() == 1 => {
+                if assuming.is_some() {
+                    return perr("duplicate (assuming ...) in refines");
+                }
                 assuming = Some(parse_expr(&rest[0], ctx)?);
             }
             _ => return perr("expected (over ...) or (assuming ...)"),
@@ -461,6 +500,7 @@ pub fn parse_contract(src: &str) -> Result<Contract, TextError> {
     let mut post = None;
     let mut frame = None;
     let mut refines_clause = None;
+    let mut seen: Vec<String> = Vec::new();
     for clause in &items[2..] {
         let citems = match clause {
             SExp::List(items) => items,
@@ -470,6 +510,12 @@ pub fn parse_contract(src: &str) -> Result<Contract, TextError> {
             Some(SExp::Atom(a)) => a.clone(),
             _ => return perr("bad top-level clause"),
         };
+        // Each clause may appear once: a repeat would otherwise replace the
+        // earlier one without a trace in the contract's hash.
+        if seen.contains(&head) {
+            return perr(format!("duplicate `{head}` clause"));
+        }
+        seen.push(head.clone());
         match head.as_str() {
             "target" => {
                 let (t, names) = parse_target(clause)?;

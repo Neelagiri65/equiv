@@ -214,6 +214,7 @@ mod tests {
                 tier: "tested".to_string(),
                 disagreements: Vec::new(),
             }),
+            twin: None,
         }
     }
 

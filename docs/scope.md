@@ -14,20 +14,41 @@ deterministically generated inputs. Generation has four deterministic layers:
    the declared types are kept, at most 500 calls per function. They are bound
    into the receipt: the provenance line counts them, and the spec hash covers
    them, so a receipt made with them is reproduced only by a run over the same
-   files. `review-pr --no-harvest` turns this off.
+   files. `review-pr --no-harvest` turns this off. Which files are read
+   depends on git: under a directory, only the `*.py` files git tracks are
+   scanned (every `*.py` file below it only outside a git checkout). A test
+   file that is untracked or ignored contributes nothing, and the same review
+   over a checkout with different tracked files harvests different inputs and
+   so has a different receipt id. Stacked `parametrize` decorators are read as
+   their product, cut to its first 10,000 rows per test function.
 2. **Boundary corners per type**: empty, sign and off-by-one values, uppercase,
    whitespace and control characters, strings longer than 8, lists longer than
    6, the float special values, and each string corner placed between two
    ordinary strings in a list.
 3. **The source's own literals**: a constant `== 777` in the code is tested
-   directly, with its neighbours; a string literal is tested by value, with its
-   escapes resolved.
+   directly, with its neighbours. A number is read without its sign, so both
+   signs are tried (777 and -777, each with its neighbours). A float argument
+   gets every float literal (`1.5`, `.5`, `5.`, `1e-9`) and every int literal
+   float64 holds exactly, each with both signs and the next float below and
+   above. A string literal is tested by value, decoded as Python decodes it
+   (octal, `\x`, `\u`, `\U`, `\a \b \f \v`, raw prefixes in any case and
+   order); a literal that cannot be decoded exactly here (`\N{...}`, a lone
+   surrogate escape) and a bytes literal are not offered. For a list or dict
+   argument, the int literals (both signs, with neighbours) are placed inside
+   lists (`[100]`, `[99, 100]`) and under dict keys (`"a"` and the first two
+   string literals), and each string literal inside a three-element list. The
+   scan reads tokens and does not evaluate: a threshold that is computed
+   (`ord("d")`, `0.1 + 0.2`) is not aimed at.
 4. **Seeded random cases.** Random strings come in three shapes: lowercase
    a-z (half), a small mixed alphabet with capitals, digits, punctuation,
    whitespace and control characters (a quarter), and numeric text with
    optional padding, sign and suffix (a quarter). A quarter of random string
    lists also hold a near duplicate of one element (the same text, its upper-
-   or lowercase form, or with a leading space).
+   or lowercase form, or with a leading space). Random list elements and
+   dict values stay in -20..20; when a signature has a list or dict argument,
+   one more seeded case is added for every eight random cases, with elements
+   drawn from the source's literals and their neighbours and from wider
+   ranges (up to the envelope below).
 
 This is still bounded
 testing, not exhaustive verification: a pass means no divergence was found on the
@@ -36,8 +57,21 @@ generated inputs. Two limits are deliberate. Random integers stay inside a magni
 corners (the 32-bit wrap points, the float64 exactness cliff at 2^53 and the
 64-bit limits, each with its negative) are tried after every other input, and
 a version that cannot finish one of them inside the step budget has that input
-recorded in the receipt as not judged rather than failing the review. Arguments are varied one at a time, which
-means a divergence that needs two specific arguments at once may be missed. Methods, async and nested functions are listed as not checked, never judged. A function that did not change is not re-checked when something it calls did. It does not check intent, architecture, security. It
+recorded in the receipt as not judged rather than failing the review. The same
+corners are tried as the only element of a list and as a dict value. Corners and
+literals are tried one argument at a time, with every other argument at its
+default (0, "", an empty list or dict, 1.0, False). On top of that, for every
+ordered pair of non-bool arguments, the corners and literals of the first are
+tried again with the second at a few fixed non-default values (ints 1 and 2,
+strings "a" and "ab", one or two fixed values for the other types, plus the first
+four int literals up to 4,096 or string literals of the source), every bool
+argument is run at True (each alone, and all together), same-type string and
+numeric pairs get a fixed set of related values, and the random cases draw every
+argument at once. The cross cases are capped at 480 per review, shared equally
+between the pairs, so with many arguments only the first corners of each pair are
+crossed. This is not a cartesian product: a divergence that needs two specific
+values at once, where the second is not one of those fixed values, a literal or
+a random draw, may be missed. Methods, async and nested functions are listed as not checked, never judged. A function that did not change is not re-checked when something it calls did. It does not check intent, architecture, security. It
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,
@@ -46,7 +80,25 @@ structurally: a dict is a map (key order ignored); a tuple is compared element
 by element and is never equal to a list with the same items; a namedtuple is
 compared by class name, field names and values (so `(1, 2)` and `Point(x=1, y=2)`
 differ). Anything else (a set, a custom object, a subclass of a namedtuple,
-non-string keys) is refused. Float
+non-string keys) is refused. A subclass of `int`, `float`, `str`, `list` or
+`dict` (an enum, a `Counter`, an `OrderedDict`, a numpy scalar) is compared by
+its class name and its content: it agrees with the same class on the other side
+and never with the plain type. A value that cannot be read (for example a list
+that contains itself) is refused.
+
+Each side runs in its own Python process, the reference first. The two never
+share arguments, loaded modules or global state, and what the function prints is
+ignored. Only the returned value or the raised error class is compared: a change
+a function makes to its own arguments is not compared, and neither is the error
+message. Each side must report an outcome for every input; a run that ends early
+(the function exits the interpreter, or the process dies) is could not check,
+never a pass. Each side checks that the file it loads is the file whose hash
+is in the receipt; a file that changed after the review started is could not
+check. This is not a sandbox: the reviewed code runs as you, with your files
+and network. Imports resolve from the machine's Python environment
+(`PYTHONPATH` included), and the receipt does not record installed packages.
+`PYTHONOPTIMIZE`, `PYTHONWARNINGS`, `PYTHONDEVMODE` and `PYTHONINTMAXSTRDIGITS`
+are not passed to the reviewed code. Float
 reviews are admitted only inside the IEEE-754
 correctly rounded operations, where the result is identical on every machine. A
 function that reaches a transcendental (sin, exp, log, pow) is refused by name
@@ -114,7 +166,16 @@ changed behaviour, `2` nothing diverged but at least one changed function was
 not checked (safety stop, refused type, error, or no supported type hints; each
 is listed in the comment, never shown as green). The Action fails the PR check
 on `1` by default and on `2` only with `fail-on-not-checked: "true"`; a review
-that did not run at all (`3`) always fails it.
+that did not run at all always fails it, whatever the inputs say: `3` (bad
+manifest, bad arguments, bad key) or `4` (`review-pr` could not read the base
+ref, so nothing was compared; this is not "could not check").
+
+A function that the base manifest lists and that existed at base but no longer
+exists in the PR (removed or renamed) is reported as a behaviour change and
+counts as `1`. A listed function that never existed at base is `2`, as before.
+
+`equiv --help` exits `0`. An unknown flag, a case count or seed that is not a
+number, or an extra argument is `3`, and names what was wrong; nothing is run.
 
 ## The manifest
 
@@ -129,6 +190,32 @@ across a PR in a manifest at the repository root. The format of each line is
 ```
 src/math.py : total : int
 ```
+
+A **twin** line checks two files of the PR's own tree against each other on every
+PR, not a function against its base-branch version. Use it for a port and its
+reference (a Rust or C binding and the pure-Python version):
+
+```
+twin : src/fast.py : src/slow.py : parse : str[in .corpus.SQL]
+twin : src/fast.py : src/slow.py : ratio : float : same-host errors-agree
+```
+
+**Which manifest is read.** `review-pr` reads the manifest from the base ref,
+not from the PR. Every line listed at base runs exactly as written at base,
+even if the PR edited, removed or narrowed it, or deleted the file; this
+applies to twin lines too. Lines that exist only in the PR's copy run as well
+and are named in the comment as new in this PR. When the two copies differ
+the comment says so and lists the lines. If there is no manifest at base, the
+PR's copy is used and the comment says the manifest is new in this PR. Without
+this, a PR could switch its own check off by editing the file. What this does
+not cover: on `pull_request` events GitHub runs the workflow file from the PR
+itself, so a PR from someone with write access can still change the workflow;
+protect `.github/workflows` with a ruleset or CODEOWNERS if that matters.
+
+The first file is the candidate and the second the reference. The optional last field
+takes `errors-agree` (both raising counts as agreement, whatever the class) and
+`same-host` (the same-host float tier), separated by spaces. A difference blocks the
+merge like any listed function, and the comment names both files.
 
 ### Input domains (parity checks)
 
@@ -155,8 +242,13 @@ src/pkg/utils.py : is_multi_byte_encoding : str[in .constant.IANA_SUPPORTED]
 A value-set list is read from the PR's own version of the code (the head), so a PR that
 edits the list also changes its own domain. Every value in it is bound into the receipt,
 so a pass is tied to that exact list. Each value of a list of up to 100,000 names is
-judged (one argument at a time); combinations across two such arguments are sampled.
-A longer list is sampled, and the result says so: "(N values; only X tried)".
+judged (one argument at a time). Combinations across two or more such arguments are
+sampled, and the result says how many were tried: "combinations across value-set
+arguments sampled: only X of Y tried". For a `list[str[in ...]]` argument every value
+is put in at least one list (alone), and lists of several values are sampled: "(N
+values; each tried in at least one list; combinations of values within a list
+sampled)". A longer list is sampled, and the result says so: "(N values; only X
+tried)". These counts are measured on the inputs that ran.
 
 Random inputs, corners (including both ends of a range), source literals and harvested
 inputs all stay inside the domain. Literal and harvested values outside it are skipped,

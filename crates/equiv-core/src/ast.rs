@@ -179,34 +179,96 @@ pub enum ValidateError {
     ForallBoundTooLarge(u32),
     IdxOutsideForall,
     ArgOutOfRange(u8),
+    /// More parameters than an argument reference can index.
+    TooManyParams(usize),
+    /// An expression nests deeper than the canonical encoding can carry.
+    /// Carries the clause it was found in.
+    TooDeep(&'static str),
+}
+
+/// Most parameters a target may declare: `Expr::Arg` indexes with a u8.
+pub const MAX_PARAMS: usize = 256;
+
+/// Nesting of an expression: a leaf is 1, an operator is one more than its
+/// deepest operand. Stops counting once `limit` is passed, so it is cheap
+/// on anything the limit will reject.
+fn nest(e: &Expr, limit: usize) -> usize {
+    if limit == 0 {
+        return 1;
+    }
+    let l = limit - 1;
+    1 + match e {
+        Expr::C32(_) | Expr::C64(_) | Expr::Arg(_) | Expr::Result | Expr::Idx => 0,
+        Expr::Bv(_, a, b)
+        | Expr::Cmp(_, a, b)
+        | Expr::Band(a, b)
+        | Expr::Bor(a, b)
+        | Expr::Implies(a, b)
+        | Expr::Range(a, b)
+        | Expr::Disjoint(a, b)
+        | Expr::MemEq(_, a, _, b)
+        | Expr::ForallB(_, a, b) => nest(a, l).max(nest(b, l)),
+        Expr::Ite(c, a, b) => nest(c, l).max(nest(a, l)).max(nest(b, l)),
+        Expr::Zext(a)
+        | Expr::Wrap(a)
+        | Expr::Bnot(a)
+        | Expr::Byte(_, a)
+        | Expr::Word32(_, a)
+        | Expr::Word64(_, a)
+        | Expr::Readable(a)
+        | Expr::Writable(a)
+        | Expr::Unchanged(a) => nest(a, l),
+    }
+}
+
+/// An expression whose encoded array sits at CBOR depth `base` fits when its
+/// innermost operands (one level below the innermost array) stay within the
+/// decoder's limit.
+fn fits(e: &Expr, base: usize) -> bool {
+    let room = crate::cbor::MAX_DEPTH - base;
+    nest(e, room + 1) <= room
 }
 
 impl Contract {
     /// Structural validation per spec §3/§4: forall_b nesting and bound
     /// limits, idx scoping, arg indices within the target signature.
     pub fn validate(&self) -> Result<(), ValidateError> {
-        let nparams = self.target.params.len() as u8;
-        let mut exprs: Vec<&Expr> = vec![&self.pre, &self.post];
-        exprs.extend(self.frame.iter());
+        let nparams = self.target.params.len();
+        if nparams > MAX_PARAMS {
+            return Err(ValidateError::TooManyParams(nparams));
+        }
+        // (expression, clause, CBOR depth of the expression's own array):
+        // pre/post hang off the top-level map; frame items and `assuming`
+        // sit inside one array; `over` items inside two.
+        let mut exprs: Vec<(&Expr, &'static str, usize)> =
+            vec![(&self.pre, "pre", 1), (&self.post, "post", 1)];
+        exprs.extend(self.frame.iter().map(|e| (e, "frame", 2)));
         if let Some(r) = &self.refines {
-            exprs.extend(r.over.iter());
+            exprs.extend(r.over.iter().map(|e| (e, "refines over", 3)));
             if let Some(a) = &r.assuming {
-                exprs.push(a);
+                exprs.push((a, "refines assuming", 2));
             }
         }
-        for e in exprs {
+        // Depth first: the walk below recurses, so it only ever sees
+        // expressions already known to be shallow.
+        for (e, clause, base) in &exprs {
+            if !fits(e, *base) {
+                return Err(ValidateError::TooDeep(clause));
+            }
+        }
+        for (e, _, _) in exprs {
             walk(e, false, nparams)?;
         }
         Ok(())
     }
 }
 
-fn walk(e: &Expr, in_forall: bool, nparams: u8) -> Result<(), ValidateError> {
+fn walk(e: &Expr, in_forall: bool, nparams: usize) -> Result<(), ValidateError> {
     match e {
         Expr::Idx if !in_forall => Err(ValidateError::IdxOutsideForall),
         Expr::Idx => Ok(()),
         Expr::Arg(n) => {
-            if *n >= nparams {
+            if *n as usize >= nparams {
                 Err(ValidateError::ArgOutOfRange(*n))
             } else {
                 Ok(())

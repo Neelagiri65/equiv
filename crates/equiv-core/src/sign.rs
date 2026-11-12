@@ -7,8 +7,13 @@
 //! A signed receipt is a canonical-CBOR envelope:
 //!   { 0: version, 1: receipt-bytes, 2: signature(64), 3: public-key(32) }
 //! The `receipt-id` (the trust anchor) remains the SHA-256 of the *unsigned*
-//! canonical receipt bytes; the signature attests "this checker build produced
-//! exactly these bytes", verifiable by anyone holding the public key.
+//! canonical receipt bytes; the signature attests "the holder of this key
+//! signed exactly these bytes". The public key travels inside the envelope,
+//! so `verify()` alone shows only that the envelope is self-consistent: anyone
+//! can make a key and sign any bytes. Who signed is established by comparing
+//! `public_key` with a key the consumer already trusts (`equiv verify-receipt
+//! --signer`). This module does not look inside the receipt bytes; the CLI
+//! rejects an envelope whose payload is not a receipt.
 //!
 //! Secrets posture: the 32-byte seed is the private key. This module never
 //! writes it anywhere. Callers supply it (e.g. from the OS keychain via an
@@ -42,6 +47,11 @@ impl SigningKey {
         let s = s.trim();
         if s.len() != 64 {
             return Err(SignError::BadSeedLength);
+        }
+        // ASCII first: the slicing below is by byte, and a multi-byte
+        // character would split mid-character and panic.
+        if !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(SignError::BadHex);
         }
         let mut seed = [0u8; 32];
         for (i, b) in seed.iter_mut().enumerate() {
@@ -96,7 +106,9 @@ impl SignedReceipt {
         }
     }
 
-    /// Does the signature attest these exact receipt bytes?
+    /// Does the signature match these exact receipt bytes under the public
+    /// key carried in the envelope? True for any self-signed envelope; it
+    /// does not say whose key that is.
     pub fn verify(&self) -> bool {
         verify(&self.receipt, &self.signature, &self.public_key)
     }
@@ -123,17 +135,23 @@ impl SignedReceipt {
         let Value::Map(entries) = cbor::from_bytes(bytes)? else {
             return Err(CborError::UnsupportedMajorType(0));
         };
+        let mut versioned = false;
         let mut receipt = None;
         let mut sig: Option<[u8; 64]> = None;
         let mut pk: Option<[u8; 32]> = None;
         for (k, v) in entries {
             match (k, v) {
-                (SK_VERSION, Value::Uint(0)) => {}
+                (SK_VERSION, Value::Uint(0)) => versioned = true,
                 (SK_RECEIPT, Value::Bytes(b)) => receipt = Some(b),
                 (SK_SIG, Value::Bytes(b)) => sig = b.try_into().ok(),
                 (SK_PUBKEY, Value::Bytes(b)) => pk = b.try_into().ok(),
                 _ => return Err(CborError::UnsupportedMajorType(0)),
             }
+        }
+        // The version key is what says how to read the rest. An envelope
+        // without it is not this format, whatever else it carries.
+        if !versioned {
+            return Err(CborError::Truncated);
         }
         Ok(SignedReceipt {
             receipt: receipt.ok_or(CborError::Truncated)?,

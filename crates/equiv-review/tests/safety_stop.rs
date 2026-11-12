@@ -129,8 +129,8 @@ fn other_functions_in_the_run_still_report() {
     let fast_base = tmp("pr_fast_b", TERMINATES);
     // Slow FIRST: proves the run continues after a safety stop.
     let checks = vec![
-        PrCheck { name: "slow".into(), head_path: slow_head, base_path: slow_base, spec: spec("f") },
-        PrCheck { name: "fast".into(), head_path: fast_head, base_path: fast_base, spec: spec("f") },
+        PrCheck { name: "slow".into(), head_path: slow_head, base_path: slow_base, spec: spec("f"), twin: None },
+        PrCheck { name: "fast".into(), head_path: fast_head, base_path: fast_base, spec: spec("f"), twin: None },
     ];
     let (items, code) = run_pr_limited(&checks, 5);
     assert_eq!(items.len(), 2);

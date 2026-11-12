@@ -1,0 +1,5 @@
+function = "strip_bell"
+args = "str"
+expected = "equivalent"
+class = "holdout"
+pattern = '''removing the BEL character with `replace` on a `\a` literal rewritten as a filter on `\x07`: the same character, so the same result for every string. Written 2026-11-12 before the generator change it tests.'''

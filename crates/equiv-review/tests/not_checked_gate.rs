@@ -33,8 +33,8 @@ fn not_checked_is_exit_2_and_never_reads_green() {
     let fast_head = tmp("fast_h", "def f(x):\n    return x * 1\n");
     let fast_base = tmp("fast_b", "def f(x):\n    return x\n");
     let checks = vec![
-        PrCheck { name: "slow".into(), head_path: slow_head, base_path: slow_base, spec: spec("f", vec![ArgType::Int]) },
-        PrCheck { name: "fast".into(), head_path: fast_head, base_path: fast_base, spec: spec("f", vec![ArgType::Int]) },
+        PrCheck { name: "slow".into(), head_path: slow_head, base_path: slow_base, spec: spec("f", vec![ArgType::Int]), twin: None },
+        PrCheck { name: "fast".into(), head_path: fast_head, base_path: fast_base, spec: spec("f", vec![ArgType::Int]), twin: None },
     ];
     let (items, code) = run_pr_limited(&checks, 3);
     assert_eq!(code, 2, "not checked is reported as 2, distinct from a divergence (1)");
@@ -66,7 +66,7 @@ fn nothing_checked_is_not_reported_as_preserved() {
 fn headline_counts_unchecked_next_to_equivalent() {
     let h = tmp("ok_h", "def f(a):\n    return a + 0\n");
     let b = tmp("ok_b", "def f(a):\n    return a\n");
-    let checks = vec![PrCheck { name: "f".into(), head_path: h, base_path: b, spec: spec("f", vec![ArgType::Int]) }];
+    let checks = vec![PrCheck { name: "f".into(), head_path: h, base_path: b, spec: spec("f", vec![ArgType::Int]), twin: None }];
     let (items, code) = run_pr_limited(&checks, 30);
     assert_eq!(code, 0);
     let unchecked = vec![("g".to_string(), "async function, not checked in this version".to_string())];

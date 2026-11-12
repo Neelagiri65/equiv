@@ -1,0 +1,6 @@
+function = "flag"
+args = "int"
+expected = "diverges"
+class = "holdout"
+pattern = '''a branch on a negative sentinel dropped by the rewrite. A source-scan case on purpose: the sentinel is in the source with a minus sign in front. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(-70000,)'''

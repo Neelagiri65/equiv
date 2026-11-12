@@ -10,9 +10,12 @@ jobs:
   equiv-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0   # need base history to diff against
+          # The review runs the PR's Python as this job's user. Do not leave
+          # the checkout token in .git/config for it to read.
+          persist-credentials: false
       # This repo runs its own action from the checkout, so a change to
       # action.yml or the entrypoint is exercised by the PR that makes it.
       # Users copy the pinned form from the README (`Neelagiri65/equiv@vX.Y.Z`).
