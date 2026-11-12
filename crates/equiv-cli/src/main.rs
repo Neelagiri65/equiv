@@ -6,6 +6,9 @@
 use std::process::ExitCode;
 
 mod args;
+mod hook;
+mod init;
+mod mcp;
 mod pr;
 mod receipt_view;
 mod telemetry;
@@ -108,7 +111,7 @@ fn usage() -> &'static str {
 
 USAGE:
   equiv review <cand.py> <ref.py> <fn> <sig> [n] [seed] [--sign] [--all]
-               [--inputs-from <file|dir>]... [--errors-agree]
+               [--inputs-from <file|dir>]... [--errors-agree] [--types-hinted]
         Check a function against a reference on generated inputs. <sig> is the
         argument types (int|str|list[int]|list[str]|float|dict|bool), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
@@ -121,6 +124,11 @@ USAGE:
         versions raise, count it as agreement whatever the exception class.
         One raising while the other returns is still a difference. The mode is
         printed and bound into the receipt.
+        --types-hinted records that <sig> was supplied by the caller, not read
+        from the function's type hints (an agent integration passes it when
+        the function has none). Inputs and verdict are unchanged; the receipt
+        tier gains -hinted (tested-hinted, tested-same-host-hinted) and the
+        mode is bound into the receipt.
   equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]
                [--no-harvest] [--same-host] [--budget N]
         Check every listed (or auto-detected) changed function against base.
@@ -134,6 +142,26 @@ USAGE:
         Literal arguments of calls to each function anywhere in the repo's
         tracked Python files (tests included) are tried as extra inputs,
         unless --no-harvest.
+
+AGENTS (docs/agents.md):
+  equiv mcp
+        MCP server on stdin/stdout for coding agents, with two tools: review
+        (equiv review on a rewritten Python function, against a reference
+        file or the version committed at a git revision) and check (equiv
+        check). Each tool runs this binary and returns what it printed and
+        its exit code. A tool call cannot narrow a check: input domains,
+        seeds, case counts, budgets and modes are refused. Types come from
+        the function's hints; types the agent supplies are marked -hinted.
+  equiv hook claude-code
+        PostToolUse hook: reads the hook event on stdin and, after an edit of
+        a tracked .py file, checks the functions changed since the last
+        commit (at most 6 per edit) and reports every one to the agent. It
+        never blocks and exits 0; it is silent only when nothing changed.
+  equiv init claude-code
+        Adds the MCP server to ./.mcp.json and the hook to
+        ./.claude/settings.json, keeping everything else in them. A file
+        that is not valid JSON stops it before anything is written (exit 3).
+  Both versions of a function run locally with python3, as you: not a sandbox.
 
 METRICS:
   Off by default. With $EQUIV_METRICS=on, review-pr appends one line of counts
@@ -194,6 +222,11 @@ fn run() -> Result<u8, String> {
         return Ok(0);
     }
     match args.first().map(String::as_str) {
+        // Agent integrations (docs/agents.md). Each verdict they report is one
+        // that `review` / `check` / `review-pr --auto` computed.
+        Some("mcp") => mcp::run(&args[1..]),
+        Some("hook") => hook::run(&args[1..]),
+        Some("init") => init::run(&args[1..]),
         Some("review-pr") => {
             let safety = safety_seconds()?;
             let budget = step_budget(budget_flag(&args))?;
@@ -271,7 +304,7 @@ fn run() -> Result<u8, String> {
             let a = args::parse(
                 "review",
                 &args[1..],
-                &["--sign", "--all", "--errors-agree", "--same-host"],
+                &["--sign", "--all", "--errors-agree", "--same-host", "--types-hinted"],
                 &["--inputs-from", "--budget"],
             )?;
             let safety = safety_seconds()?;
@@ -279,6 +312,7 @@ fn run() -> Result<u8, String> {
             let same_host = a.has("--same-host");
             let want_all = a.has("--all");
             let errors_agree = a.has("--errors-agree");
+            let hinted = a.has("--types-hinted");
             // --inputs-from <file|dir>, repeatable: harvest literal call
             // inputs from those Python files (0.17.0).
             let inputs_from: Vec<std::path::PathBuf> =
@@ -303,7 +337,7 @@ fn run() -> Result<u8, String> {
             // fail must not print a verdict first.
             let key = if a.has("--sign") { Some(signing_key()?) } else { None };
             let (arg_types, domains) = pr::parse_sig(sig)?;
-            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains, same_host };
+            let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains, same_host, hinted };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
                 Vec::new()
             } else {
@@ -357,6 +391,13 @@ fn run() -> Result<u8, String> {
             }
             if errors_agree {
                 println!("mode: errors agree (both sides raising counts as agreement, whatever the exception class)");
+            }
+            if hinted {
+                println!(
+                    "types: supplied by the caller, not read from the function's type hints (tier {}); \
+                     if they are not the types the function is called with, the result says nothing about its real inputs",
+                    r.tier
+                );
             }
             println!("receipt-id: {}", hex(&r.sha256()));
             if let Some(key) = &key {

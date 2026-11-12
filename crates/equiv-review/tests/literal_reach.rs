@@ -24,7 +24,7 @@ fn run(name: &str, cand: &str, refr: &str, sig: &str) -> ReviewReceipt {
     let (t, dm) = ArgType::parse_domain(sig).unwrap();
     let domains = if dm == Domain::Any { vec![] } else { vec![dm] };
     // No random inputs: only corners and literals can find the difference.
-    let spec = ReviewSpec { func: "f".into(), args: vec![t], n: 0, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains, same_host: false };
+    let spec = ReviewSpec { func: "f".into(), args: vec![t], n: 0, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains, same_host: false, hinted: false };
     review(&c, &r, &spec).expect("no safety stop")
 }
 

@@ -20,7 +20,7 @@ fn write(d: &Path, f: &str, body: &str) -> PathBuf {
 
 fn spec(sig: &str) -> ReviewSpec {
     let (t, dm) = ArgType::parse_domain(sig).unwrap();
-    ReviewSpec { func: "f".into(), args: vec![t], n: 50, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![dm], same_host: false }
+    ReviewSpec { func: "f".into(), args: vec![t], n: 50, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![dm], same_host: false, hinted: false }
 }
 
 #[test]

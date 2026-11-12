@@ -27,6 +27,7 @@ fn spec(func: &str, sig: &[&str]) -> ReviewSpec {
         errors_agree: false,
         domains,
         same_host: false,
+        hinted: false,
     }
 }
 

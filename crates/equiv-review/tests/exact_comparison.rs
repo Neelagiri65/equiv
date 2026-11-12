@@ -20,7 +20,7 @@ fn spec(func: &str, args: Vec<ArgType>) -> ReviewSpec {
     // Exhaustive literal on purpose: adding a tolerance/approximate-equality
     // field to ReviewSpec breaks this test and forces the P5 decision to be
     // made explicitly (opt-in, default exact, written into the receipt).
-    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false }
+    ReviewSpec { func: func.into(), args, n: 200, seed: 1, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false, hinted: false }
 }
 
 fn diverges(name: &str, cand: &str, refr: &str, args: Vec<ArgType>, func: &str) {

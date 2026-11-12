@@ -114,6 +114,13 @@ a different one. Use it for a twin whose float behaviour you want compared at al
 for example a Rust reimplementation of Python's `round`. Every other refusal still
 applies.
 
+`--types-hinted` (on `review`) changes no input and no verdict: it records that
+the argument types were supplied by the caller rather than read from the
+function's type hints, as the MCP server does for a function without hints
+(`docs/agents.md`). The tier gains `-hinted` after its base (`tested-hinted`,
+`tested-same-host-hinted`, then `-thin` when the evidence is thin) and the mode
+is bound into the receipt id.
+
 Each call of either version, and each module load, runs under a step budget:
 4,000,000 Python line and jump events by default (enough for a loop with a one-line body over any int in the random range), counted through
 `sys.monitoring`. No clock is read, so the same budget gives the same result on

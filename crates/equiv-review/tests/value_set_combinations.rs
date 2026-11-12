@@ -24,7 +24,7 @@ fn write(d: &Path, f: &str, body: &str) -> PathBuf {
 
 fn run(c: &Path, r: &Path, sigs: &[&str], n: u32) -> ReviewReceipt {
     let (args, domains): (Vec<ArgType>, Vec<Domain>) = sigs.iter().map(|s| ArgType::parse_domain(s).unwrap()).unzip();
-    let spec = ReviewSpec { func: "f".into(), args, n, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains, same_host: false };
+    let spec = ReviewSpec { func: "f".into(), args, n, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains, same_host: false, hinted: false };
     review(c, r, &spec).expect("no safety stop")
 }
 

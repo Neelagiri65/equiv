@@ -13,7 +13,7 @@ fn run(name: &str, cand: &str, refr: &str, args: Vec<ArgType>, n: u32) -> Review
     let (c, r): (PathBuf, PathBuf) = (d.join(format!("{name}_c.py")), d.join(format!("{name}_r.py")));
     std::fs::write(&c, cand).unwrap();
     std::fs::write(&r, refr).unwrap();
-    let spec = ReviewSpec { func: "f".into(), args, n, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false };
+    let spec = ReviewSpec { func: "f".into(), args, n, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false, hinted: false };
     review(&c, &r, &spec).expect("no safety stop")
 }
 

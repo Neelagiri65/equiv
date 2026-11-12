@@ -16,7 +16,7 @@ fn run_n(name: &str, cand: &str, refr: &str, sig: &str, n: u32) -> ReviewReceipt
     std::fs::write(&r, refr).unwrap();
     let (t, dm) = ArgType::parse_domain(sig).unwrap();
     let domains = if dm == Domain::Any { vec![] } else { vec![dm] };
-    let spec = ReviewSpec { func: "f".into(), args: vec![t], n, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains, same_host: false };
+    let spec = ReviewSpec { func: "f".into(), args: vec![t], n, seed: 1, budget: DEFAULT_BUDGET, errors_agree: false, domains, same_host: false, hinted: false };
     review(&c, &r, &spec).expect("no safety stop")
 }
 

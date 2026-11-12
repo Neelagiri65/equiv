@@ -325,6 +325,13 @@ pub struct ReviewSpec {
     /// analyse) and judge on this machine only. Bound into the spec hash only
     /// when on; the receipt tier is then `tested-same-host`.
     pub same_host: bool,
+    /// The argument types were supplied by the caller rather than read from
+    /// the function's type hints (an agent or wrapper that found no usable
+    /// hints passed what it was given). Changes no input and no verdict: it
+    /// labels the receipt, whose tier gains `-hinted` after its base, so a
+    /// pass over guessed types is never read as one over declared types.
+    /// Bound into the spec hash only when on, so other receipts keep their ids.
+    pub hinted: bool,
 }
 
 impl ReviewSpec {
@@ -353,6 +360,9 @@ impl ReviewSpec {
         }
         if self.same_host {
             v.extend_from_slice(b"\0same-host");
+        }
+        if self.hinted {
+            v.extend_from_slice(b"\0types-hinted");
         }
         // Input domains (0.23.0): only when some argument has one, so every
         // unconstrained receipt keeps its id. One tag per argument position,
@@ -2470,6 +2480,7 @@ mod generation_tests {
             errors_agree: false,
             domains: vec![],
             same_host: false,
+            hinted: false,
         };
         let (cases, large_from, counts, soft) = gen_cases_soft(&spec, &[src], &[]);
         // The main random stream is untouched: its draws appear in order.
@@ -2672,7 +2683,9 @@ pub struct ReviewReceipt {
     /// Judged inputs on which at least one side raised (and both agreed).
     pub exceptions: u32,
     /// The claim tier. This checker only ever produces `tested`: bounded
-    /// testing on generated inputs, never a proof.
+    /// testing on generated inputs, never a proof. Parts follow it in a fixed
+    /// order: `-same-host`, then `-hinted` (types supplied by the caller), then
+    /// `-thin` (e.g. `tested-same-host-hinted-thin`).
     pub tier: String,
     /// Every input on which the sides disagreed, in case order (the first is
     /// the verdict's headline). NOT in the receipt bytes: its length is
@@ -3267,8 +3280,16 @@ pub fn review_with_inputs(
         exceptions: ev.exceptions,
         // The receipt itself carries the evidence level, so a thin verdict
         // cannot be re-read as a full one later (same frozen field, new value).
+        // Then `-hinted` when the types came from the caller, then `-thin`:
+        // every reader matches on the prefix (`tested-same-host`) or reads
+        // thinness from the verdict, never on the whole string.
         tier: {
-            let base = if spec.same_host { "tested-same-host" } else { "tested" };
+            let base = match (spec.same_host, spec.hinted) {
+                (false, false) => "tested",
+                (false, true) => "tested-hinted",
+                (true, false) => "tested-same-host",
+                (true, true) => "tested-same-host-hinted",
+            };
             match ev.verdict {
                 ReviewVerdict::Equivalent { n, .. } if thin_evidence(n, ev.exceptions).is_some() => format!("{base}-thin"),
                 _ => base.into(),
@@ -4352,7 +4373,7 @@ mod generator_tests {
     use super::*;
 
     fn spec(args: Vec<ArgType>, seed: u64) -> ReviewSpec {
-        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false }
+        ReviewSpec { func: "f".into(), args, n: 200, seed, budget: DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false, hinted: false }
     }
 
     #[test]
