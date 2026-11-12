@@ -21,6 +21,10 @@ fn sha256(bytes: &[u8]) -> [u8; 32] {
     h.finalize().into()
 }
 
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 /// A receipt plus, when there is something to add, a sentence for people:
 /// what could not be checked (verdict `Unknown`), or how many drawn inputs
 /// the precondition excluded (tested-N). It is not hashed into the receipt.
@@ -51,7 +55,6 @@ pub fn check_with_reference(
     contract: &Contract,
     cfg: &DiffConfig,
 ) -> Checked {
-    let _ = reference;
     let receipt = |verdict: Verdict| Receipt {
         artifact_sha256: sha256(artifact),
         contract_sha256: equiv_core::contract_sha256(contract),
@@ -94,18 +97,106 @@ pub fn check_with_reference(
             format!("the artifact contradicts the contract's assume flags: {violated:?}"),
         );
     }
-    // `refines` names a reference artifact this version never loads. Running
-    // only pre/post would put that artifact's hash on a receipt for a
-    // comparison that did not happen.
-    if contract.refines.is_some() {
-        return unknown(
-            UnknownReason::UnsupportedFeature,
-            "refines is not evaluated by this version: the reference artifact was not loaded and nothing              was compared against it"
-                .into(),
-        );
-    }
     if let Some((reason, why)) = wasm::signature_problem(&facts, target) {
         return unknown(reason, why);
+    }
+    // `refines`: the target is compared with a reference artifact on the
+    // same inputs. The receipt carries that artifact's hash, so the
+    // comparison must really have run against exactly those bytes: anything
+    // short of that is could-not-check, never a pass on pre/post alone.
+    let mut compare: Option<difftest::Reference> = None;
+    if let Some(r) = &contract.refines {
+        let Some(bytes) = reference else {
+            return unknown(
+                UnknownReason::UnsupportedFeature,
+                "the contract's refines clause names a reference artifact but no reference was supplied, so nothing \
+                 was compared against it"
+                    .into(),
+            );
+        };
+        if sha256(bytes) != r.artifact_sha256 {
+            return unknown(
+                UnknownReason::IllFormedExpr,
+                format!(
+                    "the file given as the reference has sha256 {} but the contract names {}; nothing was compared",
+                    hex(&sha256(bytes)),
+                    hex(&r.artifact_sha256)
+                ),
+            );
+        }
+        if r.assuming.is_some() {
+            return unknown(
+                UnknownReason::UnsupportedFeature,
+                "the refines clause has an `assuming` part, which this version does not evaluate; nothing was compared"
+                    .into(),
+            );
+        }
+        // This version compares the two on the target's own arguments: the
+        // `over` list must be the target's parameters, in order (a
+        // `(range a b)` stands for the two arguments a and b).
+        let mut flat: Vec<&equiv_core::ast::Expr> = Vec::new();
+        for e in &r.over {
+            match e {
+                equiv_core::ast::Expr::Range(a, b) => {
+                    flat.push(a);
+                    flat.push(b);
+                }
+                other => flat.push(other),
+            }
+        }
+        let identity = flat.len() == target.params.len()
+            && flat.iter().enumerate().all(|(i, e)| matches!(e, equiv_core::ast::Expr::Arg(n) if *n as usize == i));
+        if !identity {
+            return unknown(
+                UnknownReason::UnsupportedFeature,
+                "the refines clause's `over` list is not the target's parameters in order; this version compares \
+                 the two functions on the same arguments only, so nothing was compared"
+                    .into(),
+            );
+        }
+        if target.results.len() > 1 {
+            return unknown(
+                UnknownReason::UnsupportedFeature,
+                "refines compares a single result; the target declares more than one, so nothing was compared".into(),
+            );
+        }
+        let ref_target = equiv_core::ast::Target {
+            name: r.func.clone(),
+            params: target.params.clone(),
+            results: target.results.clone(),
+        };
+        let ref_facts = match wasm::analyze(bytes) {
+            Ok(f) => f,
+            Err(wasm::WasmError::Parse(e)) => {
+                return unknown(
+                    UnknownReason::IllFormedExpr,
+                    format!("the reference is not a readable WASM module: {e}; nothing was compared"),
+                )
+            }
+        };
+        if let Some((reason, why)) = wasm::signature_problem(&ref_facts, &ref_target) {
+            return unknown(reason, format!("reference: {why}; nothing was compared"));
+        }
+        // The reference is run with nothing to import, as the target is.
+        if ref_facts.func_imports > 0 {
+            return unknown(
+                UnknownReason::UnsupportedFeature,
+                format!(
+                    "the reference imports {} function(s); this version runs it with nothing to import, so \
+                     nothing was compared",
+                    ref_facts.func_imports
+                ),
+            );
+        }
+        if ref_facts.memories > 0 && !ref_facts.memory_exported && !bmc::touches_no_memory(bytes, &r.func) {
+            return unknown(
+                UnknownReason::UnsupportedFeature,
+                "the reference has a linear memory but does not export it, so the bytes it writes cannot be \
+                 compared; nothing was compared"
+                    .into(),
+            );
+        }
+        compare = Some(difftest::Reference { wasm: bytes, target: ref_target });
     }
 
     // Symbolic path first (loop-free scalar envelope; floats never reach it
@@ -132,7 +223,7 @@ pub fn check_with_reference(
         return Checked { receipt: r, note };
     }
     // Fallback: deterministic differential testing.
-    let (verdict, note) = difftest::difftest_explained(artifact, contract, cfg);
+    let (verdict, note) = difftest::difftest_with_reference(artifact, contract, cfg, compare.as_ref());
     Checked {
         receipt: receipt(verdict),
         note,

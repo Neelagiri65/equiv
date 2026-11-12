@@ -79,7 +79,7 @@ fn permitted_write_through_renamed_memory_passes() {
 // ---------- refines ----------
 
 #[test]
-fn refines_is_could_not_check() {
+fn refines_without_a_reference_is_could_not_check() {
     let m = r#"(module (func (export "f") (param i32) (result i32) local.get 0 i32.const 1 i32.add))"#;
     let c = format!(
         r#"(contract eqc/0 (target (func "f" (param $x i32) (result i32)))
@@ -89,7 +89,9 @@ fn refines_is_could_not_check() {
     );
     let (v, note) = run(m, &c);
     assert_eq!(v, Verdict::Unknown(UnknownReason::UnsupportedFeature));
-    assert!(note.unwrap().contains("refines is not evaluated by this version"));
+    // Comparing needs the reference artifact itself (`check_with_reference`);
+    // a receipt never carries a reference hash for a comparison that did not run.
+    assert!(note.unwrap().contains("no reference was supplied"));
 }
 
 // ---------- signature ----------

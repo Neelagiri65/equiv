@@ -58,8 +58,12 @@ fn unknown(v: &Verdict) -> bool {
 
 #[test]
 fn the_same_sum_written_two_ways_agrees() {
-    let (v, _) = scalar_run(&f("local.get 0 i32.const 1 i32.add"), &g("i32.const 1 local.get 0 i32.add"), "(c32 1)");
+    let (v, note) = scalar_run(&f("local.get 0 i32.const 1 i32.add"), &g("i32.const 1 local.get 0 i32.add"), "(c32 1)");
+    // Also under the `uncertified-proofs` feature: a refines contract never
+    // takes the symbolic path, so a pass is tested-N, never "proved".
     assert!(matches!(v, Verdict::TestedN { n_cases: 64, .. }), "{v:?}");
+    let note = note.expect("a refines pass says the reference was compared");
+    assert!(note.contains("the target and the reference returned the same result on all 64 inputs"), "{note}");
 }
 
 #[test]
@@ -109,8 +113,9 @@ fn byte_sum(name: &str, step_two: bool) -> Vec<u8> {
 #[test]
 fn a_byte_sum_and_its_unrolled_form_agree_over_memory() {
     let (t, r) = (byte_sum("f", true), byte_sum("g", false));
-    let (v, _) = run(&t, &r, &SUM.replace("HASH", &sha(&r)));
+    let (v, note) = run(&t, &r, &SUM.replace("HASH", &sha(&r)));
     assert!(matches!(v, Verdict::TestedN { .. }), "{v:?}");
+    assert!(note.unwrap().contains("returned the same result on all"));
 }
 
 // ---------- pairs that differ ----------
@@ -188,8 +193,9 @@ fn a_reference_that_traps_where_the_precondition_holds_is_could_not_check() {
 #[test]
 fn a_reference_without_the_named_export_is_could_not_check() {
     let r = wasm(r#"(module (func (export "h") (param i32) (result i32) local.get 0))"#);
-    let (v, _) = scalar_run(&f("local.get 0"), &r, "(c32 1)");
+    let (v, note) = scalar_run(&f("local.get 0"), &r, "(c32 1)");
     assert!(unknown(&v), "{v:?}");
+    assert!(note.unwrap().contains("exports no function named `g`"));
 }
 
 #[test]
@@ -204,8 +210,9 @@ fn a_reference_with_another_signature_is_could_not_check() {
 fn a_reference_with_an_import_is_could_not_check() {
     let r = wasm(r#"(module (import "env" "h" (func (param i32) (result i32)))
                      (func (export "g") (param i32) (result i32) local.get 0 call 0))"#);
-    let (v, _) = scalar_run(&f("local.get 0"), &r, "(c32 1)");
+    let (v, note) = scalar_run(&f("local.get 0"), &r, "(c32 1)");
     assert!(unknown(&v), "{v:?}");
+    assert!(note.unwrap().contains("the reference imports 1 function"));
 }
 
 #[test]
@@ -213,8 +220,9 @@ fn a_reference_whose_memory_cannot_be_read_is_could_not_check() {
     let t = store("f", 1);
     let r = wasm(r#"(module (memory 1) (func (export "g") (param i32) (result i32)
                       local.get 0 i32.const 1 i32.store8 i32.const 0))"#);
-    let (v, _) = run(&t, &r, &STORE.replace("HASH", &sha(&r)));
+    let (v, note) = run(&t, &r, &STORE.replace("HASH", &sha(&r)));
     assert!(unknown(&v), "{v:?}");
+    assert!(note.unwrap().contains("does not export it"));
 }
 
 #[test]
@@ -258,8 +266,9 @@ fn an_assuming_clause_is_could_not_check() {
 
 #[test]
 fn too_few_inputs_inside_the_precondition_is_could_not_check() {
-    let (v, _) = scalar_run(&f("local.get 0"), &g("local.get 0"), "(eq $x (c32 123456789))");
+    let (v, note) = scalar_run(&f("local.get 0"), &g("local.get 0"), "(eq $x (c32 123456789))");
     assert!(unknown(&v), "{v:?}");
+    assert!(note.unwrap().contains("satisfied the precondition"));
 }
 
 #[test]
@@ -273,4 +282,23 @@ fn a_target_that_breaks_its_own_postcondition_is_still_a_counterexample() {
     );
     let (v, _) = run(&f("local.get 0 i32.const 1 i32.add"), &r, &c);
     assert!(matches!(v, Verdict::Counterexample { .. }), "{v:?}");
+}
+
+#[test]
+fn a_contract_without_refines_is_checked_exactly_as_before() {
+    // The reference draws nothing from the generator: the same inputs, the
+    // same receipt bytes, whether or not a reference could have been given.
+    let c = parse_contract(
+        r#"(contract eqc/0 (target (func "f" (param $x i32) (result i32)))
+          (pre (c32 1)) (post (eq result (add $x (c32 1)))) (frame))"#,
+    )
+    .unwrap();
+    let t = f("local.get 0 i32.const 1 i32.add");
+    let plain = check_explained(&t, &c, &DiffConfig::default());
+    let via = check_with_reference(&t, None, &c, &DiffConfig::default());
+    assert_eq!(plain.receipt.to_bytes(), via.receipt.to_bytes());
+    // Tested-N in a default build; the symbolic path may prove it when the
+    // `uncertified-proofs` feature is on. Either way the two entry points agree.
+    assert!(matches!(plain.receipt.verdict, Verdict::TestedN { .. } | Verdict::Proved(_)), "{:?}", plain.receipt.verdict);
+    assert!(plain.note.is_none(), "{:?}", plain.note);
 }
