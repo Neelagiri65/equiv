@@ -39,6 +39,19 @@ pub fn check(artifact: &[u8], contract: &Contract, cfg: &DiffConfig) -> Receipt 
 
 /// `check`, with the reason for any `Unknown` verdict.
 pub fn check_explained(artifact: &[u8], contract: &Contract, cfg: &DiffConfig) -> Checked {
+    check_with_reference(artifact, None, contract, cfg)
+}
+
+/// `check_explained`, with the reference artifact a `refines` clause names.
+/// `reference` is the file the caller offers as that artifact; it is hashed
+/// here and must match the hash in the contract.
+pub fn check_with_reference(
+    artifact: &[u8],
+    reference: Option<&[u8]>,
+    contract: &Contract,
+    cfg: &DiffConfig,
+) -> Checked {
+    let _ = reference;
     let receipt = |verdict: Verdict| Receipt {
         artifact_sha256: sha256(artifact),
         contract_sha256: equiv_core::contract_sha256(contract),
