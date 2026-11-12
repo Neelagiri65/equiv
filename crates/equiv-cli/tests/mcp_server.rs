@@ -247,6 +247,54 @@ fn review_of_an_unhinted_function_takes_the_signature_and_says_the_types_were_su
     assert!(is_error(&r), "{t}");
     assert!(t.contains("signature"), "asks for one: {t}");
     assert!(!t.contains("EQUIVALENT"), "{t}");
+
+    // `base` (whose schema default a client may fill in) beside `reference`
+    // is not used, and the result says so.
+    let r = s.request(&call(
+        3,
+        "review",
+        r#"{"candidate":"c.py","reference":"r.py","function":"f","signature":"int","base":"HEAD"}"#,
+    ));
+    let t = text(&r);
+    assert!(!is_error(&r) && t.contains("EQUIVALENT"), "{t}");
+    assert!(t.contains("`base` was not used"), "{t}");
+    s.close();
+}
+
+#[test]
+fn a_function_unchanged_since_the_base_is_said_to_be_compared_with_itself() {
+    // The agent already committed its edit: the candidate is the base.
+    let d = fresh_dir("equiv_mcp", "unchanged");
+    repo_with(&d, &[("m.py", "def f(x: int) -> int:\n    return x * 2\n")]);
+    let mut s = Server::start(&d);
+    let r = s.request(&call(1, "review", r#"{"candidate":"m.py","function":"f"}"#));
+    let t = text(&r);
+    assert!(is_error(&r) && t.contains("identical"), "{t}");
+    // Reviewed anyway: the pass must not read as a check of an edit to `f`.
+    let r = s.request(&call(2, "review", r#"{"candidate":"m.py","function":"f","signature":"int"}"#));
+    let t = text(&r);
+    assert!(!is_error(&r) && t.contains("EQUIVALENT"), "{t}");
+    assert!(t.contains("compares it with itself"), "{t}");
+    assert!(t.contains("tier tested-hinted"), "{t}");
+    s.close();
+}
+
+#[test]
+fn a_function_the_detector_will_not_type_needs_a_signature_and_keeps_the_reason() {
+    // A changed default: every argument is generated, so the default itself
+    // is never exercised. The detector says so, and the tool keeps saying so.
+    let d = fresh_dir("equiv_mcp", "default");
+    std::fs::write(d.join("c.py"), "def f(x: int, y: int = 2) -> int:\n    return x + y\n").unwrap();
+    std::fs::write(d.join("r.py"), "def f(x: int, y: int = 1) -> int:\n    return x + y\n").unwrap();
+    let mut s = Server::start(&d);
+    let r = s.request(&call(1, "review", r#"{"candidate":"c.py","reference":"r.py","function":"f"}"#));
+    let t = text(&r);
+    assert!(is_error(&r) && t.contains("default value changed") && t.contains("signature"), "{t}");
+    let r = s.request(&call(2, "review", r#"{"candidate":"c.py","reference":"r.py","function":"f","signature":"int,int"}"#));
+    let t = text(&r);
+    assert!(!is_error(&r) && t.contains("EQUIVALENT"), "{t}");
+    assert!(t.contains("default value changed"), "the detector's reason stays beside the result: {t}");
+    assert!(t.contains("tier tested-hinted"), "{t}");
     s.close();
 }
 

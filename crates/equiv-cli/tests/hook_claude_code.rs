@@ -14,11 +14,16 @@ use support::{ceiling, fresh_dir, parse, quote, repo_with, Json};
 const BIN: &str = env!("CARGO_BIN_EXE_equiv");
 
 fn run_hook(cwd: &Path, input: &str) -> (Option<i32>, String, String) {
+    run_hook_env(cwd, input, &[])
+}
+
+fn run_hook_env(cwd: &Path, input: &str, env: &[(&str, &str)]) -> (Option<i32>, String, String) {
     let mut child = Command::new(BIN)
         .args(["hook", "claude-code"])
         .current_dir(cwd)
         .env("EQUIV_METRICS", "off")
         .env("GIT_CEILING_DIRECTORIES", ceiling())
+        .envs(env.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -142,6 +147,20 @@ fn an_edit_that_no_longer_parses_is_said_not_silenced() {
     std::fs::write(&file, "def f(x: int) -> int:\n    return x *\n").unwrap();
     let ctx = context(&d, "Edit", &file);
     assert!(ctx.contains("m.py") && ctx.contains("could not"), "{ctx}");
+    assert!(!ctx.contains("same behaviour"), "{ctx}");
+}
+
+#[test]
+fn a_setting_equiv_cannot_use_is_said_and_the_hook_still_exits_0() {
+    let d = fresh_dir("equiv_hook", "badbudget");
+    repo_with(&d, &[("m.py", BASE)]);
+    let file = d.join("m.py");
+    std::fs::write(&file, BASE.replace("return x * 2\n", "return x + x\n")).unwrap();
+    let (code, out, err) = run_hook_env(&d, &event(&d, "Edit", &file), &[("EQUIV_BUDGET", "lots")]);
+    assert_eq!(code, Some(0), "the hook never blocks: {out}{err}");
+    let j = parse(out.trim()).unwrap_or_else(|e| panic!("hook stdout is not JSON ({e}): {out}{err}"));
+    let ctx = j.at(&["hookSpecificOutput", "additionalContext"]).and_then(Json::str).expect("additionalContext");
+    assert!(ctx.contains("could not check") && ctx.contains("EQUIV_BUDGET") && ctx.contains("m.py"), "{ctx}");
     assert!(!ctx.contains("same behaviour"), "{ctx}");
 }
 
