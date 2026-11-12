@@ -1,0 +1,6 @@
+function = "window"
+args = "int,int,int"
+expected = "diverges"
+class = "holdout"
+pattern = '''a special case whose three thresholds are each computed from two literals, so none of the values that must meet is a number in the source. Written off the planned input list on purpose. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(1024, 42, 28)'''
