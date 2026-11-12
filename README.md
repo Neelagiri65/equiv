@@ -78,7 +78,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0, persist-credentials: false }
-      - uses: Neelagiri65/equiv@v0.27.0
+      - uses: Neelagiri65/equiv@v0.28.0
         with: { keyless: "true", only-label: "refactor" }
 ```
 
