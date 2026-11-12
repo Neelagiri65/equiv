@@ -230,3 +230,26 @@ fn same_error_class_on_both_sides_still_agrees_and_is_counted() {
     assert!(matches!(rec.verdict, ReviewVerdict::Equivalent { .. }), "got {:?}", rec.verdict);
     assert!(rec.exceptions > 0);
 }
+
+// ---- the files judged are the files hashed into the receipt ----
+
+#[test]
+fn a_reference_file_rewritten_while_inputs_are_resolved_is_not_a_pass() {
+    // Resolving a value-set domain imports the candidate module. Code at its
+    // top level that overwrites the reference with the candidate's own source
+    // must not turn a difference into agreement.
+    let r = tmp("swap_r", "NAMES = ['a', 'b', 'c']\ndef f(s):\n    return s\n");
+    let c = tmp(
+        "swap_c",
+        &format!(
+            "NAMES = ['a', 'b', 'c']\nopen({:?}, 'w').write(open(__file__).read())\ndef f(s):\n    return s + 'x'\n",
+            r.to_str().unwrap()
+        ),
+    );
+    let s = ReviewSpec {
+        domains: vec![Domain::OneOf { source: "NAMES".into(), values: vec![] }],
+        ..spec(vec![ArgType::Str])
+    };
+    let v = review(&c, &r, &s).expect("no safety stop").verdict;
+    assert!(not_green(&v), "the reference was replaced during the review and it passed: {v:?}");
+}
