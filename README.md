@@ -17,7 +17,7 @@ with the same Python version and you get the same receipt, byte for byte. There 
 `equiv` checks **plain Python functions**: ones that take simple values
 (`int`, `str`, `float`, `bool`, `dict`, `list[int]`, `list[str]`) and return a result.
 
-On those, it aims never to raise a false alarm. Across the 43 rewrites in our
+On those, it aims never to raise a false alarm. Across the 44 rewrites in our
 test corpus that do keep behaviour, it has raised none.
 
 Anything it cannot judge fairly is listed as **not checked**, never shown as a
@@ -38,10 +38,10 @@ behaviour on purpose, `equiv` can only tell you that it changed.
 
 ## Does it actually catch bugs?
 
-- **Test corpus.** 131 labelled pairs of functions where we already know the
-  answer. Of the 88 that really change behaviour, `equiv` catches 81, misses 4,
-  and cannot check 3. Of the 43 that keep behaviour, it raises 0 false alarms
-  (42 pass, 1 cannot check). Each case it misses or cannot check is listed with
+- **Test corpus.** 137 labelled pairs of functions where we already know the
+  answer. Of the 93 that really change behaviour, `equiv` catches 85, misses 5,
+  and cannot check 3. Of the 44 that keep behaviour, it raises 0 false alarms
+  (43 pass, 1 cannot check). Each case it misses or cannot check is listed with
   the reason. [`divergences/`](divergences/)
 - **[jellyfish](docs/case-studies/jellyfish.md).** This library ships every
   function twice, once in Rust and once in Python. `equiv` finds the two
