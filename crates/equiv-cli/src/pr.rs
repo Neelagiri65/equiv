@@ -57,13 +57,13 @@ fn random16() -> [u8; 16] {
 /// readable by this user only, and removed when the review ends. The base
 /// files used to sit at a guessable path in the shared temp directory, where
 /// the code under review could replace the reference it was compared with.
-struct PrivateDir {
+pub(crate) struct PrivateDir {
     path: PathBuf,
     written: std::cell::Cell<u32>,
 }
 
 impl PrivateDir {
-    fn create() -> Result<Self, String> {
+    pub(crate) fn create() -> Result<Self, String> {
         let mut last = String::new();
         for _ in 0..4 {
             let path = std::env::temp_dir().join(format!("equiv-{}", crate::hex(&random16())));
@@ -83,7 +83,7 @@ impl PrivateDir {
         Err(format!("cannot create a private directory for the base files ({last})"))
     }
 
-    fn write(&self, name: &str, file: &str, src: &[u8]) -> Result<PathBuf, String> {
+    pub(crate) fn write(&self, name: &str, file: &str, src: &[u8]) -> Result<PathBuf, String> {
         let k = self.written.get();
         self.written.set(k + 1);
         let slug: String = format!("{name}_{file}")
@@ -110,8 +110,52 @@ impl Drop for PrivateDir {
     }
 }
 
-fn git(args: &[&str]) -> Result<std::process::Output, String> {
+pub(crate) fn git(args: &[&str]) -> Result<std::process::Output, String> {
     Command::new("git").args(["-c", "core.quotepath=false"]).args(args).output().map_err(|e| format!("git: {e}"))
+}
+
+/// `git` run as if started in `dir` (`git -C dir`), for callers whose files
+/// are not under the process's working directory (the MCP server, the hook).
+pub(crate) fn git_in(dir: &std::path::Path, args: &[&str]) -> Result<std::process::Output, String> {
+    Command::new("git")
+        .args(["-c", "core.quotepath=false"])
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| format!("git: {e}"))
+}
+
+/// The check `review-pr --auto` runs for a changed function whose parameters
+/// all have supported hints: the head file against the base copy, with the
+/// default case count and seed, no domains and no parity mode. The hook builds
+/// its checks here too, so the two can never drift apart.
+pub(crate) fn auto_check(
+    name: String,
+    head_path: PathBuf,
+    base_path: PathBuf,
+    args: Vec<ArgType>,
+    budget: u64,
+    same_host: bool,
+) -> PrCheck {
+    PrCheck {
+        name: name.clone(),
+        head_path,
+        base_path,
+        spec: ReviewSpec {
+            func: name,
+            args,
+            n: equiv_review::DEFAULT_N,
+            seed: 1,
+            budget,
+            errors_agree: false,
+            domains: vec![],
+            same_host,
+            hinted: false,
+        },
+        twin: None,
+    }
 }
 
 /// The commit the base ref names, or why it cannot be read.
@@ -393,23 +437,7 @@ pub fn run(argv: &[String], safety: u64, budget: u64) -> Result<u8, String> {
                 match d.status {
                     DetectedStatus::Checkable { args } => {
                         let base_path = tmp.write(&d.name, file, base_src.as_bytes())?;
-                        checks.push(PrCheck {
-                            name: d.name.clone(),
-                            head_path: PathBuf::from(file),
-                            base_path,
-                            spec: ReviewSpec {
-                                func: d.name,
-                                args,
-                                n: equiv_review::DEFAULT_N,
-                                seed: 1,
-                                budget,
-                                errors_agree: false,
-                                domains: vec![],
-                                same_host,
-                                hinted: false,
-                            },
-                            twin: None,
-                        });
+                        checks.push(auto_check(d.name, PathBuf::from(file), base_path, args, budget, same_host));
                     }
                     DetectedStatus::NotChecked { reason } => unchecked.push((d.name, reason)),
                 }

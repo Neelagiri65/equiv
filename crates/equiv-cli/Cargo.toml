@@ -14,6 +14,7 @@ path = "src/main.rs"
 equiv-core = { path = "../equiv-core" }
 equiv-engine = { path = "../equiv-engine" }
 equiv-review = { path = "../equiv-review" }
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

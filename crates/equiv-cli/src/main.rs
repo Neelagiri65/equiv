@@ -6,6 +6,9 @@
 use std::process::ExitCode;
 
 mod args;
+mod hook;
+mod init;
+mod mcp;
 mod pr;
 mod receipt_view;
 mod telemetry;
@@ -219,6 +222,11 @@ fn run() -> Result<u8, String> {
         return Ok(0);
     }
     match args.first().map(String::as_str) {
+        // Agent integrations (docs/agents.md). Each verdict they report is one
+        // that `review` / `check` / `review-pr --auto` computed.
+        Some("mcp") => mcp::run(&args[1..]),
+        Some("hook") => hook::run(&args[1..]),
+        Some("init") => init::run(&args[1..]),
         Some("review-pr") => {
             let safety = safety_seconds()?;
             let budget = step_budget(budget_flag(&args))?;
