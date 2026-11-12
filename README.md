@@ -2,13 +2,13 @@
 
 **"It's just a refactor." Prove it.**
 
-`equiv` runs your old and new code side by side on thousands of inputs. Same
+`equiv` runs your old and new code side by side on hundreds to thousands of generated inputs. Same
 behaviour: the check passes. Anything different: the merge is blocked, with the
 exact input that shows it. It works the same whether you rewrote the function or
 an AI did.
 
-Every result comes with a receipt. Anyone can re-run the receipt on any machine
-and get the same answer, byte for byte. There is no model's opinion involved.
+Every verdict comes with a receipt. Run the same check again on any machine
+with the same Python version and you get the same receipt, byte for byte. There is no model's opinion involved.
 
 ![equiv catches an AI refactor diverging at n = -5, then emits a signed receipt that re-runs to an identical id](assets/equiv-aha.gif)
 
@@ -17,7 +17,7 @@ and get the same answer, byte for byte. There is no model's opinion involved.
 `equiv` checks **plain Python functions**: ones that take simple values
 (`int`, `str`, `float`, `bool`, `dict`, `list[int]`, `list[str]`) and return a result.
 
-On those, it aims never to raise a false alarm. Across the 36 rewrites in our
+On those, it aims never to raise a false alarm. Across the 44 rewrites in our
 test corpus that do keep behaviour, it has raised none.
 
 Anything it cannot judge fairly is listed as **not checked**, never shown as a
@@ -38,11 +38,11 @@ behaviour on purpose, `equiv` can only tell you that it changed.
 
 ## Does it actually catch bugs?
 
-- **Test corpus.** 115 labelled pairs of functions where we already know the
-  answer. Of the 76 that really change behaviour, `equiv` catches 73, misses 0,
-  and cannot check 3. Of the 39 that keep behaviour, it raises 0 false alarms
-  (38 pass, 1 cannot check). Each case it cannot check is listed with the reason
-  it is out of reach by design. [`divergences/`](divergences/)
+- **Test corpus.** 137 labelled pairs of functions where we already know the
+  answer. Of the 93 that really change behaviour, `equiv` catches 85, misses 5,
+  and cannot check 3. Of the 44 that keep behaviour, it raises 0 false alarms
+  (43 pass, 1 cannot check). Each case it misses or cannot check is listed with
+  the reason. [`divergences/`](divergences/)
 - **[jellyfish](docs/case-studies/jellyfish.md).** This library ships every
   function twice, once in Rust and once in Python. `equiv` finds the two
   disagreeing in 8 of 10 functions. It also catches a bug that shipped in

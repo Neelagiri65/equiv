@@ -269,5 +269,5 @@ files when inputs are harvested from them; it never decides a verdict, which
 Rust computes from the values both versions returned. Receipts are identical across hosts. Receipts can be
 signed with a local ed25519 key or with keyless Sigstore (OIDC). The keyless
 path binds the signature to a verifiable CI identity rather than a stored
-secret. The tool is a single static binary with no runtime dependencies,
-prebuilt for macOS, Linux and Windows.
+secret. The tool is a single static binary; a review also needs Python 3.12 or
+newer on the machine. It is prebuilt for macOS, Linux and Windows.
