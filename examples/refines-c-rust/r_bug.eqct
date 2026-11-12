@@ -1,0 +1,8 @@
+; fnv1a compiled from C (target) must behave like fnv1a compiled from Rust
+; (reference) on every byte string of up to 256 bytes in memory.
+(contract eqc/0
+  (target (func "fnv1a" (param $p i32) (param $n i32) (result i32)))
+  (pre (and (readable (range $p $n)) (le_u $n (c32 256))))
+  (post (c32 1))
+  (frame)
+  (refines (artifact sha256:7faa85381281ac490ac6002a994dbe4fd994c3b05df4bd12c439aed3497d4d83) "fnv1a" (over (range $p $n))))

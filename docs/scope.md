@@ -261,6 +261,51 @@ generation and receipts are unchanged.
 agreement whatever the exception class. One side raising while the other returns is
 still a difference.
 
+## WASM contracts (`equiv check`)
+
+`equiv check <artifact.wasm> <contract> [--reference <ref.wasm>]` checks one
+exported WebAssembly function against a contract written in the contract text
+format (`.eqct`; `equiv fmt`, `hash` and `lint` handle it). The clauses are a
+precondition, a postcondition, a frame (the memory the call may write) and,
+optionally, `refines`. Inputs that satisfy the precondition are generated from
+a fixed seed (boundary values first); the result is "tested on N inputs", a
+counterexample, or could not check. It is a test, not a proof.
+
+`refines` names a reference artifact by its sha256 and the export to compare
+with: `(refines (artifact sha256:HEX) "export" (over $x ...))`. Pass that file
+with `--reference`. On every input that satisfies the precondition, the target
+and the reference are called with the same arguments on the same memory
+image. They must return the same result and leave the same bytes inside the
+frame regions; what the reference writes outside the frame is not compared
+(the target is held to the frame on its own). A difference is a counterexample
+that names what each side returned. The receipt carries the reference's hash,
+so it states exactly which reference was compared.
+
+In this version the check is could not check, with the reason, when:
+
+- no reference is passed, or the file passed has another sha256;
+- the `over` list is anything other than the target's own parameters, in
+  order (`(range $p $n)` stands for `$p $n`), or the clause has an
+  `assuming` part (neither has a defined meaning yet);
+- the reference cannot be read, lacks the export, has another signature,
+  imports functions, uses a memory it does not export, or has a memory of
+  another size than the target's;
+- the target declares more than one result, or a float type;
+- the reference traps on an input where the precondition holds (a reference
+  must be defined wherever the contract speaks);
+- fewer inputs than requested satisfy the precondition.
+
+What it does not do yet, which matters for comparing a compiled C function
+with its Rust rewrite: memory is filled with random bytes before each call, so
+a compiled module's static data (lookup tables, constants) is overwritten;
+compiled code that writes stack scratch below its stack pointer breaks the
+frame clause; the two compilers lay memory out differently; only 32-bit and
+64-bit integer arguments exist (a pointer is an offset into the shared memory
+image); a module that imports anything (WASI, libc) cannot run; and there is
+no limit on the work a call does, so a call that never returns hangs the
+check. Today it fits small freestanding integer kernels, such as the CRC32 and
+UTF-8 examples in `conformance/`.
+
 ## How it works
 
 Input generation and the verdict are computed in Rust from a fixed seed. The

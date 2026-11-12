@@ -194,11 +194,8 @@ fn run_case(
     }
 }
 
-/// Frame check: every byte outside the declared write regions is unchanged.
-fn frame_ok(frame: &[Expr], env: &Env) -> Result<bool, crate::eval::EvalError> {
-    if env.old_mem.len() != env.new_mem.len() {
-        return Ok(false); // memory grew; v1 contracts assume no-memory-grow
-    }
+/// Which bytes of memory the frame clause allows the call to write.
+fn frame_mask(frame: &[Expr], env: &Env) -> Result<Vec<bool>, crate::eval::EvalError> {
     let mut allowed = vec![false; env.old_mem.len()];
     for region in frame {
         if let crate::eval::CVal::Region(b, l) = crate::eval::eval(region, env)? {
@@ -212,6 +209,15 @@ fn frame_ok(frame: &[Expr], env: &Env) -> Result<bool, crate::eval::EvalError> {
             }
         }
     }
+    Ok(allowed)
+}
+
+/// Frame check: every byte outside the declared write regions is unchanged.
+fn frame_ok(frame: &[Expr], env: &Env) -> Result<bool, crate::eval::EvalError> {
+    if env.old_mem.len() != env.new_mem.len() {
+        return Ok(false); // memory grew; v1 contracts assume no-memory-grow
+    }
+    let allowed = frame_mask(frame, env)?;
     Ok(env
         .old_mem
         .iter()
@@ -277,6 +283,28 @@ pub fn difftest(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) -> Verdict {
 /// how many drawn inputs the precondition excluded when it is tested-N.
 /// The sentence is not part of the receipt.
 pub fn difftest_explained(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) -> (Verdict, Option<String>) {
+    difftest_with_reference(wasm, contract, cfg, None)
+}
+
+/// The reference side of a `refines` comparison: the artifact's bytes and the
+/// export to call, with the target's own signature. The caller has already
+/// matched the bytes against the hash in the contract and gated the export.
+pub struct Reference<'a> {
+    pub wasm: &'a [u8],
+    pub target: Target,
+}
+
+/// `difftest_explained`, also comparing the target with `reference` on every
+/// input that passes the contract: the same arguments and the same memory
+/// image go to both, and their results and the bytes inside the contract's
+/// frame regions must agree. The reference draws nothing from the generator,
+/// so a contract without `refines` sees exactly the inputs it always did.
+pub fn difftest_with_reference(
+    wasm: &[u8],
+    contract: &Contract,
+    cfg: &DiffConfig,
+    reference: Option<&Reference>,
+) -> (Verdict, Option<String>) {
     let unknown = |r: UnknownReason, why: String| (Verdict::Unknown(r), Some(why));
     let target = &contract.target;
 
@@ -315,6 +343,29 @@ pub fn difftest_explained(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) ->
         Err(e) => return unknown(UnknownReason::IllFormedExpr, format!("the artifact could not be run: {e}")),
     };
     let mem_len = probe.new_mem.len();
+    if let Some(r) = reference {
+        // Both sides get the same memory image, so the memories must be the
+        // same size; otherwise an address valid on one side is not on the other.
+        let ref_probe = match run_case(r.wasm, &r.target, &vec![0; target.params.len()], &[]) {
+            Ok(e) => e,
+            Err(e) => {
+                return unknown(
+                    UnknownReason::IllFormedExpr,
+                    format!("the reference could not be run: {e}; nothing was compared"),
+                )
+            }
+        };
+        if ref_probe.new_mem.len() != mem_len {
+            return unknown(
+                UnknownReason::UnsupportedFeature,
+                format!(
+                    "the target's memory is {mem_len} bytes and the reference's is {}; this version compares the \
+                     two on one memory image, so nothing was compared",
+                    ref_probe.new_mem.len()
+                ),
+            );
+        }
+    }
 
     let mut forced = forced_inputs(&target.params, &mut rng, mem_len, cfg.n_cases).into_iter();
     let mut passed = 0u64;
@@ -400,6 +451,66 @@ pub fn difftest_explained(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) ->
                 )
             }
         }
+        if let Some(r) = reference {
+            let rexec = match run_case(r.wasm, &r.target, &args, &mem_image) {
+                Ok(e) => e,
+                Err(e) => {
+                    return unknown(
+                        UnknownReason::IllFormedExpr,
+                        format!("the reference could not be run on input {args:?}: {e}"),
+                    )
+                }
+            };
+            // A reference that traps where the precondition holds does not
+            // define the behaviour there: it is not a valid reference for
+            // this contract, and that is not a finding about the target.
+            if rexec.trapped {
+                return unknown(
+                    UnknownReason::UnsupportedFeature,
+                    format!(
+                        "the reference trapped on input {args:?}, where the precondition holds and the target \
+                         returned; a reference must be defined wherever the contract speaks"
+                    ),
+                );
+            }
+            if rexec.result != exec.result {
+                let show = |v: Option<u64>| v.map(|n| n.to_string()).unwrap_or_else(|| "nothing".into());
+                return (
+                    Verdict::Counterexample { args: args.clone(), trap: false },
+                    Some(format!(
+                        "on input {args:?} the target returned {} and the reference returned {}",
+                        show(exec.result),
+                        show(rexec.result)
+                    )),
+                );
+            }
+            // Inside the frame regions the two must have left the same bytes.
+            // Outside them the target was already shown to write nothing; what
+            // the reference writes there is its own business.
+            let allowed = match frame_mask(&contract.frame, &env) {
+                Ok(m) => m,
+                Err(e) => {
+                    return unknown(
+                        UnknownReason::IllFormedExpr,
+                        format!("the frame clause could not be evaluated on input {args:?}: {e:?}"),
+                    )
+                }
+            };
+            let differs = allowed
+                .iter()
+                .enumerate()
+                .position(|(i, a)| *a && exec.new_mem.get(i) != rexec.new_mem.get(i));
+            if let Some(at) = differs {
+                return (
+                    Verdict::Counterexample { args: args.clone(), trap: false },
+                    Some(format!(
+                        "on input {args:?} the target and the reference left different bytes inside the frame \
+                         (first at address {at}: target {}, reference {})",
+                        exec.new_mem[at], rexec.new_mem[at]
+                    )),
+                );
+            }
+        }
         passed += 1;
     }
 
@@ -417,12 +528,30 @@ pub fn difftest_explained(wasm: &[u8], contract: &Contract, cfg: &DiffConfig) ->
     }
     // A pass that skipped inputs says so: the count of cases is exact, but
     // the reader should know how much of what was drawn the pre excluded.
-    let note = (pre_false + pre_error > 0).then(|| {
+    let skipped = (pre_false + pre_error > 0).then(|| {
         format!(
-            "{passed} inputs ran; {pre_false} more were drawn but did not satisfy the precondition and \
-             {pre_error} more could not have it evaluated"
+            "{pre_false} more were drawn but did not satisfy the precondition and {pre_error} more could not \
+             have it evaluated"
         )
     });
+    // A refines pass says what was compared, so the reader knows the
+    // reference really ran. Without a reference the sentence is unchanged.
+    let note = match reference {
+        Some(_) => {
+            let what = if contract.frame.is_empty() {
+                "returned the same result"
+            } else {
+                "returned the same result and left the same bytes inside the frame"
+            };
+            let mut n = format!("the target and the reference {what} on all {passed} inputs");
+            if let Some(sk) = &skipped {
+                n.push_str("; ");
+                n.push_str(sk);
+            }
+            Some(n)
+        }
+        None => skipped.map(|sk| format!("{passed} inputs ran; {sk}")),
+    };
     (
         Verdict::TestedN {
             n_cases: passed,
