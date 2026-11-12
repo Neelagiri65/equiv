@@ -92,7 +92,10 @@ ignored. Only the returned value or the raised error class is compared: a change
 a function makes to its own arguments is not compared, and neither is the error
 message. Each side must report an outcome for every input; a run that ends early
 (the function exits the interpreter, or the process dies) is could not check,
-never a pass. Imports resolve from the machine's Python environment
+never a pass. Each side checks that the file it loads is the file whose hash
+is in the receipt; a file that changed after the review started is could not
+check. This is not a sandbox: the reviewed code runs as you, with your files
+and network. Imports resolve from the machine's Python environment
 (`PYTHONPATH` included), and the receipt does not record installed packages.
 `PYTHONOPTIMIZE`, `PYTHONWARNINGS`, `PYTHONDEVMODE` and `PYTHONINTMAXSTRDIGITS`
 are not passed to the reviewed code. Float
