@@ -1,0 +1,5 @@
+function = "is_leap_day"
+args = "int,int,int"
+expected = "equivalent"
+class = "holdout"
+pattern = '''a check for one exact date with its three comparisons reordered and one written the other way round: the same for every input, so inputs that set all three literals together must still agree. Written 2026-11-12 before the generator change it tests.'''

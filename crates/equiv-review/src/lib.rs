@@ -1252,6 +1252,76 @@ const WIDE_SMALL: i64 = 1000;
 /// in one review (see `wide_int`): four draws from the edge of the envelope.
 const WIDE_MAGNITUDE_TOTAL: u64 = 4 * INT_ENVELOPE as u64;
 
+/// Upper bound on the joint literal cases of one review.
+const JOINT_CAP: usize = 240;
+
+// The value tuples `k` same-typed arguments take together in the joint
+// literal cases. The literals of one condition sit next to each other in the
+// source, so every run of `k` consecutive literals of that type is a tuple:
+// first in source order (the arguments named in the order they are declared),
+// then with every sign flipped (the scan reads a number without its sign),
+// then in the other orders (a condition may name its arguments in any order;
+// all orders for two or three arguments, the reverse for more). With one
+// argument of the type, each literal on its own. Exact literals only: their
+// neighbours are tried one argument at a time. Runs do not cross from one
+// source text into the other. Duplicates are dropped, first occurrence kept.
+fn joint_candidates(sources: &[&str], ty: ArgType, k: usize) -> Vec<Vec<PyVal>> {
+    let mut streams: Vec<Vec<PyVal>> = Vec::new();
+    for src in sources {
+        match ty {
+            ArgType::Int => streams.push(scan_int_literals(src).into_iter().map(PyVal::Int).collect()),
+            ArgType::Float => {
+                streams.push(scan_float_literals(src).into_iter().map(|f| PyVal::Float(f.to_bits())).collect());
+                streams.push(
+                    scan_int_literals(src)
+                        .into_iter()
+                        .filter(|n| n.unsigned_abs() <= 1 << 53)
+                        .map(|n| PyVal::Float((n as f64).to_bits()))
+                        .collect(),
+                );
+            }
+            ArgType::Str => streams.push(scan_str_literals(src).into_iter().map(PyVal::Str).collect()),
+            _ => {}
+        }
+    }
+    let negated = |w: &[PyVal]| -> Option<Vec<PyVal>> {
+        w.iter()
+            .map(|v| match v {
+                PyVal::Int(n) => n.checked_neg().map(PyVal::Int),
+                PyVal::Float(b) => Some(PyVal::Float((-f64::from_bits(*b)).to_bits())),
+                _ => None,
+            })
+            .collect()
+    };
+    let orders: Vec<Vec<usize>> = match k {
+        0 | 1 => Vec::new(),
+        2 => vec![vec![1, 0]],
+        3 => vec![vec![0, 2, 1], vec![1, 0, 2], vec![1, 2, 0], vec![2, 0, 1], vec![2, 1, 0]],
+        _ => vec![(0..k).rev().collect()],
+    };
+    let windows: Vec<&[PyVal]> = streams.iter().flat_map(|s| s.windows(k.max(1))).collect();
+    let mut out: Vec<Vec<PyVal>> = Vec::new();
+    let mut push = |t: Vec<PyVal>| {
+        if !out.contains(&t) {
+            out.push(t);
+        }
+    };
+    for w in &windows {
+        push(w.to_vec());
+    }
+    for w in &windows {
+        if let Some(n) = negated(w) {
+            push(n);
+        }
+    }
+    for order in &orders {
+        for w in &windows {
+            push(order.iter().map(|&i| w[i].clone()).collect());
+        }
+    }
+    out
+}
+
 /// Upper bound on the cross cases of one review, over all pairs of arguments.
 const CROSS_CAP: usize = 480;
 
@@ -1752,6 +1822,73 @@ fn gen_cases_soft(
                             total += 1;
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // Joint literal cases: several arguments set to source literals at once.
+    // A special case such as `year == 2024 and month == 2 and day == 29`
+    // needs all three values together; the cases above move one argument, or
+    // one argument against a few fixed partners. Arguments are grouped by
+    // scalar type; a group takes the literals of one run of the source in
+    // order (see `joint_candidates`), and the groups are combined. Bounded by
+    // JOINT_CAP over the whole review; judged like the large corners.
+    {
+        let groups: Vec<(Vec<usize>, Vec<Vec<PyVal>>)> = [ArgType::Int, ArgType::Float, ArgType::Str]
+            .into_iter()
+            .filter_map(|ty| {
+                let idx: Vec<usize> =
+                    spec.args.iter().enumerate().filter(|(_, t)| **t == ty).map(|(i, _)| i).collect();
+                let cands = if idx.is_empty() { Vec::new() } else { joint_candidates(sources, ty, idx.len()) };
+                (!cands.is_empty()).then_some((idx, cands))
+            })
+            .collect();
+        let joined: usize = groups.iter().map(|(idx, _)| idx.len()).sum();
+        if joined >= 2 {
+            // Each group keeps as many candidates as lets the product of the
+            // groups stay within the cap.
+            let per_group = match groups.len() {
+                1 => JOINT_CAP,
+                2 => 15,
+                _ => 6,
+            };
+            let base: Vec<PyVal> = base_vals(spec);
+            let sizes: Vec<usize> = groups.iter().map(|(_, c)| c.len().min(per_group)).collect();
+            let mut pick = vec![0usize; groups.len()];
+            let mut added = 0;
+            'joint: loop {
+                let mut c = base.clone();
+                let mut ok = true;
+                for (g, (idx, cands)) in groups.iter().enumerate() {
+                    for (slot, v) in idx.iter().zip(&cands[pick[g]]) {
+                        // Outside the envelope a literal keeps to the cases
+                        // it always ran in (see the cross cases).
+                        ok &= harvest::inside_envelope(v);
+                        c[*slot] = v.clone();
+                    }
+                }
+                if ok && look.case(&c) && seen.insert(key(&c)) {
+                    soft.push(cases.len());
+                    cases.push(c);
+                    counts.literal += 1;
+                    added += 1;
+                    if added >= JOINT_CAP {
+                        break 'joint;
+                    }
+                }
+                // Next combination, the last group moving fastest.
+                let mut g = groups.len();
+                loop {
+                    if g == 0 {
+                        break 'joint;
+                    }
+                    g -= 1;
+                    pick[g] += 1;
+                    if pick[g] < sizes[g] {
+                        break;
+                    }
+                    pick[g] = 0;
                 }
             }
         }

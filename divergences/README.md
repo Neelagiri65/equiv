@@ -89,14 +89,26 @@ different Python minor version is flagged in the output.
 
 ## Current results
 
-Recorded with equiv 0.28.0 on Python 3.14 (see `BASELINE.json`).
+Recorded with equiv 0.29.0 on Python 3.14 (see `BASELINE.json`).
 
 | | |
 |---|---|
-| Cases | 131 (88 diverges, 43 equivalent) |
-| Catch rate | 81 / 88 = 92.0% |
-| False-alarm rate | 0 / 43 = 0% |
+| Cases | 137 (93 diverges, 44 equivalent) |
+| Catch rate | 85 / 93 = 91.4% |
+| False-alarm rate | 0 / 44 = 0% |
 | Could not check | 4 |
+
+Cases 132-137 (class `holdout`) were written on 2026-11-12, before the joint
+literal cases of 0.29.0, and recorded against 0.28.0 first: 0.28.0 catches
+0 / 5 of their diverging pairs and passes the one equivalent pair. They test
+one change: several arguments set to the source's literals at once. A special
+case guarded by three literals together (132), by three literals named in
+another order than the arguments (133), by a string and two ints (134) and by
+two float literals (136) is caught; a compound condition rewritten with its
+comparisons reordered stays equivalent (135). 137 was written off the planned
+input list on purpose: its three thresholds are each computed from two
+literals, and it stays missed, with its reason. 0.29.0 catches 4 / 5, with
+0 / 1 false alarms. No earlier case changed outcome.
 
 Cases 116-131 (class `holdout`) were written on 2026-11-12, before any
 generator code changed, and recorded against 0.27.0 first: 0.27.0 catches

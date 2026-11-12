@@ -1,0 +1,6 @@
+function = "midpoint"
+args = "float,float"
+expected = "diverges"
+class = "holdout"
+pattern = '''a midpoint that gained a shortcut for one exact pair of bounds: diverges only when both float arguments hold the two literals at once. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(0.25, 0.75)'''

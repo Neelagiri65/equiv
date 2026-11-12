@@ -1,0 +1,6 @@
+function = "line_total"
+args = "int,int,int"
+expected = "diverges"
+class = "holdout"
+pattern = '''a line total with a negotiated price for one exact order: the condition names its three literals in a different order from the arguments. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(12, 250, 44)'''
