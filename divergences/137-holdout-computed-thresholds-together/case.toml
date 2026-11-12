@@ -1,0 +1,7 @@
+function = "window"
+args = "int,int,int"
+expected = "diverges"
+class = "holdout"
+pattern = '''a special case whose three thresholds are each computed from two literals, so none of the values that must meet is a number in the source. Written off the planned input list on purpose. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(1024, 42, 28)'''
+writeoff = "each of the three values that must meet is computed from two literals (1000 + 24, 6 * 7, 4 * 7); a folded sum or product is aimed at one argument at a time, and joint literal cases combine only the literals as they are written in the source"

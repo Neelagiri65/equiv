@@ -1,12 +1,12 @@
 {
-  "equiv_version": "0.28.0",
+  "equiv_version": "0.29.0",
   "python": "3.14.9",
   "summary": {
-    "cases": 131,
-    "diverges": 88,
-    "equivalent": 43,
-    "caught": 81,
-    "missed": 4,
+    "cases": 137,
+    "diverges": 93,
+    "equivalent": 44,
+    "caught": 85,
+    "missed": 5,
     "false_alarms": 0,
     "could_not_check": 4
   },
@@ -316,15 +316,15 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 1646,
-      "detail": "EQUIVALENT: agreed on all 1646 generated inputs (seed 1)"
+      "n": 1636,
+      "detail": "EQUIVALENT: agreed on all 1636 generated inputs (seed 1)"
     },
     "045-eq-mean-guard": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 1653,
-      "detail": "EQUIVALENT: agreed on all 1653 generated inputs (seed 1)"
+      "n": 1640,
+      "detail": "EQUIVALENT: agreed on all 1640 generated inputs (seed 1)"
     },
     "046-eq-clamp-pct": {
       "expected": "equivalent",
@@ -358,15 +358,15 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 1546,
-      "detail": "EQUIVALENT: agreed on all 1546 generated inputs (seed 1)"
+      "n": 1556,
+      "detail": "EQUIVALENT: agreed on all 1556 generated inputs (seed 1)"
     },
     "051-eq-sort-reverse-ints": {
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 1653,
-      "detail": "EQUIVALENT: agreed on all 1653 generated inputs (seed 1)"
+      "n": 1640,
+      "detail": "EQUIVALENT: agreed on all 1640 generated inputs (seed 1)"
     },
     "052-eq-or-default-truthy": {
       "expected": "equivalent",
@@ -428,8 +428,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 1646,
-      "detail": "EQUIVALENT: agreed on all 1646 generated inputs (seed 1)"
+      "n": 1636,
+      "detail": "EQUIVALENT: agreed on all 1636 generated inputs (seed 1)"
     },
     "061-holdout-remove-spaces-vs-split-join": {
       "expected": "diverges",
@@ -484,8 +484,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 1646,
-      "detail": "EQUIVALENT: agreed on all 1646 generated inputs (seed 1)"
+      "n": 1636,
+      "detail": "EQUIVALENT: agreed on all 1636 generated inputs (seed 1)"
     },
     "069-holdout-eq-strip-lower": {
       "expected": "equivalent",
@@ -498,8 +498,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 1646,
-      "detail": "EQUIVALENT: agreed on all 1646 generated inputs (seed 1)"
+      "n": 1636,
+      "detail": "EQUIVALENT: agreed on all 1636 generated inputs (seed 1)"
     },
     "071-holdout-is-int-lstrip-minus": {
       "expected": "diverges",
@@ -813,8 +813,8 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 2524,
-      "detail": "EQUIVALENT: agreed on all 2524 generated inputs (seed 1)"
+      "n": 2635,
+      "detail": "EQUIVALENT: agreed on all 2635 generated inputs (seed 1)"
     },
     "116-holdout-list-element-threshold": {
       "expected": "diverges",
@@ -834,15 +834,15 @@
       "expected": "equivalent",
       "exit": 0,
       "outcome": "pass",
-      "n": 1662,
-      "detail": "EQUIVALENT: agreed on all 1662 generated inputs (seed 1)"
+      "n": 1649,
+      "detail": "EQUIVALENT: agreed on all 1649 generated inputs (seed 1)"
     },
     "119-holdout-list-element-computed-threshold": {
       "expected": "diverges",
       "exit": 0,
       "outcome": "missed",
-      "n": 1671,
-      "detail": "EQUIVALENT: agreed on all 1671 generated inputs (seed 1)"
+      "n": 1644,
+      "detail": "EQUIVALENT: agreed on all 1644 generated inputs (seed 1)"
     },
     "120-holdout-negative-int-sentinel": {
       "expected": "diverges",
@@ -927,6 +927,48 @@
       "outcome": "missed",
       "n": 2091,
       "detail": "EQUIVALENT: agreed on all 2091 generated inputs (seed 1)"
+    },
+    "132-holdout-three-int-literals-together": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (2024, 2, 29) | candidate -> 35 | reference -> 34"
+    },
+    "133-holdout-three-int-literals-other-order": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (12, 250, 44) | candidate -> 2900 | reference -> 3000"
+    },
+    "134-holdout-str-and-two-int-literals-together": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input ('PUT', 8443, 3) | candidate -> 'tls' | reference -> 'high'"
+    },
+    "135-holdout-three-literals-reordered-equivalent": {
+      "expected": "equivalent",
+      "exit": 0,
+      "outcome": "pass",
+      "n": 2445,
+      "detail": "EQUIVALENT: agreed on all 2445 generated inputs (seed 1)"
+    },
+    "136-holdout-two-float-literals-together": {
+      "expected": "diverges",
+      "exit": 1,
+      "outcome": "caught",
+      "n": null,
+      "detail": "COUNTEREXAMPLE at input (0.25, 0.75) | candidate -> 0x1.8000000000000p-1 | reference -> 0x1.0000000000000p-1"
+    },
+    "137-holdout-computed-thresholds-together": {
+      "expected": "diverges",
+      "exit": 0,
+      "outcome": "missed",
+      "n": 2612,
+      "detail": "EQUIVALENT: agreed on all 2612 generated inputs (seed 1)"
     }
   }
 }

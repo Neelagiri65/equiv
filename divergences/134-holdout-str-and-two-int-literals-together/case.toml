@@ -1,0 +1,6 @@
+function = "channel"
+args = "str,int,int"
+expected = "diverges"
+class = "holdout"
+pattern = '''a routing rule that gained one exact combination of a method name, a port and a retry count: three literals of two types must meet. Written 2026-11-12 before the generator change it tests.'''
+witness = '''('PUT', 8443, 3)'''

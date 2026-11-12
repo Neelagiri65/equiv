@@ -1,0 +1,6 @@
+function = "day_score"
+args = "int,int,int"
+expected = "diverges"
+class = "holdout"
+pattern = '''a date score that gained a special case for one exact date: diverges only when all three arguments hold the three literals of one condition at once. Written 2026-11-12 before the generator change it tests.'''
+witness = '''(2024, 2, 29)'''
