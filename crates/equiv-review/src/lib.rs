@@ -1245,6 +1245,13 @@ const ELEM_POOL_CAP: usize = 48;
 /// random cases asked for (250 at the default 2,000).
 const WIDE_ELEMENT_SHARE: u32 = 8;
 
+/// Element values up to this magnitude are free in the wider cases.
+const WIDE_SMALL: i64 = 1000;
+
+/// The total magnitude the larger elements of all wider cases may add up to
+/// in one review (see `wide_int`): four draws from the edge of the envelope.
+const WIDE_MAGNITUDE_TOTAL: u64 = 4 * INT_ENVELOPE as u64;
+
 /// Upper bound on the cross cases of one review, over all pairs of arguments.
 const CROSS_CAP: usize = 480;
 
@@ -1328,17 +1335,42 @@ fn element_inputs(ty: ArgType, pool: &ElemPool) -> Vec<PyVal> {
 // One element value for the wider seeded lists: half the time a pool value
 // (when there is one), otherwise an int from three ranges, the old -20..20
 // among them so ties still turn up, or, under a domain, a draw inside it.
-fn wide_int(rng: &mut Rng, d: &Domain, pool: &ElemPool) -> i64 {
-    if !pool.ints.is_empty() && rng.next() % 2 == 0 {
-        return pool.ints[(rng.next() % pool.ints.len() as u64) as usize];
+//
+// `allowance` bounds what the wider cases can cost a function whose work
+// grows with its values (a loop over `range(x)`, an O(sum) reference). It is
+// the total magnitude, over every wider case of the review, that elements
+// beyond WIDE_SMALL may add up to. A draw that would overrun it is replaced
+// by a small one, so the wider cases together cost about as much as a few
+// scalar draws from the envelope, whatever the source's literals are.
+fn wide_int(rng: &mut Rng, d: &Domain, pool: &ElemPool, allowance: &mut u64) -> i64 {
+    let v = if !pool.ints.is_empty() && rng.next() % 2 == 0 {
+        pool.ints[(rng.next() % pool.ints.len() as u64) as usize]
+    } else {
+        match d {
+            &Domain::IntRange(lo, hi) => int_in(rng, lo, hi),
+            _ => match rng.next() % 3 {
+                0 => rng.range(-20, 20),
+                1 => rng.range(-WIDE_SMALL, WIDE_SMALL),
+                _ => rng.range(-INT_ENVELOPE, INT_ENVELOPE),
+            },
+        }
+    };
+    let m = v.unsigned_abs();
+    if m <= WIDE_SMALL as u64 {
+        return v;
     }
+    if m <= *allowance {
+        *allowance -= m;
+        return v;
+    }
+    // Over the allowance: a small value instead, inside the domain when
+    // there is one (a domain with no small value keeps the draw).
     match d {
-        &Domain::IntRange(lo, hi) => int_in(rng, lo, hi),
-        _ => match rng.next() % 3 {
-            0 => rng.range(-20, 20),
-            1 => rng.range(-1000, 1000),
-            _ => rng.range(-INT_ENVELOPE, INT_ENVELOPE),
-        },
+        &Domain::IntRange(lo, hi) => {
+            let (l, h) = (lo.max(-WIDE_SMALL), hi.min(WIDE_SMALL));
+            if l <= h { int_in(rng, l, h) } else { v }
+        }
+        _ => rng.range(-20, 20),
     }
 }
 
@@ -1346,11 +1378,11 @@ fn wide_int(rng: &mut Rng, d: &Domain, pool: &ElemPool) -> i64 {
 // literals; None for an argument this does not apply to (a scalar, or a list
 // of strings with no literal to aim at: its random elements are already
 // drawn from the whole string generator).
-fn gen_wide(rng: &mut Rng, ty: ArgType, d: &Domain, pool: &ElemPool) -> Option<PyVal> {
+fn gen_wide(rng: &mut Rng, ty: ArgType, d: &Domain, pool: &ElemPool, allowance: &mut u64) -> Option<PyVal> {
     match ty {
         ArgType::ListInt => {
             let len = (rng.next() % 7) as usize;
-            Some(PyVal::ListInt((0..len).map(|_| wide_int(rng, d, pool)).collect()))
+            Some(PyVal::ListInt((0..len).map(|_| wide_int(rng, d, pool, allowance)).collect()))
         }
         ArgType::Dict => {
             let len = (rng.next() % 5) as usize;
@@ -1361,7 +1393,7 @@ fn gen_wide(rng: &mut Rng, ty: ArgType, d: &Domain, pool: &ElemPool) -> Option<P
                 } else {
                     ((b'a' + (rng.next() % 8) as u8) as char).to_string()
                 };
-                let v = wide_int(rng, d, pool);
+                let v = wide_int(rng, d, pool, allowance);
                 if !pairs.iter().any(|(have, _)| *have == k) {
                     pairs.push((k, v));
                 }
@@ -1749,6 +1781,7 @@ fn gen_cases_soft(
         .collect();
     if wide.iter().any(|w| *w) {
         let mut rng = wide_rng(spec.seed);
+        let mut allowance = WIDE_MAGNITUDE_TOTAL;
         for _ in 0..spec.n / WIDE_ELEMENT_SHARE {
             let c: Vec<PyVal> = spec
                 .args
@@ -1756,7 +1789,7 @@ fn gen_cases_soft(
                 .enumerate()
                 .map(|(i, t)| {
                     let d = dom(spec, i);
-                    gen_wide(&mut rng, *t, d, &pools[i]).unwrap_or_else(|| gen_in(&mut rng, *t, d))
+                    gen_wide(&mut rng, *t, d, &pools[i], &mut allowance).unwrap_or_else(|| gen_in(&mut rng, *t, d))
                 })
                 .collect();
             if look.case(&c) && seen.insert(key(&c)) {
