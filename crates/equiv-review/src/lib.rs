@@ -1820,7 +1820,7 @@ impl ReviewReceipt {
 /// other's arguments, return values or loaded modules. The driver loads only
 /// its own side's file and reports one outcome line per input, then an end
 /// line; the comparison is done by the caller, on the reported bytes.
-fn driver_source(is_cand: bool, cand: &Path, refr: &Path, spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize, soft: &[usize]) -> String {
+fn driver_source(is_cand: bool, cand: &Path, refr: &Path, own_sha256: &[u8; 32], spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize, soft: &[usize]) -> String {
     let cases_py: Vec<String> = cases
         .iter()
         .map(|c| {
@@ -2072,6 +2072,17 @@ def canon(x):
     if isinstance(x, dict):
         return t.__name__ + ':' + canon({{k: dict.__getitem__(x, k) for k in dict.keys(x)}})
     raise _NonCanon()
+# The file loaded must be the file whose hash is in the receipt. Code that ran
+# earlier in this review (resolving a value-set domain imports the candidate)
+# may have rewritten it; then nothing can be concluded. A file that cannot be
+# read falls through to the load error below.
+import hashlib as _hashlib
+try:
+    with open({own:?}, 'rb') as _fh: _digest = _hashlib.sha256(_fh.read()).hexdigest()
+except OSError:
+    _digest = None
+if _digest is not None and _digest != '{own_sha}':
+    _emit('__CHANGED__'); _stop()
 _m, _e, _o = _metered(load, {own:?}, {name:?})
 if _o:
     _emit('__BUDGET__\tload\t{side}'); _stop()
@@ -2112,6 +2123,7 @@ _stop()
         admis = admis,
         cand = cand,
         own = own,
+        own_sha = hex(own_sha256),
         name = name,
         side = side,
         fn = spec.func,
@@ -2321,7 +2333,7 @@ pub fn review_with_inputs(
     };
 
     let ev = match unresolved.map(|r| Err(PyFail::Msg(r))).unwrap_or_else(|| {
-        run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs)
+        run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs, &sha256(&cand_src), &sha256(&ref_src))
     }) {
         Ok(v) => v,
         Err(PyFail::Msg(reason)) => Evaluated { verdict: ReviewVerdict::Error { reason }, python: String::new(), exceptions: 0, disagreements: Vec::new() },
@@ -3043,6 +3055,8 @@ struct SideRun {
     refused: Option<String>,
     nobudget: Option<String>,
     load_budget: bool,
+    /// The file on disk is no longer the file hashed for the receipt.
+    changed: bool,
     outcomes: Vec<Outcome>,
     /// The count on the end line; None if the run never wrote one.
     end: Option<usize>,
@@ -3078,6 +3092,8 @@ fn parse_side(out: &std::process::Output) -> SideRun {
             r.refused.get_or_insert(v.to_string());
         } else if let Some(v) = line.strip_prefix("__NOBUDGET__\t") {
             r.nobudget.get_or_insert(v.to_string());
+        } else if line == "__CHANGED__" {
+            r.changed = true;
         } else if line.starts_with("__BUDGET__\tload\t") {
             r.load_budget = true;
         } else if let Some(v) = line.strip_prefix("__END__\t") {
@@ -3141,6 +3157,8 @@ fn run_python(
     large_from: usize,
     soft: &[usize],
     safety_secs: u64,
+    cand_sha256: &[u8; 32],
+    ref_sha256: &[u8; 32],
 ) -> Result<Evaluated, PyFail> {
     use std::time::{Duration, Instant};
     let dir = PrivateDir::new()?;
@@ -3149,7 +3167,8 @@ fn run_python(
     // One interpreter per side, the reference first: it has finished before
     // any candidate code runs. Both runs share the one wall-clock limit.
     let run_side = |is_cand: bool| -> Result<SideRun, PyFail> {
-        let src = driver_source(is_cand, cand, refr, spec, cases, large_from, soft);
+        let own_sha = if is_cand { cand_sha256 } else { ref_sha256 };
+        let src = driver_source(is_cand, cand, refr, own_sha, spec, cases, large_from, soft);
         let driver = dir.0.join(if is_cand { "equiv_review_candidate.py" } else { "equiv_review_reference.py" });
         let mut f = std::fs::File::create(&driver).map_err(|e| e.to_string())?;
         f.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
@@ -3205,6 +3224,12 @@ fn run_python(
     }
     let budget = spec.budget;
     for (s, side) in [(&c, "candidate"), (&r, "reference")] {
+        if s.changed {
+            let reason = format!(
+                "the {side} file changed after the review started (it is no longer the file recorded in the receipt); nothing can be concluded from this run"
+            );
+            return Ok(done(ReviewVerdict::Error { reason }, 0));
+        }
         if s.malformed {
             let reason = format!(
                 "the {side} run wrote a result line that could not be read; nothing can be concluded from this run"
