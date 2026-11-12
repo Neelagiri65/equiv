@@ -526,11 +526,15 @@ fn committed(cand: &Path, base: &str) -> Result<(Vec<u8>, String, String), Strin
     Ok((shown.stdout, rel, sha))
 }
 
+/// Is `function` a module-level function of the candidate? Read by the same
+/// detector, against an empty module (every function is then "new").
+fn in_candidate(function: &str, cand_src: &str) -> bool {
+    detect_changed_functions("", cand_src).map(|d| d.iter().any(|x| x.name == function)).unwrap_or(false)
+}
+
 /// Why a function the change detector does not list cannot be typed.
 fn unlisted(function: &str, cand_src: &str) -> String {
-    let in_candidate =
-        detect_changed_functions("", cand_src).map(|d| d.iter().any(|x| x.name == function)).unwrap_or(false);
-    if in_candidate {
+    if in_candidate(function, cand_src) {
         format!(
             "`{function}` is identical in both versions, so there is no change to read its types from. Something \
              it calls may still have changed: to review it anyway, pass `signature` with its argument types (the \
@@ -557,12 +561,6 @@ fn prepare_review(args: &Map<String, Value>) -> Result<Run, String> {
              got `{function}`. Methods and nested functions are not checked in this version. {NOTHING_RUN}"
         ));
     }
-    if reference.is_some() && base.is_some() {
-        return Err(format!(
-            "give `reference` (a file with the original) or `base` (a git revision to read it from), not both. \
-             {NOTHING_RUN}"
-        ));
-    }
     let supplied = signature.as_deref().map(plain_signature).transpose()?;
     let project = project_dir()?;
     let cand_path = project.join(&candidate);
@@ -572,6 +570,11 @@ fn prepare_review(args: &Map<String, Value>) -> Result<Run, String> {
     let mut notes = Vec::new();
     let (ref_path, ref_src, tmp) = match &reference {
         Some(r) => {
+            // A client may fill in the schema's default for `base`: never an
+            // error, but never silently dropped either.
+            if base.is_some() {
+                notes.push("note: `base` was not used: the original was read from `reference`".to_string());
+            }
             let p = project.join(r);
             let src = std::fs::read_to_string(&p)
                 .map_err(|e| format!("cannot read the reference `{}`: {e}. {NOTHING_RUN}", p.display()))?;
@@ -623,7 +626,20 @@ fn prepare_review(args: &Map<String, Value>) -> Result<Run, String> {
             }
         },
         None => match supplied {
-            Some(given) => (given, true),
+            Some(given) => {
+                // Not listed but present: the same in both versions. A pass
+                // then says nothing about an edit to the function itself
+                // (typically one already committed), so the result says so.
+                if in_candidate(&function, &cand_src) {
+                    notes.push(format!(
+                        "note: `{function}` is the same in both versions (equiv's change detector found no \
+                         difference in it), so this compares it with itself: only changes in code it calls can show \
+                         up. To check an edit to `{function}`, compare with the version from before that edit \
+                         (`base` or `reference`)."
+                    ));
+                }
+                (given, true)
+            }
             None => return Err(unlisted(&function, &cand_src)),
         },
     };

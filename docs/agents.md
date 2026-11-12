@@ -127,6 +127,11 @@ with `isError: true` and a message saying what to change; nothing is run.
 Relative paths are read from `$CLAUDE_PROJECT_DIR` when it is set (Claude Code
 sets it), else from the server's working directory.
 
+The server answers one request at a time. A review is bounded by its step
+budget and safety limit, but `equiv check` has no limit on the work a call does
+(see `docs/scope.md`), so an artifact that never returns holds the server until
+the client stops it.
+
 ### Tool `review`
 
 | input | |
@@ -145,7 +150,10 @@ function's hints, read by the same detector `review-pr --auto` uses. A
 detector cannot type (no hints, or another reason it gives) needs a
 `signature`, and the detector's reason is shown with the result. A function
 that is identical in both versions is said to be identical; it can still be
-reviewed with a `signature`, since something it calls may have changed.
+reviewed with a `signature`, since something it calls may have changed, and the
+result then says it compared the function with itself (an edit you already
+committed is not covered: compare with the version before it). `base` given
+beside `reference` is not used, and the result says so.
 
 The result is what `equiv review` printed (stdout, then stderr), then:
 
