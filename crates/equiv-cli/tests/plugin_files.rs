@@ -1,7 +1,8 @@
 //! The Claude Code plugin under `plugins/equiv` is configuration only: it must
 //! register exactly what `equiv init claude-code` writes, and carry the version
 //! of the binary it was written for. This test runs `init` in an empty
-//! directory and compares, so the plugin cannot drift from the command.
+//! directory and compares, so the plugin cannot drift from the command. The one
+//! thing the plugin adds is a session-start check that the binary is there.
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -98,9 +99,16 @@ fn the_session_start_check_speaks_only_when_the_binary_is_missing_or_too_old() {
 }
 
 #[test]
-fn plugin_version_is_the_binary_version() {
+fn plugin_version_follows_the_binary_version() {
     let manifest = read(&repo_root().join("plugins/equiv/.claude-plugin/plugin.json"));
-    assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"), "bump plugins/equiv/.claude-plugin/plugin.json with the release");
+    // Claude Code gives users a changed plugin only when its version changes, so
+    // the plugin can be ahead of the binary by patch versions, never behind it
+    // and never on another minor.
+    let parts = |v: &str| v.split('.').map(|n| n.parse::<u32>().expect("a numeric version")).collect::<Vec<_>>();
+    let (plugin, binary) = (parts(manifest["version"].as_str().expect("version")), parts(env!("CARGO_PKG_VERSION")));
+    assert_eq!((plugin.len(), binary.len()), (3, 3));
+    assert_eq!(plugin[..2], binary[..2], "the plugin follows the binary's major.minor");
+    assert!(plugin[2] >= binary[2], "bump plugins/equiv/.claude-plugin/plugin.json with the release");
     assert_eq!(manifest["name"], "equiv");
 }
 
