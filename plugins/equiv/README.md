@@ -1,0 +1,63 @@
+# equiv plugin for Claude Code
+
+Configuration only. It registers the two things `equiv init claude-code` writes
+into a project, for every project you open:
+
+- the MCP server `equiv mcp`, which gives the agent the tools `review` and `check`;
+- the `PostToolUse` hook `equiv hook claude-code`, which runs after every Edit,
+  Write or MultiEdit of a tracked `.py` file and tells the agent whether the
+  functions that changed still behave as they did at `HEAD`.
+
+What they do, and the two rules they keep (an agent cannot narrow a check; types
+an agent supplies are marked), is in [docs/agents.md](../../docs/agents.md).
+Both versions of a function are run locally with python3, as you. This is not a
+sandbox.
+
+## It needs the equiv binary
+
+The plugin does not contain equiv and does not download it. Install version
+0.30.0 or later and make sure `equiv` is on PATH:
+
+```
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/Neelagiri65/equiv/releases/latest/download/equiv-cli-installer.sh | sh
+```
+
+Without the binary (or with one older than 0.30.0) nothing is checked and the
+agent is not told: the `equiv` server shows as failed under `/mcp`, and the hook
+does nothing.
+
+## Install
+
+```
+/plugin marketplace add Neelagiri65/equiv
+/plugin install equiv@equiv
+```
+
+## Use the plugin or `equiv init claude-code`, not both
+
+In a project that already has the hook from `equiv init claude-code`, the plugin
+adds it a second time and every edit is checked twice. Claude Code keeps one
+copy of the server. Remove one: either uninstall the plugin, or undo `init`
+(remove `equiv` from `mcpServers` in `.mcp.json` and the `PostToolUse` entry
+whose command is `equiv hook claude-code` from `.claude/settings.json`).
+
+The tool names differ between the two: `mcp__plugin_equiv_equiv__review` from
+the plugin, `mcp__equiv__review` from `init`.
+
+## A paragraph for your AGENTS.md
+
+The plugin does not write this. Add it if you want the agent to check its own
+refactors without being asked:
+
+> After rewriting, refactoring or porting a function, check that its behaviour
+> is unchanged with the equiv MCP tool `review` (or `equiv review`), and include
+> the result in your summary. If equiv reports a difference, fix it or say the
+> change is intended. If it could not check, say so. A pass covers behaviour on
+> generated inputs only, not intent.
+
+## Remove
+
+```
+/plugin uninstall equiv@equiv
+```
