@@ -1,0 +1,10 @@
+{
+  "name": "equiv",
+  "version": "0.30.0",
+  "description": "Runs equiv after each edit of a Python file and gives the agent the `review` and `check` tools. Needs the equiv binary on PATH.",
+  "author": { "name": "Neelagiri65" },
+  "homepage": "https://github.com/Neelagiri65/equiv/blob/main/docs/agents.md",
+  "repository": "https://github.com/Neelagiri65/equiv",
+  "license": "Apache-2.0",
+  "keywords": ["refactor", "port", "equivalence", "testing", "python"]
+}

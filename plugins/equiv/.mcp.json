@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "equiv": {
+      "command": "equiv",
+      "args": ["mcp"]
+    }
+  }
+}
