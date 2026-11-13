@@ -57,3 +57,18 @@ fn marketplace_lists_the_plugin_directory() {
     let source = plugins[0]["source"].as_str().expect("source is a path");
     assert!(repo_root().join(source).join(".claude-plugin/plugin.json").is_file(), "marketplace source `{source}` has no plugin.json");
 }
+
+/// The paragraph the plugin README offers for AGENTS.md is the one `init` prints.
+#[test]
+fn readme_paragraph_is_the_one_init_prints() {
+    let d = std::env::temp_dir().join(format!("equiv_plugin_readme_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    let out = Command::new(BIN).args(["init", "claude-code"]).current_dir(&d).output().unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+    let printed = String::from_utf8_lossy(&out.stdout).split_whitespace().collect::<Vec<_>>().join(" ");
+    let readme = std::fs::read_to_string(repo_root().join("plugins/equiv/README.md")).unwrap();
+    let quoted = readme.lines().filter_map(|l| l.strip_prefix("> ")).collect::<Vec<_>>().join(" ");
+    assert!(!quoted.is_empty(), "the README has no quoted paragraph");
+    assert!(printed.contains(&quoted), "plugins/equiv/README.md quotes a paragraph `equiv init claude-code` does not print");
+}
