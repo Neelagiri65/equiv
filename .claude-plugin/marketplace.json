@@ -1,0 +1,12 @@
+{
+  "name": "equiv",
+  "owner": { "name": "Neelagiri65" },
+  "description": "equiv for Claude Code: check that a refactor or port kept a function's behaviour.",
+  "plugins": [
+    {
+      "name": "equiv",
+      "source": "./plugins/equiv",
+      "description": "Runs equiv after each edit of a Python file and gives the agent the `review` and `check` tools. Needs the equiv binary on PATH."
+    }
+  ]
+}
