@@ -34,13 +34,17 @@ does nothing.
 /plugin install equiv@equiv
 ```
 
-## Use the plugin or `equiv init claude-code`, not both
+## With `equiv init claude-code` in the same project
 
-In a project that already has the hook from `equiv init claude-code`, the plugin
-adds it a second time and every edit is checked twice. Claude Code keeps one
-copy of the server. Remove one: either uninstall the plugin, or undo `init`
-(remove `equiv` from `mcpServers` in `.mcp.json` and the `PostToolUse` entry
-whose command is `equiv hook claude-code` from `.claude/settings.json`).
+A project that already has the hook from `equiv init claude-code` ends up with
+two copies of it once the plugin is installed, and Claude Code runs both. From
+equiv 0.31.0 an edit is still checked once: the first copy to take the tool
+call reports and the other stays silent. With 0.30.0 every edit is checked
+twice. Claude Code keeps one copy of the server.
+
+To have only one: uninstall the plugin, or undo `init` (remove `equiv` from
+`mcpServers` in `.mcp.json` and the `PostToolUse` entry whose command is
+`equiv hook claude-code` from `.claude/settings.json`).
 
 The tool names differ between the two: `mcp__plugin_equiv_equiv__review` from
 the plugin, `mcp__equiv__review` from `init`.
