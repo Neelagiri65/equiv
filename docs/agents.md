@@ -214,3 +214,13 @@ It prints nothing when there is nothing to compare: the input is not valid
 JSON or not a `PostToolUse` event, the tool input has no `file_path`, the file
 is not `.py`, it is not in a git repository, it has no version at `HEAD` (new
 or untracked), it is unchanged since `HEAD`, or no function in it changed.
+
+An edit is checked once. Claude Code runs every registered copy of a hook, and
+a project can have two copies of this one (from `equiv init claude-code` and
+from the plugin). Both receive the same event, so the first copy to take the
+tool call reports and any other copy of that tool call prints nothing. Copies
+recognise each other by the event's `session_id` and `tool_use_id`, through a
+file in a directory under the system temp directory that only you can write;
+entries older than an hour are removed. An event without a `tool_use_id` is
+always checked, and if that directory cannot be used the edit is checked by
+every copy, as before.
