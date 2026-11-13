@@ -10,6 +10,11 @@
 //! repository, no version at the last commit, or no function changed);
 //! whenever something changed and could not be checked, it says so.
 //!
+//! One check per edit. Claude Code runs every registered copy of a hook, and a
+//! project can have two (one from `equiv init claude-code`, one from the
+//! plugin). Both get the same event, so the first copy to take the tool call
+//! reports and any other copy of that tool call stays silent.
+//!
 //! Inputs harvested from the project's other files are not used here, so a
 //! hook run costs the same whatever the size of the repository; `equiv
 //! review-pr --auto` adds them.
@@ -70,8 +75,118 @@ fn after_edit(input: &[u8]) -> Option<String> {
     if now == committed {
         return None;
     }
+    if another_copy_took(&event) {
+        return None;
+    }
     let rel = format!("{}{name}", String::from_utf8_lossy(&prefix.stdout).trim_end_matches(['\n', '\r']));
     report(&path, &rel, &committed, &now)
+}
+
+/// Tool calls taken longer ago than this are forgotten.
+const CLAIM_SECS: u64 = 3600;
+
+/// Whether another copy of the hook has already taken this tool call. The
+/// first copy to create a file named after the session and the tool call, in a
+/// directory only this user can write, takes it. An event without a tool-call
+/// id, or any problem with that directory, means "not taken": a check is never
+/// lost to bookkeeping, at worst an edit is reported twice as before.
+fn another_copy_took(event: &Value) -> bool {
+    let field = |k: &str| event.get(k).and_then(Value::as_str).unwrap_or("");
+    let (session, call) = (field("session_id"), field("tool_use_id"));
+    if call.is_empty() {
+        return false;
+    }
+    let Some(dir) = claims_dir() else { return false };
+    forget_old_claims(&dir);
+    let safe = |s: &str| s.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).take(120).collect::<String>();
+    // The length keeps ("a_b", "c") and ("a", "b_c") apart.
+    let claim = dir.join(format!("{}.{}.{}", session.len(), safe(session), safe(call)));
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        o.mode(0o600);
+    }
+    match o.open(&claim) {
+        Ok(_file) => {
+            // A directory someone else owns decides nothing: files in it could
+            // have been put there to keep this hook quiet.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                let owner = |p: &Path| std::fs::symlink_metadata(p).map(|m| m.uid()).ok();
+                if owner(&dir).is_none() || owner(&dir) != _file.metadata().map(|m| m.uid()).ok() {
+                    let _ = std::fs::remove_file(&claim);
+                }
+            }
+            false
+        }
+        Err(e) => e.kind() == std::io::ErrorKind::AlreadyExists && ours(&dir, &claim),
+    }
+}
+
+/// Whether an existing claim can be believed: on Unix, only if this user owns
+/// both the directory and the claim.
+fn ours(dir: &Path, claim: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let owner = |p: &Path| std::fs::symlink_metadata(p).map(|m| m.uid()).ok();
+        let Ok(probe) = PrivateDir::create() else { return false };
+        let me = owner(probe.dir());
+        me.is_some() && owner(dir) == me && owner(claim) == me
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (dir, claim);
+        true
+    }
+}
+
+/// The directory of taken tool calls: made for this user only, and used only
+/// if it is a real directory that nobody else can write. Ownership is checked
+/// where a claim is believed (`ours`).
+fn claims_dir() -> Option<PathBuf> {
+    let dir = std::env::temp_dir().join("equiv-hook-claims");
+    let mut b = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    match b.create(&dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(_) => return None,
+    }
+    let meta = std::fs::symlink_metadata(&dir).ok()?;
+    if !meta.is_dir() {
+        return None;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o022 != 0 {
+            return None;
+        }
+    }
+    Some(dir)
+}
+
+fn forget_old_claims(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let old = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age.as_secs() > CLAIM_SECS);
+        if old {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
 }
 
 /// Check the changed functions of one file and say what happened to each.
