@@ -1,7 +1,8 @@
 //! The Claude Code plugin under `plugins/equiv` is configuration only: it must
 //! register exactly what `equiv init claude-code` writes, and carry the version
 //! of the binary it was written for. This test runs `init` in an empty
-//! directory and compares, so the plugin cannot drift from the command.
+//! directory and compares, so the plugin cannot drift from the command. The one
+//! thing the plugin adds is a session-start check that the binary is there.
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -34,17 +35,80 @@ fn plugin_registers_what_init_writes() {
     let (mcp, settings) = init_output();
     let plugin = repo_root().join("plugins/equiv");
     assert_eq!(read(&plugin.join(".mcp.json")), mcp, "plugins/equiv/.mcp.json differs from what `equiv init claude-code` writes");
+    let hooks = read(&plugin.join("hooks/hooks.json"));
     assert_eq!(
-        read(&plugin.join("hooks/hooks.json"))["hooks"],
-        settings["hooks"],
-        "plugins/equiv/hooks/hooks.json differs from the hooks `equiv init claude-code` writes"
+        hooks["hooks"]["PostToolUse"], settings["hooks"]["PostToolUse"],
+        "plugins/equiv/hooks/hooks.json differs from the PostToolUse hook `equiv init claude-code` writes"
     );
+    // The plugin adds one thing `init` does not: a session-start check that the binary is there.
+    let mut events: Vec<&str> = hooks["hooks"].as_object().unwrap().keys().map(String::as_str).collect();
+    events.sort_unstable();
+    assert_eq!(events, ["PostToolUse", "SessionStart"]);
+}
+
+/// The plugin is configuration only, so a missing binary would otherwise be
+/// silent: the server fails to start and the hook does nothing. The
+/// session-start command says so to the agent, says so for a binary too old to
+/// have the hook, and prints nothing when the binary is this one.
+#[cfg(unix)]
+#[test]
+fn the_session_start_check_speaks_only_when_the_binary_is_missing_or_too_old() {
+    let hooks = read(&repo_root().join("plugins/equiv/hooks/hooks.json"));
+    let command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str().expect("a command").to_string();
+    let d = std::env::temp_dir().join(format!("equiv_plugin_start_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    let said = |case: &str, equiv: Option<&str>| {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = d.join(case);
+        std::fs::create_dir_all(&bin).unwrap();
+        match equiv {
+            Some("this") => std::os::unix::fs::symlink(BIN, bin.join("equiv")).unwrap(),
+            Some(script) => {
+                std::fs::write(bin.join("equiv"), script).unwrap();
+                std::fs::set_permissions(bin.join("equiv"), std::fs::Permissions::from_mode(0o755)).unwrap();
+            }
+            None => {}
+        }
+        let out = Command::new("/bin/sh")
+            .args(["-c", &command])
+            // Only the case directory: the check may use nothing but the shell itself.
+            .env("PATH", bin.display().to_string())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{case}: the check never fails the session: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let missing = said("missing", None);
+    assert!(missing.contains("cannot find the equiv command") && missing.contains("nothing is being checked"), "{missing}");
+    // An older release: it has a usage text, and no hook.
+    let old = said("old", Some("#!/bin/sh\necho 'USAGE:'\necho '  equiv review <cand.py> <ref.py> <fn> <sig>'\n"));
+    assert!(old.contains("did not answer as equiv 0.30.0 or later") && old.contains("nothing is being checked"), "{old}");
+    // Another program with the same name, one that fails, and one that waits for input.
+    let other = said("other", Some("#!/bin/sh\necho 'equiv: unknown option --help' >&2\nexit 64\n"));
+    assert!(other.contains("did not answer as equiv 0.30.0 or later"), "{other}");
+    let reads = said("reads_stdin", Some("#!/bin/sh\n/bin/cat >/dev/null\necho done\n"));
+    assert!(reads.contains("did not answer as equiv 0.30.0 or later"), "a program that reads its input gets none and returns: {reads}");
+    assert_eq!(said("present", Some("this")), "", "silent when the binary has the hook");
+    // The agent is told to tell the user, never to install anything, and is given no command to run.
+    for text in [&missing, &old] {
+        assert!(text.contains("Tell the user once; do not install or update it yourself"), "{text}");
+        assert!(!text.contains("curl") && !text.contains("| sh"), "no command for an agent to run: {text}");
+        assert_eq!(text.lines().count(), 1, "one line: {text}");
+    }
+    let _ = std::fs::remove_dir_all(&d);
 }
 
 #[test]
-fn plugin_version_is_the_binary_version() {
+fn plugin_version_follows_the_binary_version() {
     let manifest = read(&repo_root().join("plugins/equiv/.claude-plugin/plugin.json"));
-    assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"), "bump plugins/equiv/.claude-plugin/plugin.json with the release");
+    // Claude Code gives users a changed plugin only when its version changes, so
+    // the plugin can be ahead of the binary by patch versions, never behind it
+    // and never on another minor.
+    let parts = |v: &str| v.split('.').map(|n| n.parse::<u32>().expect("a numeric version")).collect::<Vec<_>>();
+    let (plugin, binary) = (parts(manifest["version"].as_str().expect("version")), parts(env!("CARGO_PKG_VERSION")));
+    assert_eq!((plugin.len(), binary.len()), (3, 3));
+    assert_eq!(plugin[..2], binary[..2], "the plugin follows the binary's major.minor");
+    assert!(plugin[2] >= binary[2], "bump plugins/equiv/.claude-plugin/plugin.json with the release");
     assert_eq!(manifest["name"], "equiv");
 }
 

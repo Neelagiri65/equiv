@@ -23,9 +23,29 @@ curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/Neelagiri65/equiv/releases/latest/download/equiv-cli-installer.sh | sh
 ```
 
-Without the binary (or with one older than 0.30.0) nothing is checked and the
-agent is not told: the `equiv` server shows as failed under `/mcp`, and the hook
-does nothing.
+Without the binary (or with one older than 0.30.0) nothing is checked: the
+`equiv` server shows as failed under `/mcp`, and the after-edit hook does
+nothing. The plugin says so. When a session starts, and after `/clear`, it
+looks for `equiv` on the PATH Claude Code uses; if it is missing, or does not
+answer as equiv 0.30.0 or later, the agent is told that nothing is being
+checked and to tell you, and it is told not to install anything itself. When
+the binary is fine the check prints nothing. It does not run again when a
+session is resumed or compacted.
+
+After you install or update the binary:
+
+- the after-edit hook works from the next edit;
+- the server can stay failed for a while: Claude Code keeps a record of a
+  failed connection and skips the server until it retries (it reported
+  "retries automatically in 15 min" in our runs);
+- the notice the agent got at the start of the session is not withdrawn; a new
+  session starts without it.
+
+The check is a line of `sh`. On Windows it runs where Claude Code runs hooks in
+Git Bash. Without Git Bash, Claude Code uses PowerShell, where the check is
+expected to fail with a hook error at session start and say nothing to the
+agent; this has not been tested on Windows. The after-edit hook and the server
+do not depend on it.
 
 ## Install
 
