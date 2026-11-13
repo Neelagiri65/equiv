@@ -122,6 +122,23 @@ equiv verify-receipt <signed-receipt-hex>
 Exit codes: `0` same behaviour, `1` different (the input is printed), `2` could
 not check.
 
+## Use it in Claude Code
+
+Install the binary (above), then the plugin:
+
+```
+/plugin marketplace add Neelagiri65/equiv
+/plugin install equiv@equiv
+```
+
+After every edit of a tracked `.py` file, the agent is told whether the
+functions that changed still behave as they did at the last commit, and it gets
+`review` and `check` as tools. The plugin is configuration only: it needs
+equiv 0.30.0 or later on PATH, and without it nothing is checked and the agent
+is not told. To set up one project without the plugin, run
+`equiv init claude-code` in it.
+[Details](docs/agents.md) · [The plugin](plugins/equiv/README.md)
+
 ## Good to know
 
 - **The code being checked gets a short list of environment variables, not a
@@ -141,6 +158,7 @@ not check.
 
 - [How inputs are chosen, limits and budgets](docs/scope.md)
 - [How receipts are signed](docs/signing-model.md)
+- [For coding agents: the MCP server, the after-edit hook and the plugin](docs/agents.md)
 - [Releasing](docs/RELEASING.md)
 
 License: Apache-2.0.
