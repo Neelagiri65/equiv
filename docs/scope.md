@@ -176,7 +176,8 @@ with the same version on both sides is allowed, and the output says so.
 
 The result is could not check (exit `2`), with no receipt, when a named
 distribution is not installed on a side, when none of its modules was imported
-during the run, or when a loaded module of that name came from somewhere other
+during the run (a module already loaded when the interpreter started, for example
+by a `.pth` file, does not count), or when a loaded module of that name came from somewhere other
 than that installation. The message names the distribution and the side. With
 these options a receipt exists only when both sides gave their report: a review
 that ends in any other could-not-check (a file that does not load, a refusal)

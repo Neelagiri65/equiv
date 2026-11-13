@@ -2832,11 +2832,15 @@ impl ReviewReceipt {
 /// line the side reports, from inside its own process: its Python version,
 /// and for each named distribution the installed version and whether the
 /// distribution's top-level modules that are loaded were loaded from that
-/// installation. Facts only; the caller words the outcome. Lines:
+/// installation (one loaded before the file under review does not count as
+/// imported by the run). Facts only; the caller words the outcome. Lines:
 /// `__SIDE__ <kind> <hex name> <hex detail>`, kind P (python), D (a
 /// distribution that ran as installed) or E (one that did not, with why).
 const SIDES_BLOCK: &str = r#"_emit_line = _emit
 _sides_done = []
+# What was loaded before the file under review: a module a .pth file imported
+# at interpreter start is not one the function imported.
+_sides_pre = set(_sys.modules)
 def _side_dist(_name):
     import importlib.metadata as _md, json as _json
     try: _d = _md.distribution(_name)
@@ -2878,13 +2882,13 @@ def _side_dist(_name):
         _file = getattr(_m, '__file__', None)
         if _file:
             if not _here(_file): return 'was loaded from ' + str(_file) + ', not from the installed ' + _name + ' ' + _ver, None
-            _good += 1
+            if _t not in _sides_pre: _good += 1
         else:
             # A namespace package has no file of its own: look at what is loaded under it.
             for _k, _s in list(_sys.modules.items()):
                 _sf = getattr(_s, '__file__', None)
-                if _k.startswith(_t + '.') and _sf and _here(_sf): _good += 1; break
-    if not _good: return 'was not imported during the run (none of its modules is loaded)', None
+                if _k.startswith(_t + '.') and _k not in _sides_pre and _sf and _here(_sf): _good += 1; break
+    if not _good: return 'was not imported during the run (none of its modules was loaded by the file under review or the function)', None
     return None, _ver + (' (editable)' if _ed is not None else '')
 def _sides():
     if _sides_done: return
@@ -4321,7 +4325,7 @@ fn shown(h: &str) -> String {
     unhex(h).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default()
 }
 
-fn parse_side(out: &std::process::Output) -> SideRun {
+fn parse_side(out: &std::process::Output, sides: bool) -> SideRun {
     let mut r = SideRun { ok: out.status.success(), ..Default::default() };
     r.stderr_last = String::from_utf8_lossy(&out.stderr).lines().last().unwrap_or("python error").to_string();
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -4337,7 +4341,7 @@ fn parse_side(out: &std::process::Output) -> SideRun {
             r.refused.get_or_insert(v.to_string());
         } else if let Some(v) = line.strip_prefix("__NOBUDGET__\t") {
             r.nobudget.get_or_insert(v.to_string());
-        } else if let Some(v) = line.strip_prefix("__SIDE__\t") {
+        } else if let Some(v) = line.strip_prefix("__SIDE__\t").filter(|_| sides) {
             let p: Vec<&str> = v.split('\t').collect();
             let text = |h: &str| unhex(h).map(|b| one_line(&String::from_utf8_lossy(&b)));
             match (p.first().copied(), p.get(1).and_then(|h| text(h)), p.get(2).and_then(|h| text(h)), p.len()) {
@@ -4443,7 +4447,7 @@ fn run_python(
         let out = run_watched(cmd, left)
             .map_err(|e| not_runnable(python, &e))?
             .ok_or(PyFail::Stopped)?;
-        let side = parse_side(&out);
+        let side = parse_side(&out, sides.is_some());
         // An executable that never said which Python it is did not run the evaluator.
         if let (Some(p), true) = (python, side.python.is_empty()) {
             return Err(PyFail::Msg(format!(
