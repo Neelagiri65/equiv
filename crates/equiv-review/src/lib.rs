@@ -300,6 +300,68 @@ impl SafetyStop {
     }
 }
 
+/// Two environments (`equiv review --reference-python / --candidate-python /
+/// --versions-of`): the interpreter each side is started with (None = the
+/// default `python3`) and the distributions each side must report. Never part
+/// of `ReviewSpec`: a review without it is exactly the review it always was.
+#[derive(Debug, Clone, Default)]
+pub struct Sides {
+    pub reference_python: Option<std::path::PathBuf>,
+    pub candidate_python: Option<std::path::PathBuf>,
+    pub versions_of: Vec<String>,
+}
+
+/// What each side reported from inside its own process: `python X.Y.Z` and
+/// every named distribution with its installed version. In the receipt bytes
+/// (key 12), and only for a review that used the per-side options.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SideLines {
+    pub reference: String,
+    pub candidate: String,
+}
+
+/// Why a review with per-side options produced no receipt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NoReceipt {
+    /// The wall-clock safety limit, as in `review_with_inputs`.
+    Stopped(SafetyStop),
+    /// A side did not run what was named (a distribution missing, never
+    /// imported, or loaded from somewhere else), or gave no report of what it
+    /// ran. Could not check; a receipt never names a version that did not run.
+    Sides(String),
+}
+
+impl NoReceipt {
+    pub fn reason(&self) -> String {
+        match self {
+            NoReceipt::Stopped(s) => s.reason(),
+            NoReceipt::Sides(m) => format!("could not check: {m}; no receipt was issued"),
+        }
+    }
+    /// Could not check: never green.
+    pub fn exit_code(&self) -> i32 {
+        2
+    }
+}
+
+/// One side's own account of what it ran (see `SIDES_BLOCK`).
+#[derive(Debug, Clone, Default)]
+struct SideFacts {
+    /// `major.minor`, from the evaluator's first line.
+    minor: String,
+    /// `python X.Y.Z`; empty if the side never reported.
+    full: String,
+    /// (distribution, version as shown), in the order named.
+    dists: Vec<(String, String)>,
+    /// A named distribution that did not run as installed, with the reason.
+    problems: Vec<String>,
+}
+
+/// Text that came from an evaluator or a package's metadata, on one line.
+fn one_line(s: &str) -> String {
+    s.chars().map(|c| if c.is_control() { '?' } else { c }).collect()
+}
+
 #[derive(Debug, Clone)]
 pub struct ReviewSpec {
     pub func: String,
@@ -2692,6 +2754,13 @@ pub struct ReviewReceipt {
     /// (verdict `disagreeing`), and each entry is re-derived by re-running the
     /// pinned candidate, reference and spec. Empty unless a counterexample.
     pub disagreements: Vec<Disagreement>,
+    /// What each side reported it ran (`--reference-python`,
+    /// `--candidate-python`, `--versions-of`). None without those options, and
+    /// then the receipt bytes are what they always were.
+    pub sides: Option<SideLines>,
+    /// Lines for the reader about the two sides (the same version on both, a
+    /// different Python, a value set that differs). NOT in the receipt bytes.
+    pub side_notes: Vec<String>,
 }
 
 /// Inputs by source. `corner` is every fixed input (type corners, paired
@@ -2745,7 +2814,11 @@ impl ReviewReceipt {
             ),
             (10, Value::Uint(self.exceptions as u64)),
             (11, Value::Text(self.tier.clone())),
-        ];
+        ]
+        .into_iter()
+        // Only with per-side options, so every other receipt keeps its bytes.
+        .chain(self.sides.as_ref().map(|s| (12, Value::Array(vec![Value::Text(s.reference.clone()), Value::Text(s.candidate.clone())]))))
+        .collect();
         cbor::to_bytes(&Value::Map(entries))
     }
     pub fn sha256(&self) -> [u8; 32] {
@@ -2755,12 +2828,96 @@ impl ReviewReceipt {
 
 // ---------- the oracle ----------
 
+/// Added to a side's driver when per-side options are in use. Before its end
+/// line the side reports, from inside its own process: its Python version,
+/// and for each named distribution the installed version and whether the
+/// distribution's top-level modules that are loaded were loaded from that
+/// installation. Facts only; the caller words the outcome. Lines:
+/// `__SIDE__ <kind> <hex name> <hex detail>`, kind P (python), D (a
+/// distribution that ran as installed) or E (one that did not, with why).
+const SIDES_BLOCK: &str = r#"_emit_line = _emit
+_sides_done = []
+def _side_dist(_name):
+    import importlib.metadata as _md, json as _json
+    try: _d = _md.distribution(_name)
+    except _md.PackageNotFoundError: return 'is not installed', None
+    _ver = str(_d.version)
+    _real = _os.path.realpath
+    _files = list(_d.files or [])
+    _rec = set()
+    for _f in _files:
+        try: _rec.add(_real(str(_d.locate_file(_f))))
+        except Exception: pass
+    # An editable install records its directory, not its module files.
+    _ed = None
+    try:
+        _j = _json.loads(_d.read_text('direct_url.json') or '{}')
+        if _j.get('dir_info', {}).get('editable') and str(_j.get('url', '')).startswith('file:'):
+            from urllib.parse import urlparse as _up
+            from urllib.request import url2pathname as _u2p
+            _ed = _real(_u2p(_up(_j['url']).path)).rstrip(_os.sep) + _os.sep
+    except Exception:
+        _ed = None
+    if not _rec and _ed is None: return 'has no record of its installed files', None
+    _tops = set()
+    for _l in (_d.read_text('top_level.txt') or '').splitlines():
+        if _l.strip(): _tops.add(_l.strip().replace('/', '.').split('.')[0])
+    for _f in _files:
+        _p = _f.parts
+        if not _p or _p[0] in ('..', '__pycache__') or _p[0].endswith(('.dist-info', '.egg-info', '.data', '.pth')): continue
+        _t = _p[0].split('.')[0]
+        if _t.isidentifier(): _tops.add(_t)
+    if not _tops or _ed is not None: _tops.add(_name.replace('-', '_').replace('.', '_'))
+    def _here(_file):
+        _r = _real(_file)
+        return _r in _rec or (_ed is not None and _r.startswith(_ed))
+    _good = 0
+    for _t in sorted(_tops):
+        _m = _sys.modules.get(_t)
+        if _m is None: continue
+        _file = getattr(_m, '__file__', None)
+        if _file:
+            if not _here(_file): return 'was loaded from ' + str(_file) + ', not from the installed ' + _name + ' ' + _ver, None
+            _good += 1
+        else:
+            # A namespace package has no file of its own: look at what is loaded under it.
+            for _k, _s in list(_sys.modules.items()):
+                _sf = getattr(_s, '__file__', None)
+                if _k.startswith(_t + '.') and _sf and _here(_sf): _good += 1; break
+    if not _good: return 'was not imported during the run (none of its modules is loaded)', None
+    return None, _ver + (' (editable)' if _ed is not None else '')
+def _sides():
+    if _sides_done: return
+    _sides_done.append(1)
+    try: _sys.monitoring.set_events(4, 0)
+    except Exception: pass
+    _emit_line('__SIDE__	P		' + _hex('python ' + _sys.version.split()[0] + ('' if _sys.implementation.name == 'cpython' else ' (' + _sys.implementation.name + ')')))
+    for _h in [@NAMES@]:
+        _name = bytes.fromhex(_h).decode('utf-8')
+        try: _why, _shown = _side_dist(_name)
+        except BaseException as _x: _why, _shown = 'could not be inspected (' + type(_x).__name__ + ')', None
+        if _why: _emit_line('__SIDE__	E	' + _h + '	' + _hex(_why))
+        else: _emit_line('__SIDE__	D	' + _h + '	' + _hex(_shown))
+def _emit(s):
+    # The report goes out just before the end line: after the function ran.
+    if s.startswith('__END__'): _sides()
+    _emit_line(s)
+"#;
+
 /// The evaluator for ONE side (`is_cand`: the candidate, else the reference).
 /// Each side runs in its own interpreter, so neither can see or alter the
 /// other's arguments, return values or loaded modules. The driver loads only
 /// its own side's file and reports one outcome line per input, then an end
 /// line; the comparison is done by the caller, on the reported bytes.
-fn driver_source(is_cand: bool, cand: &Path, refr: &Path, own_sha256: &[u8; 32], spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize, soft: &[usize]) -> String {
+fn driver_source(is_cand: bool, cand: &Path, refr: &Path, own_sha256: &[u8; 32], spec: &ReviewSpec, cases: &[Vec<PyVal>], large_from: usize, soft: &[usize], sides: Option<&Sides>) -> String {
+    // Only with per-side options: without them the driver is the text it always was.
+    let sides_block = match sides {
+        Some(s) => {
+            let names: Vec<String> = s.versions_of.iter().map(|n| format!("'{}'", hex(n.as_bytes()))).collect();
+            SIDES_BLOCK.replace("@NAMES@", &names.join(", "))
+        }
+        None => String::new(),
+    };
     let cases_py: Vec<String> = cases
         .iter()
         .map(|c| {
@@ -2898,7 +3055,7 @@ def _stop():
     _out.flush(); _os._exit(0)
 def _hex(s): return s.encode('utf-8', 'backslashreplace').hex()
 _emit('__PY__\t' + str(_sys.version_info[0]) + '.' + str(_sys.version_info[1]))
-{libm}{admis}# Deterministic step budget (backlog 0.3, gate P3). Every LINE and JUMP event
+{sides_block}{libm}{admis}# Deterministic step budget (backlog 0.3, gate P3). Every LINE and JUMP event
 # raised by code outside this driver file counts one step; past the budget the
 # callback raises _Budget, and keeps raising on every later event, so user code
 # that swallows it (even a bare except) cannot loop on. No clock is read.
@@ -3059,6 +3216,7 @@ def _run_all(fn, cases):
 _run_all(getattr(_m, {fn:?}), eval(bytes.fromhex('{cases_hex}').decode('utf-8')))
 _stop()
 "#,
+        sides_block = sides_block,
         libm = libm,
         admis = admis,
         cand = cand,
@@ -3103,7 +3261,7 @@ pub fn review_limited(
 /// review uses. A name that cannot be resolved, or that is not a non-empty
 /// list, tuple, set or dict of strings, is an error naming the source: never a
 /// silent fallback to unconstrained inputs.
-fn resolve_value_sets(cand: &Path, spec: &ReviewSpec, safety_secs: u64) -> Result<ReviewSpec, String> {
+fn resolve_value_sets(cand: &Path, spec: &ReviewSpec, safety_secs: u64, python: Option<&Path>) -> Result<ReviewSpec, String> {
     let sources: Vec<String> = spec
         .domains
         .iter()
@@ -3163,12 +3321,12 @@ for i, src in enumerate(sys.argv[2:]):
     let dir = PrivateDir::new().map_err(|e| format!("value-set resolver: {e}"))?;
     let path = dir.0.join("equiv_vs.py");
     std::fs::write(&path, SCRIPT).map_err(|e| format!("value-set resolver: {e}"))?;
-    let mut cmd = evaluator_command();
+    let mut cmd = evaluator_command_for(python);
     cmd.arg(&path).arg(cand).args(&sources).env("PYTHONHASHSEED", "0").env("PYTHONDONTWRITEBYTECODE", "1");
     let out = run_watched(cmd, std::time::Duration::from_secs(safety_secs));
     drop(dir);
     let out = out
-        .map_err(|e| format!("python3 not runnable: {e}"))?
+        .map_err(|e| not_runnable(python, &e))?
         .ok_or_else(|| format!("resolving the input domains {} ran past {safety_secs}s", sources.join(", ")))?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let mut resolved: Vec<Option<Vec<String>>> = vec![None; sources.len()];
@@ -3232,6 +3390,49 @@ pub fn review_with_inputs(
     harvested: &[Slots],
     safety_secs: u64,
 ) -> Result<ReviewReceipt, SafetyStop> {
+    review_inner(candidate_path, reference_path, spec, harvested, safety_secs, None).map_err(|e| match e {
+        NoReceipt::Stopped(stop) => stop,
+        // Only a review with per-side options can end this way.
+        NoReceipt::Sides(_) => SafetyStop { func: spec.func.clone(), limit_secs: safety_secs },
+    })
+}
+
+/// `review_with_inputs` with each side in the environment named for it (see
+/// `Sides`). Each side reports what it ran from inside its own process; the
+/// report is in the receipt, and a side that did not run what was named ends
+/// the review with no receipt.
+pub fn review_with_sides(
+    candidate_path: &Path,
+    reference_path: &Path,
+    spec: &ReviewSpec,
+    harvested: &[Slots],
+    safety_secs: u64,
+    sides: &Sides,
+) -> Result<ReviewReceipt, NoReceipt> {
+    review_inner(candidate_path, reference_path, spec, harvested, safety_secs, Some(sides))
+}
+
+/// The Python `major.minor` of an interpreter (None = the default `python3`),
+/// asked of the interpreter itself; None if it did not answer.
+pub fn python_minor(python: Option<&Path>) -> Option<String> {
+    let mut cmd = evaluator_command_for(python);
+    cmd.args(["-c", "import sys; print('%d.%d' % sys.version_info[:2])"]);
+    let out = run_watched(cmd, std::time::Duration::from_secs(30)).ok()??;
+    let v = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let ok = out.status.success() && v.split('.').count() == 2 && v.split('.').all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()));
+    ok.then_some(v)
+}
+
+fn review_inner(
+    candidate_path: &Path,
+    reference_path: &Path,
+    spec: &ReviewSpec,
+    harvested: &[Slots],
+    safety_secs: u64,
+    sides: Option<&Sides>,
+) -> Result<ReviewReceipt, NoReceipt> {
+    let orig_spec = spec;
+    let (cand_python, ref_python) = (sides.and_then(|s| s.candidate_python.as_deref()), sides.and_then(|s| s.reference_python.as_deref()));
     let cand_src = std::fs::read(candidate_path).unwrap_or_default();
     let ref_src = std::fs::read(reference_path).unwrap_or_default();
     let cand_text = String::from_utf8_lossy(&cand_src);
@@ -3240,7 +3441,7 @@ pub fn review_with_inputs(
         harvested.iter().filter(|h| h.len() == spec.args.len()).cloned().collect();
     // Value-set domains are resolved first; a list that cannot be resolved is
     // "could not check", with the reason, and no input is generated.
-    let (resolved, unresolved) = match resolve_value_sets(candidate_path, spec, safety_secs) {
+    let (resolved, unresolved) = match resolve_value_sets(candidate_path, spec, safety_secs, cand_python) {
         Ok(s) => (s, None),
         Err(reason) => (spec.clone(), Some(reason)),
     };
@@ -3251,15 +3452,88 @@ pub fn review_with_inputs(
         gen_cases_soft(spec, &[&cand_text, &ref_text], &harvested)
     };
 
+    // With per-side options: the same value sets as the reference side
+    // resolves them (its file, its interpreter). The candidate side's lists
+    // are what is tried; a difference is said, and is not a failure.
+    let mut side_notes: Vec<String> = Vec::new();
+    if sides.is_some() && unresolved.is_none() && spec.domains.iter().any(|d| matches!(d, Domain::OneOf { .. })) {
+        match resolve_value_sets(reference_path, orig_spec, safety_secs, ref_python) {
+            Ok(theirs) => {
+                for (c, r) in spec.domains.iter().zip(theirs.domains.iter()) {
+                    if let (Domain::OneOf { source, values: cv }, Domain::OneOf { values: rv, .. }) = (c, r) {
+                        let only_c = cv.iter().filter(|v| !rv.contains(v)).count();
+                        let only_r = rv.iter().filter(|v| !cv.contains(v)).count();
+                        if only_c + only_r > 0 {
+                            side_notes.push(format!(
+                                "value set str[in {source}]: {only_c} value{} only on the candidate side, {only_r} only on the reference side; \
+                                 the candidate side's list is what was tried",
+                                if only_c == 1 { "" } else { "s" }
+                            ));
+                        }
+                    }
+                }
+            }
+            Err(reason) => side_notes.push(format!(
+                "value sets: the reference side could not resolve them ({}); the candidate side's lists are what was tried",
+                one_line(&reason)
+            )),
+        }
+    }
+
+    let mut facts: [SideFacts; 2] = Default::default();
     let ev = match unresolved.map(|r| Err(PyFail::Msg(r))).unwrap_or_else(|| {
-        run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs, &sha256(&cand_src), &sha256(&ref_src))
+        run_python(candidate_path, reference_path, spec, &cases, large_from, &soft, safety_secs, &sha256(&cand_src), &sha256(&ref_src), sides, &mut facts)
     }) {
         Ok(v) => v,
         Err(PyFail::Msg(reason)) => Evaluated { verdict: ReviewVerdict::Error { reason }, python: String::new(), exceptions: 0, disagreements: Vec::new() },
         Err(PyFail::Stopped) => {
-            return Err(SafetyStop { func: spec.func.clone(), limit_secs: safety_secs });
+            return Err(NoReceipt::Stopped(SafetyStop { func: spec.func.clone(), limit_secs: safety_secs }));
         }
     };
+    let [ref_facts, cand_facts] = facts;
+    // A receipt under per-side options exists only when both sides reported
+    // and every named distribution ran as installed, whatever the verdict.
+    let side_lines = match sides {
+        None => None,
+        Some(_) => {
+            let mut why: Vec<String> = Vec::new();
+            if let ReviewVerdict::Error { reason } | ReviewVerdict::Refused { reason } = &ev.verdict {
+                why.push(reason.clone());
+            }
+            for (f, side) in [(&ref_facts, "reference"), (&cand_facts, "candidate")] {
+                why.extend(f.problems.iter().map(|p| format!("on the {side} side, {p}")));
+            }
+            if why.is_empty() {
+                for (f, side) in [(&ref_facts, "reference"), (&cand_facts, "candidate")] {
+                    if f.full.is_empty() {
+                        why.push(format!("the {side} side did not report what it ran"));
+                    }
+                }
+            }
+            if !why.is_empty() || ref_facts.full.is_empty() || cand_facts.full.is_empty() {
+                return Err(NoReceipt::Sides(why.join("; ")));
+            }
+            let line = |f: &SideFacts| {
+                std::iter::once(f.full.clone()).chain(f.dists.iter().map(|(n, v)| format!("{n} {v}"))).collect::<Vec<_>>().join(", ")
+            };
+            for ((name, rv), (_, cv)) in ref_facts.dists.iter().zip(cand_facts.dists.iter()) {
+                if rv.trim_end_matches(" (editable)") == cv.trim_end_matches(" (editable)") {
+                    side_notes.push(format!(
+                        "{name}: same version on both sides ({}); the version does not tell the two installations apart",
+                        rv.trim_end_matches(" (editable)")
+                    ));
+                }
+            }
+            Some(SideLines { reference: line(&ref_facts), candidate: line(&cand_facts) })
+        }
+    };
+    let cross_python = side_lines.is_some() && ref_facts.minor != cand_facts.minor;
+    if cross_python {
+        side_notes.push(format!(
+            "python: the two sides ran different Python versions (reference {}, candidate {}); the tier says so (-cross-python)",
+            ref_facts.minor, cand_facts.minor
+        ));
+    }
 
     Ok(ReviewReceipt {
         candidate_sha256: sha256(&cand_src),
@@ -3290,13 +3564,17 @@ pub fn review_with_inputs(
                 (true, false) => "tested-same-host",
                 (true, true) => "tested-same-host-hinted",
             };
+            // Only with per-side options, between `-hinted` and `-thin`.
+            let cross = if cross_python { "-cross-python" } else { "" };
             match ev.verdict {
-                ReviewVerdict::Equivalent { n, .. } if thin_evidence(n, ev.exceptions).is_some() => format!("{base}-thin"),
-                _ => base.into(),
+                ReviewVerdict::Equivalent { n, .. } if thin_evidence(n, ev.exceptions).is_some() => format!("{base}{cross}-thin"),
+                _ => format!("{base}{cross}"),
             }
         },
         verdict: ev.verdict,
         disagreements: ev.disagreements,
+        sides: side_lines,
+        side_notes,
     })
 }
 
@@ -3520,11 +3798,32 @@ pub const EVALUATOR_ENV_DROP: &[&str] =
     &["PYTHONOPTIMIZE", "PYTHONWARNINGS", "PYTHONDEVMODE", "PYTHONINTMAXSTRDIGITS"];
 
 fn evaluator_command() -> Command {
-    let mut cmd = Command::new("python3");
+    evaluator_command_for(None)
+}
+
+/// A side started with its own interpreter (`--reference-python`,
+/// `--candidate-python`) is not told about the caller's environment: the
+/// variables that point Python at another installation are not passed to it.
+const OWN_INTERPRETER_ENV_DROP: &[&str] = &["VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONHOME"];
+
+fn not_runnable(python: Option<&Path>, e: &std::io::Error) -> String {
+    match python {
+        Some(p) => format!("{} not runnable: {e}", p.display()),
+        None => format!("python3 not runnable: {e}"),
+    }
+}
+
+/// The evaluator, started as `python` (the path as given, never resolved: a
+/// virtual environment's interpreter is a link) or as `python3`.
+fn evaluator_command_for(python: Option<&Path>) -> Command {
+    let mut cmd = match python {
+        Some(p) => Command::new(p),
+        None => Command::new("python3"),
+    };
     cmd.env_clear();
     for (k, v) in std::env::vars_os() {
         let Some(name) = k.to_str() else { continue };
-        if EVALUATOR_ENV_DROP.contains(&name) {
+        if EVALUATOR_ENV_DROP.contains(&name) || (python.is_some() && OWN_INTERPRETER_ENV_DROP.contains(&name)) {
             continue;
         }
         if EVALUATOR_ENV_ALLOW.contains(&name) || EVALUATOR_ENV_ALLOW_PREFIX.iter().any(|p| name.starts_with(p)) {
@@ -4006,6 +4305,8 @@ struct SideRun {
     end: Option<usize>,
     /// A line that is not part of the protocol: nothing can be concluded.
     malformed: bool,
+    /// What the side said it ran (only with per-side options).
+    facts: SideFacts,
 }
 
 fn unhex(h: &str) -> Option<Vec<u8>> {
@@ -4036,6 +4337,18 @@ fn parse_side(out: &std::process::Output) -> SideRun {
             r.refused.get_or_insert(v.to_string());
         } else if let Some(v) = line.strip_prefix("__NOBUDGET__\t") {
             r.nobudget.get_or_insert(v.to_string());
+        } else if let Some(v) = line.strip_prefix("__SIDE__\t") {
+            let p: Vec<&str> = v.split('\t').collect();
+            let text = |h: &str| unhex(h).map(|b| one_line(&String::from_utf8_lossy(&b)));
+            match (p.first().copied(), p.get(1).and_then(|h| text(h)), p.get(2).and_then(|h| text(h)), p.len()) {
+                (Some("P"), Some(_), Some(full), 3) => r.facts.full = full,
+                (Some("D"), Some(name), Some(version), 3) => r.facts.dists.push((name, version)),
+                (Some("E"), Some(name), Some(why), 3) => r.facts.problems.push(format!("{name} {why}")),
+                _ => {
+                    r.malformed = true;
+                    break;
+                }
+            }
         } else if line == "__CHANGED__" {
             r.changed = true;
         } else if line.starts_with("__BUDGET__\tload\t") {
@@ -4103,6 +4416,8 @@ fn run_python(
     safety_secs: u64,
     cand_sha256: &[u8; 32],
     ref_sha256: &[u8; 32],
+    sides: Option<&Sides>,
+    facts: &mut [SideFacts; 2],
 ) -> Result<Evaluated, PyFail> {
     use std::time::{Duration, Instant};
     let dir = PrivateDir::new()?;
@@ -4112,12 +4427,13 @@ fn run_python(
     // any candidate code runs. Both runs share the one wall-clock limit.
     let run_side = |is_cand: bool| -> Result<SideRun, PyFail> {
         let own_sha = if is_cand { cand_sha256 } else { ref_sha256 };
-        let src = driver_source(is_cand, cand, refr, own_sha, spec, cases, large_from, soft);
+        let src = driver_source(is_cand, cand, refr, own_sha, spec, cases, large_from, soft, sides);
+        let python = sides.and_then(|s| if is_cand { s.candidate_python.as_deref() } else { s.reference_python.as_deref() });
         let driver = dir.0.join(if is_cand { "equiv_review_candidate.py" } else { "equiv_review_reference.py" });
         let mut f = std::fs::File::create(&driver).map_err(|e| e.to_string())?;
         f.write_all(src.as_bytes()).map_err(|e| e.to_string())?;
         drop(f);
-        let mut cmd = evaluator_command();
+        let mut cmd = evaluator_command_for(python);
         cmd.arg(&driver)
             // Harden for determinism: stable hashing, no bytecode files.
             .env("PYTHONHASHSEED", "0")
@@ -4125,13 +4441,26 @@ fn run_python(
             .arg("");
         let left = limit.checked_sub(started.elapsed()).filter(|d| !d.is_zero()).ok_or(PyFail::Stopped)?;
         let out = run_watched(cmd, left)
-            .map_err(|e| format!("python3 not runnable: {e}"))?
+            .map_err(|e| not_runnable(python, &e))?
             .ok_or(PyFail::Stopped)?;
-        Ok(parse_side(&out))
+        let side = parse_side(&out);
+        // An executable that never said which Python it is did not run the evaluator.
+        if let (Some(p), true) = (python, side.python.is_empty()) {
+            return Err(PyFail::Msg(format!(
+                "{} (given as the {} interpreter) did not run the evaluator: it is not a Python interpreter, or it could not start",
+                p.display(),
+                if is_cand { "candidate" } else { "reference" }
+            )));
+        }
+        Ok(side)
     };
-    let r = run_side(false)?;
-    let c = run_side(true)?;
+    let mut r = run_side(false)?;
+    let mut c = run_side(true)?;
     drop(dir);
+    for (slot, s) in facts.iter_mut().zip([&mut r, &mut c]) {
+        *slot = std::mem::take(&mut s.facts);
+        slot.minor = s.python.clone();
+    }
 
     // The evaluator names itself on its first line, before the admissibility
     // and budget checks, so every receipt carries it. Empty if it never ran.
