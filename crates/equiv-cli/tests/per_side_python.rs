@@ -211,3 +211,27 @@ fn the_options_belong_to_review_only() {
     let o = Command::new(BIN).args(["review-pr", "--auto", "--reference-python", "/usr/bin/python3"]).current_dir(&d).output().unwrap();
     assert_eq!(o.status.code(), Some(3), "{}", String::from_utf8_lossy(&o.stderr));
 }
+
+/// A signed per-side receipt verifies, and shows what each side ran; a signed
+/// receipt made without the options is unchanged and has no such lines.
+/// (Added after the implementation: the readers of a receipt were not covered.)
+#[test]
+fn a_signed_per_side_receipt_verifies_and_shows_what_each_side_ran() {
+    let (d, r, c) = setup("signed", DOUBLE, DOUBLE_ADD, "2.0.0");
+    let key = "11".repeat(32);
+    let signed = |args: &[&str]| {
+        let run = review(&d, args, &[("EQUIV_SIGNING_KEY", &key)]);
+        assert_eq!(run.code, Some(0), "{}", run.out);
+        let hex = run.out.split_whitespace().filter(|w| w.len() > 200 && w.chars().all(|ch| ch.is_ascii_hexdigit())).last().expect("a signed receipt").to_string();
+        let v = Command::new(BIN).args(["verify-receipt", &hex]).output().unwrap();
+        (v.status.code(), String::from_utf8_lossy(&v.stdout).into_owned() + &String::from_utf8_lossy(&v.stderr))
+    };
+    let (code, shown) = signed(&["w.py", "w.py", "f", "int", "--reference-python", &r, "--candidate-python", &c, "--versions-of", "demo", "--sign"]);
+    assert_eq!(code, Some(0), "{shown}");
+    assert!(shown.contains("demo 1.0.0") && shown.contains("demo 2.0.0"), "{shown}");
+    assert!(shown.lines().any(|l| l.contains("reference ran")) && shown.lines().any(|l| l.contains("candidate ran")), "{shown}");
+    std::fs::write(d.join("a.py"), "def g(x: int) -> int:\n    return x + 1\n").unwrap();
+    let (code, shown) = signed(&["a.py", "a.py", "g", "int", "--sign"]);
+    assert_eq!(code, Some(0), "{shown}");
+    assert!(!shown.contains(" ran:"), "no side lines without the options: {shown}");
+}
