@@ -213,6 +213,8 @@ mod tests {
                 exceptions: 0,
                 tier: "tested".to_string(),
                 disagreements: Vec::new(),
+                sides: None,
+                side_notes: Vec::new(),
             }),
             twin: None,
         }

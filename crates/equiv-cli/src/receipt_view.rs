@@ -72,7 +72,9 @@ pub fn decode(bytes: &[u8]) -> Result<View, String> {
 }
 
 fn review<'a>(keys: &[u64], get: &impl Fn(u64) -> Option<&'a Value>) -> Result<View, String> {
-    if keys != (0..=11).collect::<Vec<u64>>() {
+    // Key 12 (what each side reported it ran) is present only for a review
+    // that used the per-side options.
+    if keys != (0..=11).collect::<Vec<u64>>() && keys != (0..=12).collect::<Vec<u64>>() {
         return Err("the fields are not those of a review receipt from this equiv version".into());
     }
     let f = |k: u64| get(k).ok_or_else(|| "a field is missing".to_string());
@@ -118,8 +120,18 @@ fn review<'a>(keys: &[u64], get: &impl Fn(u64) -> Option<&'a Value>) -> Result<V
         [Value::Uint(3), reason] => format!("REFUSED (could not check): {}", clean(text(reason)?)),
         _ => return Err("the verdict is malformed".into()),
     };
+    let sides = match get(12) {
+        Some(v) => match array(v)? {
+            [r, c] => vec![
+                format!("reference ran: {}", clean(text(r)?)),
+                format!("candidate ran: {}", clean(text(c)?)),
+            ],
+            _ => return Err("the per-side report is malformed".into()),
+        },
+        None => Vec::new(),
+    };
     Ok(View {
-        lines: vec![
+        lines: [
             format!(
                 "kind:       review receipt (checker equiv-review {}, python {}, step budget {budget})",
                 clean(text(version)?),
@@ -129,7 +141,10 @@ fn review<'a>(keys: &[u64], get: &impl Fn(u64) -> Option<&'a Value>) -> Result<V
             format!("tier:       {}", clean(tier)),
             format!("candidate:  sha256 {}", hex(cand)),
             format!("reference:  sha256 {}", hex(refr)),
-        ],
+        ]
+        .into_iter()
+        .chain(sides)
+        .collect(),
     })
 }
 

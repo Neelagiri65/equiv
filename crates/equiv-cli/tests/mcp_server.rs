@@ -469,3 +469,26 @@ fn every_line_is_json_and_end_of_input_ends_the_server() {
     s.request(&req(3, "ping", "{}"));
     s.close();
 }
+
+/// The per-side interpreters of `equiv review` are not offered to agents: a
+/// tool call that names one is refused and nothing runs.
+#[test]
+fn an_agent_cannot_choose_the_interpreter_of_a_side() {
+    let d = fresh_dir("equiv_mcp", "sides");
+    std::fs::write(d.join("c.py"), UNTYPED_C).unwrap();
+    std::fs::write(d.join("r.py"), UNTYPED_R).unwrap();
+    let mut s = Server::start(&d);
+    let files = r#""candidate":"c.py","reference":"r.py","function":"f","signature":"int""#;
+    for (id, extra) in [
+        (1, r#""reference_python":"/usr/bin/python3""#),
+        (2, r#""candidate_python":"/usr/bin/python3""#),
+        (3, r#""reference-python":"/usr/bin/python3""#),
+        (4, r#""versions_of":"demo""#),
+    ] {
+        let r = s.request(&call(id, "review", &format!("{{{files},{extra}}}")));
+        let t = text(&r);
+        assert!(is_error(&r), "{extra}: {t}");
+        assert!(!t.contains("EQUIVALENT") && !t.contains("COUNTEREXAMPLE"), "nothing may run: {t}");
+    }
+    s.close();
+}

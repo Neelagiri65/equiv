@@ -146,6 +146,65 @@ other functions in the same run still report. The budget needs Python 3.12 or
 newer; on an older Python the review reports could not check instead of running
 without a limit.
 
+## Two environments
+
+`equiv review` can start each side with its own interpreter:
+
+```
+equiv review <cand.py> <ref.py> <fn> <sig> --reference-python <exe> --candidate-python <exe> --versions-of <dist>[,<dist>...]
+```
+
+`--reference-python` and `--candidate-python` each name a Python executable, for
+example the `bin/python` of a virtual environment that holds another release of a
+package. That side is started with it. A side without the option runs `python3`
+as before. The same file may be given for both sides: the two environments are
+then the only difference. Only these options select an interpreter; no
+environment variable does. equiv installs nothing: you make the two
+environments, equiv runs in them. An executable that does not exist is a usage
+error (exit `3`); one that exists but does not run the evaluator is could not
+check (exit `2`).
+
+Each side reports from inside its own process, after the function has run: its
+Python version, and for every distribution named by `--versions-of` the installed
+version and whether the module that ran was loaded from that installation (the
+loaded module's file is one of the files the distribution records; for an
+editable install, a file under the editable directory, shown as `(editable)`).
+The two reports are printed as a `reference:` line and a `candidate:` line and
+are part of the receipt, so two reviews that differ only in a version on one
+side have different receipt ids. `verify-receipt` shows them. A distribution
+with the same version on both sides is allowed, and the output says so.
+
+The result is could not check (exit `2`), with no receipt, when a named
+distribution is not installed on a side, when none of its modules was imported
+during the run (a module already loaded when the interpreter started, for example
+by a `.pth` file, does not count), or when a loaded module of that name came from somewhere other
+than that installation. The message names the distribution and the side. With
+these options a receipt exists only when both sides gave their report: a review
+that ends in any other could-not-check (a file that does not load, a refusal)
+also has no receipt.
+
+When the two sides run different Python minor versions the tier gains
+`-cross-python` (before `-thin`) and the output says so. `--same-host` with
+different Python minors is a usage error (exit `3`).
+
+A side started with its own interpreter is not given `VIRTUAL_ENV`,
+`CONDA_PREFIX` or `PYTHONHOME`. `PYTHONPATH` set together with a per-side
+interpreter is refused (exit `3`): it would put the same modules in front of
+both environments.
+
+Value sets (`str[in NAME]`) are the candidate side's: its list, resolved with
+its interpreter, is what is tried. The reference side resolves the same name
+too, and if the two lists differ the output says how many values are only on
+each side. If the reference side cannot resolve it, the output says that and the
+review goes on.
+
+A pass means the function behaved the same in those two environments on the
+generated inputs, nothing more. It says nothing about other versions, other
+functions of the package, or inputs that were not generated.
+
+The options belong to `equiv review` on the command line. They are not
+available to agents (`equiv mcp`, the hook) or in `review-pr`.
+
 ## How much evidence an "equivalent" carries
 
 An "equivalent" is only as good as the inputs that reached the function's

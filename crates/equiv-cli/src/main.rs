@@ -96,6 +96,21 @@ fn forward_interrupts() {
     }
 }
 
+/// `--reference-python` / `--candidate-python`: the executable must exist
+/// before anything runs. A name without a directory is looked up on PATH.
+fn interpreter(flag: &str, raw: &str) -> Result<std::path::PathBuf, String> {
+    let given = std::path::PathBuf::from(raw);
+    let found = if given.components().count() > 1 || given.is_absolute() {
+        given.is_file()
+    } else {
+        std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(&given).is_file()))
+    };
+    if !found {
+        return Err(format!("review: {flag} {raw}: no such interpreter; nothing was run"));
+    }
+    Ok(given)
+}
+
 fn load_contract(path: &str) -> Result<equiv_core::Contract, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     if path.ends_with(".eqct") {
@@ -112,6 +127,8 @@ fn usage() -> &'static str {
 USAGE:
   equiv review <cand.py> <ref.py> <fn> <sig> [n] [seed] [--sign] [--all]
                [--inputs-from <file|dir>]... [--errors-agree] [--types-hinted]
+               [--reference-python <exe>] [--candidate-python <exe>]
+               [--versions-of <dist>[,<dist>...]]
         Check a function against a reference on generated inputs. <sig> is the
         argument types (int|str|list[int]|list[str]|float|dict|bool), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
@@ -129,6 +146,19 @@ USAGE:
         the function has none). Inputs and verdict are unchanged; the receipt
         tier gains -hinted (tested-hinted, tested-same-host-hinted) and the
         mode is bound into the receipt.
+        --reference-python / --candidate-python (two environments) start that
+        side with the interpreter named, for example the python of a virtual
+        environment holding another release of a package; a side without the
+        option runs python3. equiv installs nothing. --versions-of names
+        installed distributions: each side reports, from inside its own
+        process, its Python version, the version of each one and whether the
+        module that ran was loaded from that installation. The two reports
+        are printed and bound into the receipt. A named distribution that is
+        not installed on a side, was never imported, or was loaded from
+        somewhere else is could not check (exit 2) with no receipt. Sides on
+        different Python minors give the tier -cross-python. PYTHONPATH set
+        together with a per-side interpreter is refused (exit 3). review
+        only: not in review-pr, equiv mcp or the hook.
   equiv review-pr <manifest> | --auto  [--base REF] [--receipts-out F] [--attest-out DIR]
                [--no-harvest] [--same-host] [--budget N]
         Check every listed (or auto-detected) changed function against base.
@@ -305,7 +335,7 @@ fn run() -> Result<u8, String> {
                 "review",
                 &args[1..],
                 &["--sign", "--all", "--errors-agree", "--same-host", "--types-hinted"],
-                &["--inputs-from", "--budget"],
+                &["--inputs-from", "--budget", "--reference-python", "--candidate-python", "--versions-of"],
             )?;
             let safety = safety_seconds()?;
             let budget = step_budget(a.value("--budget"))?;
@@ -336,6 +366,42 @@ fn run() -> Result<u8, String> {
             // The key is checked before anything runs: a run that is going to
             // fail must not print a verdict first.
             let key = if a.has("--sign") { Some(signing_key()?) } else { None };
+            // Two environments: an interpreter per side and the distributions
+            // each side must report. Only these flags select an interpreter.
+            let sides = if a.has("--reference-python") || a.has("--candidate-python") || a.has("--versions-of") {
+                let reference_python = a.value("--reference-python").map(|v| interpreter("--reference-python", v)).transpose()?;
+                let candidate_python = a.value("--candidate-python").map(|v| interpreter("--candidate-python", v)).transpose()?;
+                let per_side = reference_python.is_some() || candidate_python.is_some();
+                if per_side && std::env::var_os("PYTHONPATH").is_some_and(|v| !v.is_empty()) {
+                    return Err("review: PYTHONPATH is set and a per-side interpreter was given; PYTHONPATH would put the same \
+                                modules in front of both environments. Unset it; nothing was run"
+                        .into());
+                }
+                let mut versions_of: Vec<String> = Vec::new();
+                for name in a.values("--versions-of").into_iter().flat_map(|v| v.split(',')).map(str::trim) {
+                    let ok = !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+                    if !ok {
+                        return Err(format!("review: --versions-of takes distribution names separated by commas, got `{name}`"));
+                    }
+                    if !versions_of.iter().any(|n| n == name) {
+                        versions_of.push(name.to_string());
+                    }
+                }
+                if same_host && per_side {
+                    let minors = (equiv_review::python_minor(reference_python.as_deref()), equiv_review::python_minor(candidate_python.as_deref()));
+                    if let (Some(r), Some(c)) = &minors {
+                        if r != c {
+                            return Err(format!(
+                                "review: --same-host compares floats bit-exactly on one machine and one Python; the reference side \
+                                 is Python {r} and the candidate side is Python {c}. Nothing was run"
+                            ));
+                        }
+                    }
+                }
+                Some(equiv_review::Sides { reference_python, candidate_python, versions_of })
+            } else {
+                None
+            };
             let (arg_types, domains) = pr::parse_sig(sig)?;
             let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains, same_host, hinted };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
@@ -345,17 +411,17 @@ fn run() -> Result<u8, String> {
                 let wanted = vec![(spec.func.clone(), std::path::PathBuf::from(cand), spec.args.clone())];
                 equiv_review::harvest::harvest(&wanted, &files).pop().unwrap_or_default()
             };
-            let r = match review_with_inputs(
-                std::path::Path::new(cand),
-                std::path::Path::new(refr),
-                &spec,
-                &harvested,
-                safety,
-            ) {
+            let (cand_path, ref_path) = (std::path::Path::new(cand), std::path::Path::new(refr));
+            let outcome = match &sides {
+                Some(s) => equiv_review::review_with_sides(cand_path, ref_path, &spec, &harvested, safety, s),
+                None => review_with_inputs(cand_path, ref_path, &spec, &harvested, safety).map_err(equiv_review::NoReceipt::Stopped),
+            };
+            let r = match outcome {
                 Ok(r) => r,
                 Err(stop) => {
-                    // Wall-clock stop: could not check, and deliberately no
-                    // receipt, signed or not (backlog 0.3b, gate P3).
+                    // Wall-clock stop, or a side that did not run what was
+                    // named: could not check, and deliberately no receipt,
+                    // signed or not (backlog 0.3b, gate P3).
                     println!("ERROR: {}", stop.reason());
                     return Ok(stop.exit_code() as u8);
                 }
@@ -383,6 +449,14 @@ fn run() -> Result<u8, String> {
                 ReviewVerdict::Refused { reason } => println!("REFUSED: {reason}"),
             }
             println!("provenance: {}", equiv_review::provenance_note(&r));
+            if let Some(s) = &r.sides {
+                println!("reference: {}", s.reference);
+                println!("candidate: {}", s.candidate);
+                println!("sides: each line is what that side reported from inside its own process; equiv installed nothing");
+            }
+            for note in &r.side_notes {
+                println!("{note}");
+            }
             if !r.domains.is_empty() {
                 println!("domains: {} (inputs generated only inside these; a pass says nothing outside them)", r.domains);
             }
