@@ -1,0 +1,15 @@
+COUNTEREXAMPLE at input ('claude-sonnet-5-5')
+  candidate -> 'UnsupportedParamsError'
+  reference -> 'ok'
+disagreements: 4 of 6 judged inputs
+  at ('claude-sonnet-5-5'): candidate -> 'UnsupportedParamsError', reference -> 'ok'
+  at ('anthropic/claude-opus-4-8'): candidate -> 'UnsupportedParamsError', reference -> 'ok'
+  at ('vertex_ai/claude-sonnet-5-5'): candidate -> 'UnsupportedParamsError', reference -> 'ok'
+  at ('azure_ai/claude-opus-4-8'): candidate -> 'UnsupportedParamsError', reference -> 'ok'
+provenance: python 3.14, seed 1; inputs 6 corner + 0 literal + 0 random; inside domains arg 1 str[in MODELS] (6 values) (178 source/harvested values outside them skipped); 0 raised on both sides; tier tested
+reference: python 3.14.9, litellm 1.109.1
+candidate: python 3.14.9, litellm 1.110.0rc2
+sides: each line is what that side reported from inside its own process; equiv installed nothing
+domains: arg 1 str[in MODELS] (6 values) (inputs generated only inside these; a pass says nothing outside them)
+receipt-id: a62b3b2d8a037385f872b86318784544cdfbac9cde0026ba853df87c989f6d01
+receipt: ad00000158201ee2454accdaf91a7401a9012a5268add882b4c6ff952fc27e012b8f3f25d4790258201ee2454accdaf91a7401a9012a5268add882b4c6ff952fc27e012b8f3f25d4790358204f1ab13e3e44934e6c2ef1108c79f068c7af459b0f80e4d3e3577140c6c4ae0b048701752827636c617564652d736f6e6e65742d352d352729781827556e737570706f72746564506172616d734572726f722764276f6b2706046005826c65717569762d72657669657766302e33322e30061a773594000764332e3134080109850600000018b20a000b667465737465640c82781e707974686f6e20332e31342e392c206c6974656c6c6d20312e3130392e317821707974686f6e20332e31342e392c206c6974656c6c6d20312e3131302e30726332

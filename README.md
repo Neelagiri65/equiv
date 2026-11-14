@@ -50,6 +50,10 @@ behaviour on purpose, `equiv` can only tell you that it changed.
 - **[rapidfuzz](docs/case-studies/rapidfuzz.md)** (about 116M downloads a month).
   Its C++ and Python versions score text differently when it contains a
   non-breaking space.
+- **[LiteLLM, one release against the next](docs/case-studies/litellm-two-releases.md).**
+  The same file run against versions 1.109.1 and 1.110.0rc2, each in its own
+  environment. `equiv` finds that `temperature=1` stopped working for four of
+  six model names, and each side reports which version it ran.
 - **Real regressions from project history (the limit).** We traced 713
   regressions that 57 Python projects shipped and later fixed. In only 6 was the
   broken function one `equiv` can check (a module-level function with supported
