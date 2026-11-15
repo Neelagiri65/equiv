@@ -6,7 +6,7 @@
     {
       "name": "equiv",
       "source": "./plugins/equiv",
-      "description": "Runs equiv after each edit of a Python file and gives the agent the `review` and `check` tools. Needs the equiv binary on PATH."
+      "description": "Runs equiv after each edit of a Python file and tells the agent whether the changed functions still behave as before. Needs the equiv binary on PATH."
     }
   ]
 }

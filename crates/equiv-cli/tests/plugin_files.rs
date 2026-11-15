@@ -1,9 +1,10 @@
-//! The Claude Code plugin under `plugins/equiv` has no program of its own: it must
-//! register exactly what `equiv init claude-code` writes, and carry the version
-//! of the binary it was written for. This test runs `init` in an empty
-//! directory and compares, so the plugin cannot drift from the command. The one
-//! thing the plugin adds is a session-start check that the binary is there,
-//! kept in a script file the plugin ships.
+//! The Claude Code plugin under `plugins/equiv` has no program of its own: its
+//! after-edit hook must be exactly the one `equiv init claude-code` writes, and
+//! it carries the version of the binary it was written for. This test runs
+//! `init` in an empty directory and compares, so the hook cannot drift from the
+//! command. The plugin does not start the MCP server (`init` does that, per
+//! project). The one thing it adds is a session-start check that the binary is
+//! there, kept in a script file the plugin ships.
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -32,10 +33,14 @@ fn init_output() -> (Value, Value) {
 }
 
 #[test]
-fn plugin_registers_what_init_writes() {
-    let (mcp, settings) = init_output();
+fn plugin_registers_the_hook_init_writes_and_no_server() {
+    let (_mcp, settings) = init_output();
     let plugin = repo_root().join("plugins/equiv");
-    assert_eq!(read(&plugin.join(".mcp.json")), mcp, "plugins/equiv/.mcp.json differs from what `equiv init claude-code` writes");
+    // A plugin directory holds a local server from an organisation it has not
+    // verified, so the plugin leaves the server to `init`.
+    assert!(!plugin.join(".mcp.json").exists(), "the plugin starts no MCP server");
+    let manifest = read(&plugin.join(".claude-plugin/plugin.json"));
+    assert!(manifest.get("mcpServers").is_none(), "no server declared in plugin.json either");
     let hooks = read(&plugin.join("hooks/hooks.json"));
     assert_eq!(
         hooks["hooks"]["PostToolUse"], settings["hooks"]["PostToolUse"],
