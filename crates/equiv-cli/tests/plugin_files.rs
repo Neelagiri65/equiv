@@ -1,8 +1,9 @@
-//! The Claude Code plugin under `plugins/equiv` is configuration only: it must
+//! The Claude Code plugin under `plugins/equiv` has no program of its own: it must
 //! register exactly what `equiv init claude-code` writes, and carry the version
 //! of the binary it was written for. This test runs `init` in an empty
 //! directory and compares, so the plugin cannot drift from the command. The one
-//! thing the plugin adds is a session-start check that the binary is there.
+//! thing the plugin adds is a session-start check that the binary is there,
+//! kept in a script file the plugin ships.
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,15 +47,34 @@ fn plugin_registers_what_init_writes() {
     assert_eq!(events, ["PostToolUse", "SessionStart"]);
 }
 
-/// The plugin is configuration only, so a missing binary would otherwise be
+const SESSION_START_SCRIPT: &str = "plugins/equiv/hooks/session-start.sh";
+
+/// A plugin directory follows a hook's command to the file it runs, and only
+/// when the command is that file's path written from `${CLAUDE_PLUGIN_ROOT}`
+/// and the file has nothing in it for a shell to expand. So the check is a
+/// script the plugin ships, the hook runs that script and nothing else, and the
+/// script has no variable, command substitution or backtick.
+#[test]
+fn the_session_start_hook_runs_a_script_the_plugin_ships() {
+    let hooks = read(&repo_root().join("plugins/equiv/hooks/hooks.json"));
+    let hook = &hooks["hooks"]["SessionStart"][0]["hooks"][0];
+    assert_eq!(hook["type"], "command");
+    assert_eq!(hook["command"], "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\"");
+    let script = std::fs::read_to_string(repo_root().join(SESSION_START_SCRIPT)).expect("the script is in the plugin");
+    assert!(script.starts_with("#!/bin/sh\n"), "a plain sh script");
+    for expanded in ["$", "`"] {
+        assert!(!script.contains(expanded), "nothing for the shell to expand: found {expanded:?}");
+    }
+}
+
+/// The plugin does not contain equiv, so a missing binary would otherwise be
 /// silent: the server fails to start and the hook does nothing. The
-/// session-start command says so to the agent, says so for a binary too old to
+/// session-start script says so to the agent, says so for a binary too old to
 /// have the hook, and prints nothing when the binary is this one.
 #[cfg(unix)]
 #[test]
 fn the_session_start_check_speaks_only_when_the_binary_is_missing_or_too_old() {
-    let hooks = read(&repo_root().join("plugins/equiv/hooks/hooks.json"));
-    let command = hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str().expect("a command").to_string();
+    let script = repo_root().join(SESSION_START_SCRIPT);
     let d = std::env::temp_dir().join(format!("equiv_plugin_start_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     let said = |case: &str, equiv: Option<&str>| {
@@ -70,9 +90,11 @@ fn the_session_start_check_speaks_only_when_the_binary_is_missing_or_too_old() {
             None => {}
         }
         let out = Command::new("/bin/sh")
-            .args(["-c", &command])
-            // Only the case directory: the check may use nothing but the shell itself.
-            .env("PATH", bin.display().to_string())
+            .arg(&script)
+            // The case directory first, then the system directories: with no
+            // command substitution allowed, the check finds the usage text
+            // with grep, so it needs the shell and grep and nothing else.
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
             .output()
             .unwrap();
         assert!(out.status.success(), "{case}: the check never fails the session: {}", String::from_utf8_lossy(&out.stderr));

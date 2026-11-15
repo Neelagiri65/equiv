@@ -137,7 +137,7 @@ Install the binary (above), then the plugin:
 
 After every edit of a tracked `.py` file, the agent is told whether the
 functions that changed still behave as they did at the last commit, and it gets
-`review` and `check` as tools. The plugin is configuration only: it needs
+`review` and `check` as tools. The plugin does not contain equiv: it needs
 equiv 0.30.0 or later on PATH. Without it nothing is checked, and on macOS,
 Linux and Windows with Git Bash the agent is told so when the session starts. To set up one project without the plugin, run
 `equiv init claude-code` in it.
