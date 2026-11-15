@@ -1,7 +1,7 @@
 # equiv plugin for Claude Code
 
-Configuration only. It registers the two things `equiv init claude-code` writes
-into a project, for every project you open:
+Configuration and one small script. It registers the two things
+`equiv init claude-code` writes into a project, for every project you open:
 
 - the MCP server `equiv mcp`, which gives the agent the tools `review` and `check`;
 - the `PostToolUse` hook `equiv hook claude-code`, which runs after every Edit,
@@ -41,11 +41,12 @@ After you install or update the binary:
 - the notice the agent got at the start of the session is not withdrawn; a new
   session starts without it.
 
-The check is a line of `sh`. On Windows it runs where Claude Code runs hooks in
-Git Bash. Without Git Bash, Claude Code uses PowerShell, where the check is
-expected to fail with a hook error at session start and say nothing to the
-agent; this has not been tested on Windows. The after-edit hook and the server
-do not depend on it.
+The check is a short `sh` script in the plugin, `hooks/session-start.sh`. It
+uses the shell and `grep` and nothing else. On Windows it runs where Claude
+Code runs hooks in Git Bash. Without Git Bash, Claude Code uses PowerShell,
+where the check is expected to fail with a hook error at session start and say
+nothing to the agent; this has not been tested on Windows. The after-edit hook
+and the server do not depend on it.
 
 ## Install
 
