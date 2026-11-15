@@ -290,7 +290,9 @@ impl SafetyStop {
     pub fn reason(&self) -> String {
         format!(
             "could not check: exceeded {} s safety limit (not part of the deterministic budget); \
-             the check of `{}` was stopped and no receipt was issued",
+             the check of `{}` was stopped and no receipt was issued. If the cost comes from large \
+             inputs, an input domain (for example int[0..1000]) or a lower --budget makes the \
+             check cheaper",
             self.limit_secs, self.func
         )
     }

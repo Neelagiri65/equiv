@@ -142,7 +142,11 @@ than `EQUIV_SAFETY_SECONDS` (default 120) of wall-clock time, its evaluator
 processes are stopped and the function is reported as could not check (exit
 `2`). This limit is not part of the deterministic budget, so it never decides a
 verdict and no receipt (signed or unsigned) is issued for a stopped function;
-other functions in the same run still report. The budget needs Python 3.12 or
+other functions in the same run still report. A function that loops up to its
+argument can reach the limit on a slow machine when it is listed with a bare
+`int`: an input domain such as `int[0..1000]`, or a lower budget, makes the
+check cheaper, and the message says so. Neither helps when the time goes into
+a single C call that does not depend on the input. The budget needs Python 3.12 or
 newer; on an older Python the review reports could not check instead of running
 without a limit.
 
