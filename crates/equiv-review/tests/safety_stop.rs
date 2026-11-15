@@ -45,6 +45,11 @@ fn long_c_level_run_is_stopped_within_the_limit() {
     assert!(why.contains("could not check"), "{why}");
     assert!(why.contains("2 s safety limit"), "reason must state the limit: {why}");
     assert!(why.contains("not part of the deterministic budget"), "{why}");
+    // A check that cannot finish checks nothing, so the reason says what makes
+    // it cheaper: fewer or smaller inputs, or a lower step budget.
+    assert!(why.contains("input domain") && why.contains("int[0..1000]"), "names a domain and shows one: {why}");
+    assert!(why.contains("--budget"), "names the budget flag: {why}");
+    assert_eq!(why.lines().count(), 1, "one line, so it fits a table cell: {why}");
     assert_eq!(stop.exit_code(), 2, "a safety stop is never green");
 }
 
