@@ -1,1 +1,1 @@
-examples/math.py : total : int
+examples/math.py : total : int[-1000..1000]
