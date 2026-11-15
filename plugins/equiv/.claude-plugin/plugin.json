@@ -1,7 +1,7 @@
 {
   "name": "equiv",
-  "version": "0.32.3",
-  "description": "Runs equiv after each edit of a Python file and tells the agent whether the changed functions still behave as before. Needs the equiv binary on PATH.",
+  "version": "0.32.4",
+  "description": "Runs equiv after each edit of a Python file and gives the agent the `review` and `check` tools. Needs the equiv binary on PATH.",
   "author": { "name": "Neelagiri65" },
   "homepage": "https://github.com/Neelagiri65/equiv/blob/main/docs/agents.md",
   "repository": "https://github.com/Neelagiri65/equiv",
