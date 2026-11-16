@@ -12,7 +12,7 @@ The same check works on a rewrite of a single function: old version against new.
 Every verdict comes with a receipt. Run the same check again on any machine
 with the same Python version and you get the same receipt, byte for byte. There is no model's opinion involved.
 
-![equiv catches an AI refactor diverging at n = -5, then emits a signed receipt that re-runs to an identical id](assets/equiv-aha.gif)
+![equiv checks jellyfish 1.3.0's Rust metaphone against its Python twin: on 'Straße' Rust gives STRS and Python gives STR, 66 of 1687 inputs disagree, and a second run prints the same receipt id](assets/equiv-aha.gif)
 
 ## What it is good at, and what it skips
 
