@@ -1,11 +1,13 @@
 # equiv
 
-**"It's just a refactor." Prove it.**
+**equiv finds where your port doesn't match the original.**
 
-`equiv` runs your old and new code side by side on hundreds to thousands of generated inputs. Same
-behaviour: the check passes. Anything different: the merge is blocked, with the
-exact input that shows it. It works the same whether you rewrote the function or
-an AI did.
+A Rust or C extension against its Python version, or one release against the
+next: if both can be called from Python, `equiv` runs them on the same hundreds to
+thousands of generated inputs and prints the first input where they differ. With
+the GitHub Action below, that difference blocks the merge.
+
+The same check works on a rewrite of a single function: old version against new.
 
 Every verdict comes with a receipt. Run the same check again on any machine
 with the same Python version and you get the same receipt, byte for byte. There is no model's opinion involved.
@@ -30,19 +32,15 @@ pass. That includes:
 A pass means "no difference found on the inputs tried". It does not mean the
 code is correct or does what you intended.
 
-**Use it where behaviour must not change**: refactors, speed-ups, AI-written
-rewrites, and ports (for example a Python function and its Rust or C twin).
+**Use it where behaviour must not change**: ports (for example a Python
+function and its Rust or C twin), one release against the next, and rewrites
+of a single function (refactors, speed-ups, AI-written rewrites).
 There, any difference is a mistake, and the input `equiv` prints is the bug.
 It is not a general bug finder for feature work: when a pull request changes
 behaviour on purpose, `equiv` can only tell you that it changed.
 
 ## Does it actually catch bugs?
 
-- **Test corpus.** 137 labelled pairs of functions where we already know the
-  answer. Of the 93 that really change behaviour, `equiv` catches 85, misses 5,
-  and cannot check 3. Of the 44 that keep behaviour, it raises 0 false alarms
-  (43 pass, 1 cannot check). Each case it misses or cannot check is listed with
-  the reason. [`divergences/`](divergences/)
 - **[jellyfish](docs/case-studies/jellyfish.md).** This library ships every
   function twice, once in Rust and once in Python. `equiv` finds the two
   disagreeing in 8 of 10 functions. It also catches a bug that shipped in
@@ -54,6 +52,15 @@ behaviour on purpose, `equiv` can only tell you that it changed.
   The same file run against versions 1.109.1 and 1.110.0rc2, each in its own
   environment. `equiv` finds that `temperature=1` stopped working for four of
   six model names, and each side reports which version it ran.
+- **Real parity bugs (the limit).** Of 9 known bugs where a port disagreed
+  with its original, `equiv` caught 4 (measured on v0.19.1). Four of the misses
+  needed a non-default keyword argument and one needed an int passed to a
+  string function; the checks as written did not try either.
+- **Test corpus.** 137 labelled pairs of functions where we already know the
+  answer. Of the 93 that really change behaviour, `equiv` catches 85, misses 5,
+  and cannot check 3. Of the 44 that keep behaviour, it raises 0 false alarms
+  (43 pass, 1 cannot check). Each case it misses or cannot check is listed with
+  the reason. [`divergences/`](divergences/)
 - **Real regressions from project history (the limit).** We traced 713
   regressions that 57 Python projects shipped and later fixed. In only 6 was the
   broken function one `equiv` can check (a module-level function with supported
