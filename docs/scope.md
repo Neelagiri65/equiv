@@ -171,8 +171,10 @@ SHA-256 and its input count are bound into the spec hash, and the receipt counts
 the inputs as given. Every given input is judged; none is tolerated past the
 step budget. A file that carries floats needs `--same-host`: the functions behind
 given inputs are usually native code, which equiv cannot read for host-dependent
-float results. A pass says the two sides agreed on those inputs and nothing about
-any other.
+float results. The tier gains `-given`. A short file is the caller's choice, not
+a small domain checked completely, so an "equivalent" resting on fewer than 10
+value-returning given inputs is labelled thin evidence whatever the file's length.
+A pass says the two sides agreed on those inputs and nothing about any other.
 
 ## Two environments
 

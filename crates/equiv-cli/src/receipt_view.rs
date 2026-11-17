@@ -90,12 +90,15 @@ fn review<'a>(keys: &[u64], get: &impl Fn(u64) -> Option<&'a Value>) -> Result<V
     let python = text(f(7)?)?;
     let seed = uint(f(8)?)?;
     let inputs = array(f(9)?)?;
-    if !(inputs.len() == 4 || inputs.len() == 5) {
+    // 4 counts; 5 with input domains; 6 with given inputs (DECISIONS #39),
+    // where the sixth is the number of inputs the caller supplied.
+    if !(4..=6).contains(&inputs.len()) {
         return Err("the input counts are malformed".into());
     }
     for i in inputs {
         uint(i)?;
     }
+    let given = if inputs.len() == 6 { uint(&inputs[5])? } else { 0 };
     let exceptions = uint(f(10)?)?;
     let tier = text(f(11)?)?;
     let v = array(f(4)?)?;
@@ -103,7 +106,8 @@ fn review<'a>(keys: &[u64], get: &impl Fn(u64) -> Option<&'a Value>) -> Result<V
         [Value::Uint(0), n, nj] => {
             let (n, nj) = (uint(n)?, uint(nj)?);
             let nj = if nj == 0 { String::new() } else { format!("; {nj} large inputs not judged") };
-            format!("EQUIVALENT: agreed on all {n} judged inputs (seed {seed}){nj}; {exceptions} of them raised on both sides")
+            let what = if given > 0 { "given inputs (supplied by the caller, none generated)".to_string() } else { format!("judged inputs (seed {seed})") };
+            format!("EQUIVALENT: agreed on all {n} {what}{nj}; {exceptions} of them raised on both sides")
         }
         [Value::Uint(1), input, c, r, judged, disagreeing, stopped] => {
             text(stopped)?;

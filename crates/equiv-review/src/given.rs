@@ -132,17 +132,19 @@ fn value(v: &J, has_float: &mut bool) -> Result<(String, String), String> {
             let pairs = x.as_array().ok_or("dict: expected an array of [key, value] pairs")?;
             let mut py = Vec::new();
             let mut shown = Vec::new();
-            let mut keys: Vec<String> = Vec::new();
+            let mut keys: Vec<String> = Vec::new(); // key identities
             for p in pairs {
                 let kv = p.as_array().filter(|a| a.len() == 2).ok_or("dict: each pair must be [key, value]")?;
                 if !hashable(&kv[0]) {
                     return Err("dict: a key must be int, str, bytes, bool, None or a tuple of those".into());
                 }
                 let (kp, ks) = value(&kv[0], has_float)?;
-                if keys.contains(&kp) {
-                    return Err(format!("dict: key {ks} appears twice"));
+                // Python's key equality: True == 1 and False == 0, also inside tuples.
+                let k = key_identity(&kv[0]);
+                if keys.contains(&k) {
+                    return Err(format!("dict: key {ks} repeats an earlier key (as Python compares keys)"));
                 }
-                keys.push(kp.clone());
+                keys.push(k);
                 let (vp, vs) = value(&kv[1], has_float)?;
                 py.push(format!("{kp}: {vp}"));
                 shown.push(format!("{ks}: {vs}"));
@@ -151,6 +153,20 @@ fn value(v: &J, has_float: &mut bool) -> Result<(String, String), String> {
         }
         other => return Err(format!("unknown tag `{other}` (int, str, bytes, float, bool, none, list, tuple, dict)")),
     })
+}
+
+/// A dict key as Python's equality sees it: bool folds into int.
+fn key_identity(v: &J) -> String {
+    let Some((tag, x)) = v.as_object().and_then(|o| o.iter().next()) else { return String::new() };
+    match tag.as_str() {
+        "int" => format!("i{}", x.as_str().unwrap_or("")),
+        "bool" => format!("i{}", if x.as_bool() == Some(true) { 1 } else { 0 }),
+        "str" => format!("s{}", serde_json::to_string(x).unwrap_or_default()),
+        "bytes" => format!("b{}", x.as_str().unwrap_or("")),
+        "none" => "n".into(),
+        "tuple" => format!("t({})", x.as_array().map(|xs| xs.iter().map(key_identity).collect::<Vec<_>>().join(",")).unwrap_or_default()),
+        _ => String::new(),
+    }
 }
 
 fn hashable(v: &J) -> bool {
@@ -224,6 +240,8 @@ mod tests {
             r#"[{"dict":[[{"list":[]},{"int":"1"}]]}]"#,
             r#"[{"dict":[[{"int":"1"},{"int":"1"}],[{"int":"1"},{"int":"2"}]]}]"#,
             r#"[{"int":"1","str":"x"}]"#,
+            r#"[{"dict":[[{"int":"1"},{"int":"1"}],[{"bool":true},{"int":"2"}]]}]"#,
+            r#"[{"dict":[[{"tuple":[{"int":"0"}]},{"int":"1"}],[{"tuple":[{"bool":false}]},{"int":"2"}]]}]"#,
             "{}",
         ] {
             assert!(lit(bad).is_err(), "{bad} should be refused");

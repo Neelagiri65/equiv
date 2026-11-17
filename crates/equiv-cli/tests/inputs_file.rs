@@ -32,6 +32,21 @@ fn given_bytes_inputs_are_judged_and_labelled() {
     let (code, out) = run(&d, &["review", "c.py", "r.py", "f", "-", "--inputs-file", "in2.jsonl"]);
     assert_eq!(code, Some(0), "{out}");
     assert!(out.contains("agreed on all 1 given inputs"), "{out}");
+    assert!(out.contains("thin evidence") && out.contains("tested-given-thin"), "{out}");
+}
+
+#[test]
+fn a_signed_given_receipt_verifies() {
+    let d = dir("sign");
+    std::fs::write(d.join("in.jsonl"), "[{\"bytes\":\"6162\"}]\n").unwrap();
+    let key = "11".repeat(32);
+    let out = Command::new(BIN)
+        .args(["review", "c.py", "r.py", "f", "-", "--inputs-file", "in.jsonl", "--sign"])
+        .current_dir(&d).env("EQUIV_METRICS", "off").env("EQUIV_SIGNING_KEY", &key).output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
+    let signed = text.lines().find_map(|l| l.strip_prefix("signed-receipt: ")).unwrap_or_else(|| panic!("{text}"));
+    let (code, v) = run(&d, &["verify-receipt", signed.trim()]);
+    assert_eq!(code, Some(0), "{v}");
 }
 
 #[test]

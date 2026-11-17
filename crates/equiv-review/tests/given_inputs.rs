@@ -19,30 +19,30 @@ fn wp(name: &str, body: &str) -> std::path::PathBuf {
 fn spec() -> ReviewSpec {
     ReviewSpec { func: "f".into(), args: vec![], n: 0, seed: 0, budget: equiv_review::DEFAULT_BUDGET, errors_agree: false, domains: vec![], same_host: false, hinted: false }
 }
-// A tree-like map: name bytes -> (mode, id bytes), as a caller would draw it.
+// A map of bytes keys to (int, bytes) records, as a caller would draw it.
 fn line(names: &[&str]) -> String {
     let pairs: Vec<String> = names
         .iter()
         .enumerate()
         .map(|(i, n)| {
             let hex: String = n.bytes().map(|b| format!("{b:02x}")).collect();
-            format!(r#"[{{"bytes":"{hex}"}},{{"tuple":[{{"int":"{}"}},{{"bytes":"00ff"}}]}}]"#, if i % 2 == 0 { 16384 } else { 33188 })
+            format!(r#"[{{"bytes":"{hex}"}},{{"tuple":[{{"int":"{}"}},{{"bytes":"00ff"}}]}}]"#, i * 7)
         })
         .collect();
     format!("[{{\"dict\":[{}]}},{{\"none\":null}}]\n", pairs.join(","))
 }
 const REF: &str = "def f(entries, _unused):\n    return [(k, m, s) for k, (m, s) in sorted(entries.items())]\n";
-// Differs only when some name contains b'/': sorts those last.
-const CAND: &str = "def f(entries, _unused):\n    items = sorted(entries.items(), key=lambda kv: (b'/' in kv[0], kv[0]))\n    return [(k, m, s) for k, (m, s) in items]\n";
+// Differs only when some key is longer than one byte.
+const CAND: &str = "def f(entries, _unused):\n    items = sorted(entries.items(), key=lambda kv: (len(kv[0]) > 1, kv[0]))\n    return [(k, m, s) for k, (m, s) in items]\n";
 
 #[test]
 fn exactly_the_given_inputs_are_judged() {
-    let text = [line(&["b", "a"]), line(&["x", "y", "z"]), line(&["a/", "b"])].concat();
+    let text = [line(&["b", "a"]), line(&["x", "y", "z"]), line(&["aa", "b"])].concat();
     let g = given::parse(text.as_bytes()).unwrap();
     let (c, r) = (wp("ok_c", CAND), wp("ok_r", REF));
     let rec = review_given(&c, &r, &spec(), &g, 120, None).ok().expect("a receipt");
     match &rec.verdict {
-        ReviewVerdict::Counterexample { input, .. } => assert!(input.contains("b'a/'"), "{input}"),
+        ReviewVerdict::Counterexample { input, .. } => assert!(input.contains("b'aa'"), "{input}"),
         v => panic!("expected a counterexample, got {v:?}"),
     }
     assert_eq!(rec.inputs.given, 3);
@@ -52,6 +52,23 @@ fn exactly_the_given_inputs_are_judged() {
     let g2 = given::parse([line(&["b", "a"]), line(&["x", "y", "z"])].concat().as_bytes()).unwrap();
     let rec2 = review_given(&c, &r, &spec(), &g2, 120, None).ok().expect("a receipt");
     assert!(matches!(rec2.verdict, ReviewVerdict::Equivalent { n: 2, .. }), "{:?}", rec2.verdict);
+    // Two given inputs are the caller's choice, not a small domain checked completely: thin, and the tier says given.
+    assert_eq!(rec2.tier, "tested-given-thin");
+    assert!(equiv_review::thin_note(&rec2).is_some());
+}
+
+#[test]
+fn ten_value_returning_given_inputs_are_not_thin_and_the_seed_does_not_matter() {
+    let text: String = (0..10).map(|i| line(&[&format!("k{i}")])).collect();
+    let g = given::parse(text.as_bytes()).unwrap();
+    let (c, r) = (wp("ten_c", REF), wp("ten_r", REF));
+    let mut s1 = spec();
+    s1.seed = 1;
+    let a = review_given(&c, &r, &s1, &g, 120, None).ok().unwrap();
+    let b = review_given(&c, &r, &spec(), &g, 120, None).ok().unwrap();
+    assert_eq!(a.tier, "tested-given");
+    assert!(equiv_review::thin_note(&a).is_none());
+    assert_eq!(a.sha256(), b.sha256());
 }
 
 #[test]
@@ -68,9 +85,9 @@ fn the_file_is_bound_into_the_receipt() {
 }
 
 #[test]
-fn a_rust_style_panic_on_a_given_input_is_an_outcome() {
+fn a_panic_on_a_given_input_is_an_outcome() {
     // pyo3's PanicException derives from BaseException; equiv observes it by name.
-    let c = wp("pa_c", "class PanicException(BaseException): pass\ndef f(entries, _unused):\n    if len(entries) > 2: raise PanicException('order')\n    return sorted(entries)\n");
+    let c = wp("pa_c", "class PanicException(BaseException): pass\ndef f(entries, _unused):\n    if len(entries) > 2: raise PanicException('boom')\n    return sorted(entries)\n");
     let r = wp("pa_r", "def f(entries, _unused):\n    return sorted(entries)\n");
     let g = given::parse([line(&["a", "b"]), line(&["a", "b", "c"])].concat().as_bytes()).unwrap();
     let rec = review_given(&c, &r, &spec(), &g, 120, None).ok().unwrap();
