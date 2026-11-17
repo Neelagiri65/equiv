@@ -464,6 +464,8 @@ impl ReviewSpec {
 
 pub mod harvest;
 pub use harvest::Slots;
+pub mod given;
+pub use given::GivenInputs;
 
 // ---------- deterministic input generation (Rust-side, seeded) ----------
 
@@ -513,6 +515,9 @@ pub enum PyVal {
     /// lone surrogates. Only generated as str corners; handed to the
     /// evaluator as a Python literal with explicit escapes, like any str.
     StrUnits(Vec<u16>),
+    /// An input the caller supplied (DECISIONS #39): an exact Python literal,
+    /// built by `given::parse` from a typed inputs file, and its readable form.
+    Given { py: String, shown: String },
 }
 
 impl PyVal {
@@ -524,6 +529,7 @@ impl PyVal {
             PyVal::Int(n) => n.to_string(),
             PyVal::Str(s) => py_str_literal(s),
             PyVal::StrUnits(units) => py_units_literal(units),
+            PyVal::Given { py, .. } => py.clone(),
             PyVal::ListInt(xs) => {
                 let inner: Vec<String> = xs.iter().map(|n| n.to_string()).collect();
                 format!("[{}]", inner.join(", "))
@@ -554,6 +560,7 @@ impl PyVal {
                     format!("{f:?}")
                 }
             }
+            PyVal::Given { shown, .. } => shown.clone(),
             _ => self.to_py(),
         }
     }
@@ -2596,10 +2603,19 @@ pub fn thin_evidence(n: u32, exceptions: u32) -> Option<u32> {
     (n >= THIN_K && v > 0 && v < THIN_K).then_some(v)
 }
 
+/// As `thin_evidence`, for given inputs (DECISIONS #39). A short inputs file is
+/// the caller's choice, not a small domain checked completely, so the
+/// exemption for fewer than THIN_K inputs does not apply: an "equivalent"
+/// resting on fewer than THIN_K value-returning inputs is thin, whatever n.
+pub fn thin_evidence_given(n: u32, exceptions: u32) -> Option<u32> {
+    let v = n.saturating_sub(exceptions);
+    (v > 0 && v < THIN_K).then_some(v)
+}
+
 /// The one phrase every renderer uses for a thin "equivalent".
 pub fn thin_note(r: &ReviewReceipt) -> Option<String> {
     match r.verdict {
-        ReviewVerdict::Equivalent { n, .. } => thin_evidence(n, r.exceptions).map(|v| {
+        ReviewVerdict::Equivalent { n, .. } => (if r.inputs.given > 0 { thin_evidence_given(n, r.exceptions) } else { thin_evidence(n, r.exceptions) }).map(|v| {
             format!("thin evidence: only {v} of {n} inputs returned a value (the rest raised on both sides)")
         }),
         _ => None,
@@ -2781,6 +2797,9 @@ pub struct InputCounts {
     /// Source literals and harvested values skipped because they fall
     /// outside a declared input domain (0.23.0). Zero without domains.
     pub out_of_domain: u32,
+    /// Inputs the caller supplied in an inputs file (DECISIONS #39). When
+    /// non-zero, every input is a given one and nothing was generated.
+    pub given: u32,
 }
 
 impl ReviewReceipt {
@@ -2811,7 +2830,9 @@ impl ReviewReceipt {
                 ]
                 .into_iter()
                 // Only under input domains, so other receipts keep their bytes.
-                .chain((self.inputs.out_of_domain > 0).then(|| Value::Uint(self.inputs.out_of_domain as u64)))
+                .chain((self.inputs.out_of_domain > 0 || self.inputs.given > 0).then(|| Value::Uint(self.inputs.out_of_domain as u64)))
+                // Only with given inputs, so other receipts keep their bytes.
+                .chain((self.inputs.given > 0).then(|| Value::Uint(self.inputs.given as u64)))
                 .collect()),
             ),
             (10, Value::Uint(self.exceptions as u64)),
@@ -3153,6 +3174,10 @@ def canon(x):
         except ValueError: return hex(x)
     if t is float: return 'nanq' if x != x else x.hex()
     if t is str: return repr(x)
+    # bytes (DECISIONS #39): repr is exact and unambiguous. bytearray is its
+    # own type, never equal to bytes (the subclass rule's reasoning).
+    if t is bytes: return repr(x)
+    if t is bytearray: return 'bytearray:' + repr(bytes(x))
     if x is None: return 'None'
     if t is list: return '[' + ', '.join(canon(e) for e in x) + ']'
     if t is tuple:
@@ -3166,11 +3191,18 @@ def canon(x):
             return t.__name__ + '(' + ', '.join(k + '=' + canon(v) for k, v in zip(_f, x)) + ')'
         raise _NonCanon()
     if t is dict:
-        if not all(type(k) is str for k in x): raise _NonCanon()
-        return '{{' + ', '.join(repr(k) + ': ' + canon(x[k]) for k in sorted(x)) + '}}'
+        if all(type(k) is str for k in x):
+            return '{{' + ', '.join(repr(k) + ': ' + canon(x[k]) for k in sorted(x)) + '}}'
+        # Other exact key types (DECISIONS #39): str, bytes, int. Sorted by type
+        # then canonical form, so the order is the same on every side; a key
+        # of any other type (bool, float, tuple, ...) is not comparable.
+        if not all(type(k) in (str, bytes, int) for k in x): raise _NonCanon()
+        _ks = sorted(x, key=lambda k: (type(k).__name__, canon(k)))
+        return '{{' + ', '.join(canon(k) + ': ' + canon(x[k]) for k in _ks) + '}}'
     if isinstance(x, int): return t.__name__ + ':' + canon(int.__add__(x, 0))
     if isinstance(x, float): return t.__name__ + ':' + canon(float.__float__(x))
     if isinstance(x, str): return t.__name__ + ':' + canon(str.__getitem__(x, slice(None)))
+    if isinstance(x, bytes): return t.__name__ + ':' + canon(bytes.__getitem__(x, slice(None)))
     if isinstance(x, list): return t.__name__ + ':' + canon(list(list.__iter__(x)))
     if isinstance(x, dict):
         return t.__name__ + ':' + canon({{k: dict.__getitem__(x, k) for k in dict.keys(x)}})
@@ -3396,7 +3428,7 @@ pub fn review_with_inputs(
     harvested: &[Slots],
     safety_secs: u64,
 ) -> Result<ReviewReceipt, SafetyStop> {
-    review_inner(candidate_path, reference_path, spec, harvested, safety_secs, None).map_err(|e| match e {
+    review_inner(candidate_path, reference_path, spec, harvested, safety_secs, None, None).map_err(|e| match e {
         NoReceipt::Stopped(stop) => stop,
         // Only a review with per-side options can end this way.
         NoReceipt::Sides(_) => SafetyStop { func: spec.func.clone(), limit_secs: safety_secs },
@@ -3415,7 +3447,29 @@ pub fn review_with_sides(
     safety_secs: u64,
     sides: &Sides,
 ) -> Result<ReviewReceipt, NoReceipt> {
-    review_inner(candidate_path, reference_path, spec, harvested, safety_secs, Some(sides))
+    review_inner(candidate_path, reference_path, spec, harvested, safety_secs, Some(sides), None)
+}
+
+/// A review over inputs the caller supplied (DECISIONS #39): exactly the
+/// inputs in `given`, in order, with nothing generated or harvested. The
+/// file's hash and the input count are bound into the spec hash; the receipt
+/// counts them as `given`. `spec.args` should be empty and `spec.n` is
+/// ignored (the count is the file's).
+pub fn review_given(
+    candidate_path: &Path,
+    reference_path: &Path,
+    spec: &ReviewSpec,
+    given: &GivenInputs,
+    safety_secs: u64,
+    sides: Option<&Sides>,
+) -> Result<ReviewReceipt, NoReceipt> {
+    let mut spec = spec.clone();
+    spec.args.clear();
+    spec.domains.clear();
+    spec.n = given.cases.len() as u32;
+    // No seed is used: fixed, so the same file always gives the same receipt id.
+    spec.seed = 0;
+    review_inner(candidate_path, reference_path, &spec, &[], safety_secs, sides, Some(given))
 }
 
 /// The Python `major.minor` of an interpreter (None = the default `python3`),
@@ -3436,6 +3490,7 @@ fn review_inner(
     harvested: &[Slots],
     safety_secs: u64,
     sides: Option<&Sides>,
+    given: Option<&GivenInputs>,
 ) -> Result<ReviewReceipt, NoReceipt> {
     let orig_spec = spec;
     let (cand_python, ref_python) = (sides.and_then(|s| s.candidate_python.as_deref()), sides.and_then(|s| s.reference_python.as_deref()));
@@ -3452,7 +3507,10 @@ fn review_inner(
         Err(reason) => (spec.clone(), Some(reason)),
     };
     let spec = &resolved;
-    let (cases, large_from, inputs, soft) = if unresolved.is_some() {
+    let (cases, large_from, inputs, soft) = if let Some(g) = given {
+        // Every given input is judged: none is tolerated past the step budget.
+        (g.cases.clone(), g.cases.len(), InputCounts { given: g.cases.len() as u32, ..Default::default() }, Vec::new())
+    } else if unresolved.is_some() {
         (Vec::new(), 0, InputCounts::default(), Vec::new())
     } else {
         gen_cases_soft(spec, &[&cand_text, &ref_text], &harvested)
@@ -3549,6 +3607,12 @@ fn review_inner(
             if !harvested.is_empty() {
                 b.extend(harvest::canonical(&harvested));
             }
+            // Only with given inputs, so other receipts keep their ids.
+            if let Some(g) = given {
+                b.extend_from_slice(b"\0given");
+                b.extend_from_slice(&g.sha256);
+                b.extend_from_slice(&(g.cases.len() as u32).to_le_bytes());
+            }
             b
         }),
         checker_version: env!("CARGO_PKG_VERSION").into(),
@@ -3570,12 +3634,17 @@ fn review_inner(
                 (true, false) => "tested-same-host",
                 (true, true) => "tested-same-host-hinted",
             };
+            // Only with given inputs (DECISIONS #39), after `-hinted`: the
+            // inputs were chosen by the caller, not generated by equiv.
+            let given_tag = if given.is_some() { "-given" } else { "" };
             // Only with per-side options, between `-hinted` and `-thin`.
             let cross = if cross_python { "-cross-python" } else { "" };
-            match ev.verdict {
-                ReviewVerdict::Equivalent { n, .. } if thin_evidence(n, ev.exceptions).is_some() => format!("{base}{cross}-thin"),
-                _ => format!("{base}{cross}"),
-            }
+            let thin = match ev.verdict {
+                ReviewVerdict::Equivalent { n, .. } if given.is_some() => thin_evidence_given(n, ev.exceptions).is_some(),
+                ReviewVerdict::Equivalent { n, .. } => thin_evidence(n, ev.exceptions).is_some(),
+                _ => false,
+            };
+            format!("{base}{given_tag}{cross}{}", if thin { "-thin" } else { "" })
         },
         verdict: ev.verdict,
         disagreements: ev.disagreements,
@@ -3587,6 +3656,19 @@ fn review_inner(
 /// One line of provenance, the same wording everywhere a receipt is shown.
 pub fn provenance_note(r: &ReviewReceipt) -> String {
     let i = &r.inputs;
+    if i.given > 0 {
+        return format!(
+            "python {}; inputs {} given by the caller (none generated); {} raised on both sides; tier {}",
+            if r.python.is_empty() { "unknown" } else { &r.python },
+            i.given,
+            r.exceptions,
+            if r.tier.starts_with("tested-same-host") {
+                format!("{} (SAME HOST ONLY: floats compared bit-exactly on this machine; another machine or maths library may give a different verdict)", r.tier)
+            } else {
+                r.tier.clone()
+            }
+        );
+    }
     format!(
         "python {}, seed {}; inputs {} corner + {} literal + {} random{}{}; {} raised on both sides; tier {}",
         if r.python.is_empty() { "unknown" } else { &r.python },

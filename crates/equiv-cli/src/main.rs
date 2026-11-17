@@ -129,6 +129,7 @@ USAGE:
                [--inputs-from <file|dir>]... [--errors-agree] [--types-hinted]
                [--reference-python <exe>] [--candidate-python <exe>]
                [--versions-of <dist>[,<dist>...]]
+  equiv review <cand.py> <ref.py> <fn> - --inputs-file <inputs.jsonl> [...]
         Check a function against a reference on generated inputs. <sig> is the
         argument types (int|str|list[int]|list[str]|float|dict|bool), comma separated. Emits a
         reproducible receipt. With --sign, signs it using the seed in
@@ -137,6 +138,10 @@ USAGE:
         --inputs-from also tries the literal arguments of every call to <fn>
         (and pytest parametrize rows) in those Python files; they are parsed,
         never run, and bound into the receipt.
+        --inputs-file judges exactly the inputs in the file and generates
+        none; <sig> is then `-`. One JSON array of tagged values per line
+        (int, str, bytes, float, bool, none, list, tuple, dict; see
+        docs/scope.md). The file is bound into the receipt.
         --errors-agree (parity mode, for a port and its reference): when both
         versions raise, count it as agreement whatever the exception class.
         One raising while the other returns is still a difference. The mode is
@@ -335,9 +340,19 @@ fn run() -> Result<u8, String> {
                 "review",
                 &args[1..],
                 &["--sign", "--all", "--errors-agree", "--same-host", "--types-hinted"],
-                &["--inputs-from", "--budget", "--reference-python", "--candidate-python", "--versions-of"],
+                &["--inputs-from", "--inputs-file", "--budget", "--reference-python", "--candidate-python", "--versions-of"],
             )?;
             let safety = safety_seconds()?;
+            // --inputs-file <path> (DECISIONS #39): the caller supplies every
+            // input as typed JSON lines; the signature is `-` and nothing is
+            // generated. Read and checked before anything runs.
+            let given = match a.value("--inputs-file") {
+                None => None,
+                Some(path) => {
+                    let bytes = std::fs::read(path).map_err(|e| format!("review: cannot read --inputs-file {path}: {e}"))?;
+                    Some(equiv_review::given::parse(&bytes).map_err(|e| format!("review: {e}; nothing was run"))?)
+                }
+            };
             let budget = step_budget(a.value("--budget"))?;
             let same_host = a.has("--same-host");
             let want_all = a.has("--all");
@@ -352,6 +367,24 @@ fn run() -> Result<u8, String> {
             let refr = pos.get(1).ok_or("review: missing reference .py")?;
             let func = pos.get(2).ok_or("review: missing function name")?;
             let sig = pos.get(3).ok_or("review: missing signature (e.g. int,int)")?;
+            if let Some(g) = &given {
+                if sig.as_str() != "-" {
+                    return Err("review: with --inputs-file the signature is `-` (the file states every input's values)".into());
+                }
+                if pos.len() > 4 {
+                    return Err("review: with --inputs-file there is no [n] or [seed]: the file is every input".into());
+                }
+                if a.has("--inputs-from") {
+                    return Err("review: --inputs-file and --inputs-from cannot be combined: given inputs are the whole set".into());
+                }
+                if g.has_float && !same_host {
+                    return Err("review: the inputs file carries floats; equiv cannot analyse the functions behind given inputs \
+                                for host-dependent float results, so this needs --same-host. Nothing was run"
+                        .into());
+                }
+            } else if sig.as_str() == "-" {
+                return Err("review: the signature `-` needs --inputs-file".into());
+            }
             let n: u32 = match pos.get(4) {
                 Some(s) => args::number("review: the case count [n]", s)?,
                 None => equiv_review::DEFAULT_N,
@@ -402,7 +435,7 @@ fn run() -> Result<u8, String> {
             } else {
                 None
             };
-            let (arg_types, domains) = pr::parse_sig(sig)?;
+            let (arg_types, domains) = if given.is_some() { (Vec::new(), Vec::new()) } else { pr::parse_sig(sig)? };
             let spec = ReviewSpec { func: func.to_string(), args: arg_types, n, seed, budget, errors_agree, domains, same_host, hinted };
             let harvested: Vec<equiv_review::Slots> = if inputs_from.is_empty() {
                 Vec::new()
@@ -412,9 +445,10 @@ fn run() -> Result<u8, String> {
                 equiv_review::harvest::harvest(&wanted, &files).pop().unwrap_or_default()
             };
             let (cand_path, ref_path) = (std::path::Path::new(cand), std::path::Path::new(refr));
-            let outcome = match &sides {
-                Some(s) => equiv_review::review_with_sides(cand_path, ref_path, &spec, &harvested, safety, s),
-                None => review_with_inputs(cand_path, ref_path, &spec, &harvested, safety).map_err(equiv_review::NoReceipt::Stopped),
+            let outcome = match (&given, &sides) {
+                (Some(g), s) => equiv_review::review_given(cand_path, ref_path, &spec, g, safety, s.as_ref()),
+                (None, Some(s)) => equiv_review::review_with_sides(cand_path, ref_path, &spec, &harvested, safety, s),
+                (None, None) => review_with_inputs(cand_path, ref_path, &spec, &harvested, safety).map_err(equiv_review::NoReceipt::Stopped),
             };
             let r = match outcome {
                 Ok(r) => r,
@@ -428,8 +462,9 @@ fn run() -> Result<u8, String> {
             };
             match &r.verdict {
                 ReviewVerdict::Equivalent { n, not_judged } => {
+                    let what = if given.is_some() { "given inputs".to_string() } else { format!("generated inputs (seed {seed})") };
                     println!(
-                        "EQUIVALENT: agreed on all {n} generated inputs (seed {seed}){}{}",
+                        "EQUIVALENT: agreed on all {n} {what}{}{}",
                         equiv_review::not_judged_note(*not_judged),
                         equiv_review::thin_note(&r).map(|t| format!("; {t}")).unwrap_or_default()
                     );

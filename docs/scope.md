@@ -75,12 +75,16 @@ a random draw, may be missed. Methods, async and nested functions are listed as 
 cannot judge new functionality that has no reference to compare against. A
 passing result means behaviour was preserved on the tested inputs. It does not
 mean the change is correct. Supported input types in this version are `int`,
-`str`, `list[int]`, `list[str]`, `float`, `dict`, `bool`. Dict, list and tuple results are compared
-structurally: a dict is a map (key order ignored); a tuple is compared element
+`str`, `list[int]`, `list[str]`, `float`, `dict`, `bool`; with an inputs file
+(below) the caller can also supply `bytes`, `None` and nested lists, tuples and
+dicts. Dict, list and tuple results are compared
+structurally: a dict is a map (key order ignored; keys may be `str`, `bytes` or
+`int`); a tuple is compared element
 by element and is never equal to a list with the same items; a namedtuple is
 compared by class name, field names and values (so `(1, 2)` and `Point(x=1, y=2)`
-differ). Anything else (a set, a custom object, a subclass of a namedtuple,
-non-string keys) is refused. A subclass of `int`, `float`, `str`, `list` or
+differ). `bytes` results are compared exactly and never equal a `str` or a
+`bytearray`. Anything else (a set, a custom object, a subclass of a namedtuple,
+keys of any other type) is refused. A subclass of `int`, `float`, `str`, `bytes`, `list` or
 `dict` (an enum, a `Counter`, an `OrderedDict`, a numpy scalar) is compared by
 its class name and its content: it agrees with the same class on the other side
 and never with the plain type. A value that cannot be read (for example a list
@@ -149,6 +153,28 @@ check cheaper, and the message says so. Neither helps when the time goes into
 a single C call that does not depend on the input. The budget needs Python 3.12 or
 newer; on an older Python the review reports could not check instead of running
 without a limit.
+
+## Given inputs (`--inputs-file`)
+
+`equiv review cand.py ref.py f - --inputs-file inputs.jsonl` judges exactly the
+inputs in the file, in order, and generates none: no corners, no literals, no
+seeded draws, no harvest. Use it when another tool draws the inputs (for
+example a property-based generator for structured data). Each line is a JSON
+array with one tagged value per argument: `{"int": "<decimal>"}`,
+`{"str": "..."}`, `{"bytes": "<hex>"}`, `{"float": "<16 hex digits of the
+IEEE-754 bits>"}`, `{"bool": true}`, `{"none": null}`, `{"list": [...]}`,
+`{"tuple": [...]}`, `{"dict": [[key, value], ...]}`. Every value is carried
+exactly or the file is refused before anything runs, naming the line and
+argument: a non-canonical int, malformed hex, an unknown tag, a repeated or
+unhashable dict key, or lines with different numbers of arguments. The file's
+SHA-256 and its input count are bound into the spec hash, and the receipt counts
+the inputs as given. Every given input is judged; none is tolerated past the
+step budget. A file that carries floats needs `--same-host`: the functions behind
+given inputs are usually native code, which equiv cannot read for host-dependent
+float results. The tier gains `-given`. A short file is the caller's choice, not
+a small domain checked completely, so an "equivalent" resting on fewer than 10
+value-returning given inputs is labelled thin evidence whatever the file's length.
+A pass says the two sides agreed on those inputs and nothing about any other.
 
 ## Two environments
 
