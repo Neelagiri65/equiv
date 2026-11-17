@@ -199,6 +199,7 @@ version = "0.32.1"
 dependencies = [
  "equiv-core",
  "libc",
+ "serde_json",
  "sha2",
 ]
 

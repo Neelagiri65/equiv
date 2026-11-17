@@ -2,7 +2,7 @@
 //! (spec-type-admissibility.md §5). Written before the implementation. The
 //! property: a dict is a MAP (key order is not observable). A refactor that
 //! changes key insertion order is equivalent; anything not JSON-structural
-//! (sets, custom objects, non-string keys) is refused, never judged.
+//! (sets, custom objects, keys other than str, bytes or int) is refused, never judged.
 
 use equiv_review::{review, ArgType, ReviewSpec, ReviewVerdict};
 use std::io::Write;
@@ -54,11 +54,52 @@ fn set_return_is_refused() {
     assert!(matches!(review(&p, &p, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict, ReviewVerdict::Refused { .. }));
 }
 
-// Non-string dict keys cannot be canonicalised as JSON: refuse.
+// Keys other than exact str, bytes or int (float, tuple, bool, ...) are not
+// compared: refuse. (Before DECISIONS #39 every non-str key was refused.)
 #[test]
-fn non_string_keys_refused() {
-    let p = wp("nsk", "def f(n):\n    return {n: 'x'}\n");
-    assert!(matches!(review(&p, &p, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict, ReviewVerdict::Refused { .. }));
+fn other_key_types_refused() {
+    for (name, body) in [
+        ("nskf", "def f(n):\n    return {float(n): 'x'}\n"),
+        ("nskt", "def f(n):\n    return {(n,): 'x'}\n"),
+        ("nskb", "def f(n):\n    return {n > 0: 'x'}\n"),
+    ] {
+        let p = wp(name, body);
+        let v = review(&p, &p, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict;
+        assert!(matches!(v, ReviewVerdict::Refused { .. }), "{name}: {v:?}");
+    }
+}
+
+// int and bytes keys (DECISIONS #39): a map, key order not observable; a
+// changed key or value is caught; an int key never equals the same str key.
+#[test]
+fn int_and_bytes_keys_compared_as_a_map() {
+    let a = wp("ik_a", "def f(n):\n    return {n: 'x', n + 1: b'y', 'k': 1}\n");
+    let b = wp("ik_b", "def f(n):\n    return {'k': 1, n + 1: b'y', n: 'x'}\n");
+    let v = review(&a, &b, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict;
+    assert!(matches!(v, ReviewVerdict::Equivalent { .. }), "{v:?}");
+    let c = wp("ik_c", "def f(n):\n    return {str(n): 'x', n + 1: b'y', 'k': 1}\n");
+    let v = review(&c, &b, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict;
+    assert!(matches!(v, ReviewVerdict::Counterexample { .. }), "{v:?}");
+}
+
+// bytes results (DECISIONS #39): compared exactly; bytes never equals str or
+// bytearray; a bytes subclass is compared under its class name.
+#[test]
+fn bytes_results_compared_exactly() {
+    let a = wp("by_a", "def f(n):\n    return str(n).encode()\n");
+    let b = wp("by_b", "def f(n):\n    return b'%d' % n\n");
+    let v = review(&a, &b, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict;
+    assert!(matches!(v, ReviewVerdict::Equivalent { .. }), "{v:?}");
+    for (name, body) in [
+        ("by_s", "def f(n):\n    return str(n)\n"),
+        ("by_ba", "def f(n):\n    return bytearray(str(n).encode())\n"),
+        ("by_sub", "class B(bytes): pass\ndef f(n):\n    return B(str(n).encode())\n"),
+        ("by_off", "def f(n):\n    return str(n + (n == 7)).encode()\n"),
+    ] {
+        let c = wp(name, body);
+        let v = review(&c, &b, &spec("f", vec![ArgType::Int])).expect("no safety stop").verdict;
+        assert!(matches!(v, ReviewVerdict::Counterexample { .. }), "{name}: {v:?}");
+    }
 }
 
 // The dict ARG type: a function that takes a dict is reviewed normally.

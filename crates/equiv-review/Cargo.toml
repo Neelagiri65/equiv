@@ -8,6 +8,7 @@ description = "equiv review oracle: deterministic differential review of AI-writ
 [dependencies]
 equiv-core = { path = "../equiv-core" }
 sha2 = "0.10"
+serde_json = "1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
